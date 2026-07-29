@@ -3,7 +3,7 @@
  *
  * Usage:
  * ```ts
- * import { getTelemetryDB, getQueueAdapter, isLiteMode } from "@langfuse-lite/shared/src/server/adapters";
+ * import { getTelemetryDB, getQueueAdapter, isLiteMode } from "@peri-fuse/shared/src/server/adapters";
  * ```
  */
 

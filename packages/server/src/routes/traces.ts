@@ -6,11 +6,8 @@
  * traces-table code path — the events-table path is not used in lite mode).
  */
 
-import {
-  filterAndValidateDbLegacyTraceScoreList,
-  LangfuseNotFoundError,
-} from "@langfuse-lite/shared";
-import { prisma } from "@langfuse-lite/shared/src/db";
+import { filterAndValidateDbLegacyTraceScoreList, LangfuseNotFoundError } from "@peri-fuse/shared";
+import { prisma } from "@peri-fuse/shared/src/db";
 import {
   getObservationsForTrace,
   getScoresForTraces,
@@ -18,8 +15,8 @@ import {
   logger,
   TRACE_FIELD_GROUPS,
   traceException,
-} from "@langfuse-lite/shared/src/server";
-import { getTelemetryDB } from "@langfuse-lite/shared/src/server/adapters";
+} from "@peri-fuse/shared/src/server";
+import { getTelemetryDB } from "@peri-fuse/shared/src/server/adapters";
 import Decimal from "decimal.js";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";

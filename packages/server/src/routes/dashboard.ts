@@ -6,8 +6,8 @@
  * telemetry store (there is no ClickHouse in lite mode).
  */
 
-import { logger } from "@langfuse-lite/shared/src/server";
-import { getTelemetryDB } from "@langfuse-lite/shared/src/server/adapters";
+import { logger } from "@peri-fuse/shared/src/server";
+import { getTelemetryDB } from "@peri-fuse/shared/src/server/adapters";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 

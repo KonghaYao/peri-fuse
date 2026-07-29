@@ -2,7 +2,7 @@
  * Environment bootstrap for the Lite server.
  *
  * This module MUST be imported before anything that pulls in
- * `@langfuse-lite/shared`, because the shared adapter factory reads
+ * `@peri-fuse/shared`, because the shared adapter factory reads
  * `LANGFUSE_MODE` once and caches it. We force lite mode and provide
  * SQLite defaults so the server runs with zero external services.
  */

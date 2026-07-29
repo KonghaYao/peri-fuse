@@ -6,13 +6,13 @@
  * (inline SQLite write, no S3/Redis/worker involved).
  */
 
-import { BaseError, jsonSchema } from "@langfuse-lite/shared";
+import { BaseError, jsonSchema } from "@peri-fuse/shared";
 import {
   createIngestionAttribution,
   type IngestionHeaderMap,
   logger,
   processEventBatch,
-} from "@langfuse-lite/shared/src/server";
+} from "@peri-fuse/shared/src/server";
 import { Hono } from "hono";
 import { z } from "zod";
 import { authMiddleware, type LiteServerEnv } from "../auth";

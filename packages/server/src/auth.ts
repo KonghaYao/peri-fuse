@@ -12,8 +12,8 @@
  *      then backfill the fast hash.
  */
 
-import { CloudConfigRateLimit } from "@langfuse-lite/shared";
-import { prisma } from "@langfuse-lite/shared/src/db";
+import { CloudConfigRateLimit } from "@peri-fuse/shared";
+import { prisma } from "@peri-fuse/shared/src/db";
 import {
   type ApiAccessScope,
   type AuthHeaderValidVerificationResultIngestion,
@@ -21,7 +21,7 @@ import {
   createShaHash,
   logger,
   verifySecretKey,
-} from "@langfuse-lite/shared/src/server";
+} from "@peri-fuse/shared/src/server";
 import { createMiddleware } from "hono/factory";
 
 export type AuthScope = ApiAccessScope & {

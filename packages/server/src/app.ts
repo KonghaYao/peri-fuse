@@ -5,8 +5,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { BaseError, LangfuseNotFoundError } from "@langfuse-lite/shared";
-import { logger } from "@langfuse-lite/shared/src/server";
+import { BaseError, LangfuseNotFoundError } from "@peri-fuse/shared";
+import { logger } from "@peri-fuse/shared/src/server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { LiteServerEnv } from "./auth";

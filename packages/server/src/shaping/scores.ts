@@ -10,7 +10,7 @@ import {
   type ScoreDataTypeType,
   type ScoreDomain,
   scoresTableCols,
-} from "@langfuse-lite/shared";
+} from "@peri-fuse/shared";
 import {
   _handleGenerateScoresForPublicApi,
   _handleGetScoresCountForPublicApi,
@@ -21,7 +21,7 @@ import {
   StringFilter,
   StringOptionsFilter,
   scoresTableUiColumnDefinitions,
-} from "@langfuse-lite/shared/src/server";
+} from "@peri-fuse/shared/src/server";
 
 const secureScoreFilterOptions = [
   {

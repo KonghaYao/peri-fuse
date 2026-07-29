@@ -62,8 +62,8 @@ export function SettingsPage() {
             Connect to lite-server
           </CardTitle>
           <CardDescription>
-            Enter the API keys of your Langfuse lite project. These are the same public/secret keys
-            used by the SDK (Basic auth). Leave the base URL empty when the UI is served by the
+            Enter the API keys of your Peri-Fuse project. These are the same public/secret keys used
+            by the SDK (Basic auth). Leave the base URL empty when the UI is served by the
             lite-server itself.
           </CardDescription>
         </CardHeader>

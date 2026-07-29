@@ -5,7 +5,7 @@
  * (v1 semantics, no rate limiting / audit log / deprecation headers).
  */
 
-import { filterAndValidateLegacyV1GetScoreList, GetScoresQueryV1 } from "@langfuse-lite/shared";
+import { filterAndValidateLegacyV1GetScoreList, GetScoresQueryV1 } from "@peri-fuse/shared";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 import { generateScoresForPublicApi, getScoresCountForPublicApi } from "../shaping/scores";

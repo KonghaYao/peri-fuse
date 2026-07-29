@@ -20,7 +20,7 @@ export default defineConfig({
     },
     server: {
       deps: {
-        inline: ["@langfuse-lite/shared"],
+        inline: ["@peri-fuse/shared"],
       },
     },
   },

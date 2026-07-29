@@ -8,9 +8,9 @@ import {
   orderBy,
   publicApiPaginationZod,
   singleFilter,
-} from "@langfuse-lite/shared";
-import { useEventsTableSchema } from "@langfuse-lite/shared/query";
-import { stringDateTime, TRACE_FIELD_GROUPS } from "@langfuse-lite/shared/src/server";
+} from "@peri-fuse/shared";
+import { useEventsTableSchema } from "@peri-fuse/shared/query";
+import { stringDateTime, TRACE_FIELD_GROUPS } from "@peri-fuse/shared/src/server";
 import { z } from "zod";
 
 // GET /api/public/traces

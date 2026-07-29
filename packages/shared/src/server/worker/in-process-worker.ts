@@ -7,7 +7,7 @@
  * no separate process needed.
  *
  * Usage (from web's instrumentation or custom server):
- *   import { startInProcessWorker } from "@langfuse-lite/shared/src/server/worker/in-process-worker";
+ *   import { startInProcessWorker } from "@peri-fuse/shared/src/server/worker/in-process-worker";
  *   await startInProcessWorker();
  */
 

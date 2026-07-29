@@ -20,7 +20,7 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.14
         version: 1.19.17(hono@4.12.32)
-      '@langfuse-lite/shared':
+      '@peri-fuse/shared':
         specifier: workspace:*
         version: link:../shared
       '@prisma/client':

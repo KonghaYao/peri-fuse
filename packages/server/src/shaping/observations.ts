@@ -4,12 +4,8 @@
  * web/src/features/public-api/types/observations.ts (transform only).
  */
 
-import type { FilterState } from "@langfuse-lite/shared";
-import {
-  type EventsObservation,
-  type Observation,
-  observationsTableCols,
-} from "@langfuse-lite/shared";
+import type { FilterState } from "@peri-fuse/shared";
+import { type EventsObservation, type Observation, observationsTableCols } from "@peri-fuse/shared";
 import {
   generateObservationsForPublicApi as _generateObservationsForPublicApi,
   getObservationsCountForPublicApi as _getObservationsCountForPublicApi,
@@ -19,7 +15,7 @@ import {
   observationsTableUiColumnDefinitions,
   reduceUsageOrCostDetails,
   StringFilter,
-} from "@langfuse-lite/shared/src/server";
+} from "@peri-fuse/shared/src/server";
 
 type ObservationsApiQueryProps = {
   page: number;

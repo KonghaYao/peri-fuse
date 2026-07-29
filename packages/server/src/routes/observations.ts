@@ -6,7 +6,7 @@
  * not used in lite mode).
  */
 
-import { prisma } from "@langfuse-lite/shared/src/db";
+import { prisma } from "@peri-fuse/shared/src/db";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 import { GetObservationsV1Query } from "../schemas/observations";

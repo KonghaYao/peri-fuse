@@ -1,7 +1,7 @@
 {
-  "name": "@langfuse-lite/server",
+  "name": "@peri-fuse/server",
   "version": "0.1.0",
-  "description": "Standalone lightweight Langfuse server (Lite mode, SQLite) - no Next.js",
+  "description": "Standalone lightweight Peri-Fuse server (Lite mode, SQLite) - no Next.js",
   "license": "MIT",
   "private": true,
   "engines": {
@@ -20,7 +20,7 @@
   "author": "engineering@langfuse.com",
   "dependencies": {
     "@hono/node-server": "^1.19.14",
-    "@langfuse-lite/shared": "workspace:*",
+    "@peri-fuse/shared": "workspace:*",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^2.4.3",
     "decimal.js": "^10.4.3",

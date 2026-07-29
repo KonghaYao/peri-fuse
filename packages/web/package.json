@@ -1,7 +1,7 @@
 {
-  "name": "@langfuse-lite/web",
+  "name": "@peri-fuse/web",
   "version": "0.1.0",
-  "description": "Standalone lightweight Langfuse UI (Lite mode) - Vite + React",
+  "description": "Standalone lightweight Peri-Fuse UI (Lite mode) - Vite + React",
   "license": "MIT",
   "private": true,
   "type": "module",

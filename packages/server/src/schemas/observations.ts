@@ -7,9 +7,9 @@ import {
   optionalJsonParam,
   publicApiPaginationZod,
   singleFilter,
-} from "@langfuse-lite/shared";
-import { useEventsTableSchema } from "@langfuse-lite/shared/query";
-import { stringDateTime } from "@langfuse-lite/shared/src/server";
+} from "@peri-fuse/shared";
+import { useEventsTableSchema } from "@peri-fuse/shared/query";
+import { stringDateTime } from "@peri-fuse/shared/src/server";
 import { z } from "zod";
 
 const ObservationType = z.enum([

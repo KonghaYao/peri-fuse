@@ -1,8 +1,8 @@
-# Langfuse Lite
+# Peri-Fuse
 
-A lightweight, self-contained version of [Langfuse](https://langfuse.com) — the open-source LLM engineering platform for tracing, evaluating, and debugging AI applications.
+A lightweight, self-contained LLM observability server — the open-source platform for tracing, evaluating, and debugging AI applications.
 
-Langfuse Lite runs entirely on **SQLite** with no external dependencies (no ClickHouse, Redis, S3, or BullMQ). It's designed for local development, small teams, and edge deployments.
+Peri-Fuse runs entirely on **SQLite** with no external dependencies (no ClickHouse, Redis, S3, or BullMQ). It's designed for local development, small teams, and edge deployments.
 
 ## Features
 
@@ -19,10 +19,10 @@ Langfuse Lite runs entirely on **SQLite** with no external dependencies (no Clic
 pnpm install
 
 # Generate Prisma client
-pnpm --filter @langfuse-lite/shared run db:generate
+pnpm --filter @peri-fuse/shared run db:generate
 
 # Push database schema
-pnpm --filter @langfuse-lite/shared run db:push
+pnpm --filter @peri-fuse/shared run db:push
 
 # Start development servers (API + Web)
 pnpm run dev
@@ -33,7 +33,7 @@ The API server starts at `http://localhost:3000` and the web dashboard at `http:
 ## Project Structure
 
 ```
-langfuse-lite/
+peri-fuse/
 ├── packages/
 │   ├── shared/       # Domain logic, DB access, adapters (SQLite)
 │   ├── server/       # Hono HTTP server (REST API + OTLP)

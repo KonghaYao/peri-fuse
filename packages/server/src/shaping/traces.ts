@@ -1,11 +1,11 @@
 /**
  * Traces filter building.
  * Ported verbatim from web/src/features/public-api/server/traces.ts —
- * all primitives come from @langfuse-lite/shared.
+ * all primitives come from @peri-fuse/shared.
  */
 
-import type { FilterState, OrderByState } from "@langfuse-lite/shared";
-import { tracesTableCols } from "@langfuse-lite/shared";
+import type { FilterState, OrderByState } from "@peri-fuse/shared";
+import { tracesTableCols } from "@peri-fuse/shared";
 import {
   generateTracesForPublicApi as _generateTracesForPublicApi,
   getTracesCountForPublicApi as _getTracesCountForPublicApi,
@@ -13,7 +13,7 @@ import {
   deriveFilters,
   type TraceQueryType,
   tracesTableUiColumnDefinitions,
-} from "@langfuse-lite/shared/src/server";
+} from "@peri-fuse/shared/src/server";
 
 const publicApiTracesFilterParams = createPublicApiTracesColumnMapping("traces", "t");
 

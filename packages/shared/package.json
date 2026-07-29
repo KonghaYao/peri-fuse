@@ -1,9 +1,9 @@
 {
-  "name": "@langfuse-lite/shared",
+  "name": "@peri-fuse/shared",
   "version": "0.1.0",
   "license": "MIT",
   "private": true,
-  "description": "Shared domain logic for Langfuse Lite (SQLite-backed, no ClickHouse/Redis/S3)",
+  "description": "Shared domain logic for Peri-Fuse (SQLite-backed, no ClickHouse/Redis/S3)",
   "files": [
     "dist/**",
     "prisma/**"

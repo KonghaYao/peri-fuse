@@ -1,7 +1,7 @@
 {
-  "name": "langfuse-lite",
+  "name": "peri-fuse",
   "version": "0.1.0",
-  "description": "Standalone lightweight Langfuse server — SQLite-backed, no Next.js, no ClickHouse, no Redis",
+  "description": "Standalone lightweight LLM observability server — SQLite-backed, no Next.js, no ClickHouse, no Redis",
   "license": "MIT",
   "private": true,
   "engines": {
@@ -9,17 +9,17 @@
   },
   "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "build": "pnpm --filter @langfuse-lite/shared run build && pnpm --filter @langfuse-lite/server run build && pnpm --filter @langfuse-lite/web run build",
-    "dev": "concurrently \"pnpm --filter @langfuse-lite/server run dev\" \"pnpm --filter @langfuse-lite/web run dev\"",
-    "dev:server": "pnpm --filter @langfuse-lite/server run dev",
-    "dev:web": "pnpm --filter @langfuse-lite/web run dev",
-    "start": "pnpm --filter @langfuse-lite/server run start",
+    "build": "pnpm --filter @peri-fuse/shared run build && pnpm --filter @peri-fuse/server run build && pnpm --filter @peri-fuse/web run build",
+    "dev": "concurrently \"pnpm --filter @peri-fuse/server run dev\" \"pnpm --filter @peri-fuse/web run dev\"",
+    "dev:server": "pnpm --filter @peri-fuse/server run dev",
+    "dev:web": "pnpm --filter @peri-fuse/web run dev",
+    "start": "pnpm --filter @peri-fuse/server run start",
     "typecheck": "pnpm -r run typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "pnpm -r run test",
-    "db:generate": "pnpm --filter @langfuse-lite/shared run db:generate",
-    "db:push": "pnpm --filter @langfuse-lite/shared run db:push"
+    "db:generate": "pnpm --filter @peri-fuse/shared run db:generate",
+    "db:push": "pnpm --filter @peri-fuse/shared run db:push"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

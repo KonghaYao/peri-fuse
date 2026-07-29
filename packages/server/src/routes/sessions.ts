@@ -9,9 +9,9 @@
  * / `getSessionsWithMetrics` ClickHouse queries).
  */
 
-import { LangfuseNotFoundError } from "@langfuse-lite/shared";
-import { getObservationsForTrace, logger } from "@langfuse-lite/shared/src/server";
-import { getTelemetryDB } from "@langfuse-lite/shared/src/server/adapters";
+import { LangfuseNotFoundError } from "@peri-fuse/shared";
+import { getObservationsForTrace, logger } from "@peri-fuse/shared/src/server";
+import { getTelemetryDB } from "@peri-fuse/shared/src/server/adapters";
 import { Hono } from "hono";
 import { z } from "zod";
 import { authMiddleware, type LiteServerEnv } from "../auth";

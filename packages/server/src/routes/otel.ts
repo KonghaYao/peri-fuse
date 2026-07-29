@@ -15,7 +15,7 @@ import {
   logger,
   markProjectAsOtelUser,
   OtelIngestionProcessor,
-} from "@langfuse-lite/shared/src/server";
+} from "@peri-fuse/shared/src/server";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 import { $root } from "../otel-proto/root";

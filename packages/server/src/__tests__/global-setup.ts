@@ -60,8 +60,8 @@ export default async function setup(): Promise<void> {
   );
 
   // Seed auth data through the Prisma client (schema is pushed at this point).
-  const { prisma } = await import("@langfuse-lite/shared/src/db");
-  const { hashSecretKey, createShaHash } = await import("@langfuse-lite/shared/src/server");
+  const { prisma } = await import("@peri-fuse/shared/src/db");
+  const { hashSecretKey, createShaHash } = await import("@peri-fuse/shared/src/server");
 
   await prisma.organization.create({
     data: { id: TEST_ORG_ID, name: "Lite Server Test Org" },
