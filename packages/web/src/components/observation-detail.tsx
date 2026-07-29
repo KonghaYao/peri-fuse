@@ -5,6 +5,7 @@
  * attributed to it).
  */
 import { Clock, Coins, Cpu, Layers, Star } from "lucide-react";
+import { IoViewer } from "@/components/io-viewer";
 import { JsonViewer } from "@/components/json-viewer";
 import { LevelBadge, ObservationTypeBadge } from "@/components/observation-badges";
 import { Badge } from "@/components/ui/badge";
@@ -85,10 +86,10 @@ export function IoTabs({
         <TabsTrigger value="metadata">Metadata</TabsTrigger>
       </TabsList>
       <TabsContent value="input" className="mt-3">
-        <JsonViewer data={input} />
+        <IoViewer data={input} />
       </TabsContent>
       <TabsContent value="output" className="mt-3">
-        <JsonViewer data={output} />
+        <IoViewer data={output} />
       </TabsContent>
       <TabsContent value="metadata" className="mt-3">
         <JsonViewer data={metadata} />
