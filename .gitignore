@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# SQLite databases
+.langfuse/
+*.db
+*.db-shm
+*.db-wal
+
+# Test artifacts
+.test/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Turbo
+.turbo/
+
+# Vite
+.vite/
+
+# Prisma
+packages/shared/prisma/*.db
+packages/shared/prisma/*.db-journal

@@ -1,0 +1,3 @@
+# Transient SQLite databases created by the integration test suite
+# (see src/__tests__/test-db-paths.ts). Regenerated on every test run.
+.test/

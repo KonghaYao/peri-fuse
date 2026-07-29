@@ -1,0 +1,42 @@
+/**
+ * Adapter layer – unified exports.
+ *
+ * Usage:
+ * ```ts
+ * import { getTelemetryDB, getQueueAdapter, isLiteMode } from "@langfuse-lite/shared/src/server/adapters";
+ * ```
+ */
+
+// Factory functions
+export {
+  getCacheAdapter,
+  getLangfuseMode,
+  getQueueAdapter,
+  getStorageAdapter,
+  getTelemetryDB,
+  isFullMode,
+  isLiteMode,
+  resetAdapters,
+  shutdownAdapters,
+} from "./factory";
+export { InMemoryCacheAdapter } from "./in-memory-cache-adapter";
+export { InMemoryQueueAdapter } from "./in-memory-queue-adapter";
+export { LocalStorageAdapter } from "./local-storage-adapter";
+// Concrete implementations (lite-mode only)
+export { SQLiteTelemetryAdapter } from "./sqlite-telemetry-adapter";
+// Types
+export type {
+  CacheAdapter,
+  LangfuseMode,
+  QueueAdapter,
+  QueueInstance,
+  QueueJob,
+  QueueJobOptions,
+  QueueProcessor,
+  QueueWorkerOptions,
+  StorageAdapter,
+  TelemetryDBAdapter,
+  TelemetryInsertOpts,
+  TelemetryQueryOpts,
+  WorkerInstance,
+} from "./types";

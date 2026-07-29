@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "jsx": "react",
+    "moduleResolution": "NodeNext",
+    "module": "NodeNext",
+    "lib": ["es2023"],
+    "outDir": "./dist",
+    "types": ["node"],
+    "target": "es2024",
+    "rootDir": ".",
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "strict": false,
+    "strictNullChecks": false
+  },
+  "include": ["src", "prisma"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/*.test.ts",
+    "src/**/__tests__/**",
+    "src/server/test-utils/**",
+    "scripts"
+  ]
+}

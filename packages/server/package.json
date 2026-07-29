@@ -1,0 +1,40 @@
+{
+  "name": "@langfuse-lite/server",
+  "version": "0.1.0",
+  "description": "Standalone lightweight Langfuse server (Lite mode, SQLite) - no Next.js",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "build:check": "tsc",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "author": "engineering@langfuse.com",
+  "dependencies": {
+    "@hono/node-server": "^1.19.14",
+    "@langfuse-lite/shared": "workspace:*",
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^2.4.3",
+    "decimal.js": "^10.4.3",
+    "dotenv": "^16.4.5",
+    "hono": "^4.12.27",
+    "protobufjs": "7.6.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^24.3.0",
+    "dotenv-cli": "^7.4.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}

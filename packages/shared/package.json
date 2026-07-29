@@ -1,0 +1,105 @@
+{
+  "name": "@langfuse-lite/shared",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "description": "Shared domain logic for Langfuse Lite (SQLite-backed, no ClickHouse/Redis/S3)",
+  "files": [
+    "dist/**",
+    "prisma/**"
+  ],
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "require": "./dist/src/index.js"
+    },
+    "./src/db": {
+      "import": "./dist/src/db.js",
+      "require": "./dist/src/db.js"
+    },
+    "./src/env": {
+      "import": "./dist/src/env.js",
+      "require": "./dist/src/env.js"
+    },
+    "./src/server": {
+      "import": "./dist/src/server/index.js",
+      "require": "./dist/src/server/index.js"
+    },
+    "./src/server/adapters": {
+      "import": "./dist/src/server/adapters/index.js",
+      "require": "./dist/src/server/adapters/index.js"
+    },
+    "./src/server/auth/apiKeys": {
+      "import": "./dist/src/server/auth/apiKeys.js",
+      "require": "./dist/src/server/auth/apiKeys.js"
+    },
+    "./src/utils/chatml": {
+      "import": "./dist/src/utils/chatml/index.js",
+      "require": "./dist/src/utils/chatml/index.js"
+    },
+    "./encryption": {
+      "import": "./dist/src/encryption/index.js",
+      "require": "./dist/src/encryption/index.js"
+    },
+    "./query": {
+      "import": "./dist/src/features/query/index.js",
+      "require": "./dist/src/features/query/index.js"
+    },
+    "./src/server/worker/in-process-worker": {
+      "import": "./dist/src/server/worker/in-process-worker.js",
+      "require": "./dist/src/server/worker/in-process-worker.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:check": "tsc",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile .tsbuildinfo",
+    "dev": "tsc --watch",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "db:generate": "npx prisma generate --schema=prisma/schema.sqlite.prisma --no-hints",
+    "db:push": "npx prisma db push --schema=prisma/schema.sqlite.prisma",
+    "db:migrate": "npx prisma migrate dev --schema=prisma/schema.sqlite.prisma"
+  },
+  "dependencies": {
+    "@opentelemetry/api": ">=1.0.0 <1.10.0",
+    "@opentelemetry/otlp-transformer": "^0.220.0",
+    "@opentelemetry/resources": "^2.9.0",
+    "@opentelemetry/sdk-trace-base": "^2.9.0",
+    "@prisma/client": "^6.19.3",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.0",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.0.0",
+    "date-fns": "^3.6.0",
+    "decimal.js": "^10.4.3",
+    "exponential-backoff": "^3.1.2",
+    "ipaddr.js": "^2.2.0",
+    "jsonpath-plus": "10.3.0",
+    "lodash": "^4.18.1",
+    "lossless-json": "^4.1.1",
+    "lru-cache": "^11.2.7",
+    "safe-regex2": "^5.0.0",
+    "undici": "^7.28.0",
+    "uuid": "^14.0.0",
+    "winston": "^3.15.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.17.24",
+    "@types/node": "^24.3.0",
+    "dotenv-cli": "^7.4.4",
+    "prisma": "^6.19.3",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.10"
+  }
+}

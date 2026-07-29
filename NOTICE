@@ -1,0 +1,10 @@
+Langfuse Lite
+=============
+
+This project is derived from Langfuse (https://github.com/langfuse/langfuse).
+Copyright (c) 2023-2026 Langfuse GmbH. Licensed under the MIT License.
+
+This standalone distribution includes:
+- packages/server  (originally packages/lite-server)
+- packages/web     (originally packages/lite-web)
+- packages/shared  (subset of packages/shared, lite-mode code paths only)
