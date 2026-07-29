@@ -13,6 +13,7 @@ import type { LiteServerEnv } from "./auth";
 import dashboardRoutes from "./routes/dashboard";
 import healthRoutes from "./routes/health";
 import ingestionRoutes from "./routes/ingestion";
+import manageRoutes from "./routes/manage";
 import observationsRoutes from "./routes/observations";
 import otelRoutes from "./routes/otel";
 import scoresRoutes from "./routes/scores";
@@ -61,6 +62,7 @@ export function createApp(): Hono<LiteServerEnv> {
   });
 
   app.route("/", healthRoutes);
+  app.route("/", manageRoutes);
   app.route("/", ingestionRoutes);
   app.route("/", otelRoutes);
   app.route("/", tracesRoutes);

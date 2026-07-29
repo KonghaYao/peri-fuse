@@ -272,3 +272,30 @@ export type SessionDetail = {
   environment: string;
   traces: SessionTrace[];
 };
+
+// ---------------------------------------------------------------------------
+// Management API types
+// ---------------------------------------------------------------------------
+
+export type Project = {
+  id: string;
+  name: string;
+  orgName: string;
+  keyCount: number;
+  createdAt: string;
+};
+
+export type ProjectKey = {
+  id: string;
+  publicKey: string;
+  displaySecretKey: string;
+  note: string | null;
+  createdAt: string;
+};
+
+export type CreatedKey = {
+  id: string;
+  publicKey: string;
+  secretKey: string;
+  displaySecretKey: string;
+};

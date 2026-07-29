@@ -1,17 +1,21 @@
 /**
- * Thin typed REST client for the lite-server public API.
+ * Thin typed REST client for the Peri-Fuse server API.
  *
- * Talks to the same `/api/public/*` endpoints the Langfuse SDK uses, with HTTP
- * Basic auth (`publicKey:secretKey`). Requests go to a same-origin relative
- * path by default (works behind the lite-server's static hosting and the Vite
- * dev proxy); an optional `baseUrl` from the auth store overrides this.
+ * Data endpoints (`/api/public/*`) use HTTP Basic auth with the active
+ * project's publicKey:secretKey. Management endpoints (`/api/manage/*`)
+ * require no auth (local server).
  */
-import { getAuthConfig } from "@/store/auth";
+
+import type { ProjectContext } from "@/store/project";
+import { getProjectContext } from "@/store/project";
 import type {
+  CreatedKey,
   Dashboard,
   Observation,
   ObservationListParams,
   Paged,
+  Project,
+  ProjectKey,
   Score,
   ScoreListParams,
   SessionDetail,
@@ -57,25 +61,20 @@ function toQueryString(params: Record<string, unknown>): string {
 }
 
 async function request<T>(path: string): Promise<T> {
-  const { baseUrl, publicKey, secretKey } = getAuthConfig();
-  const url = `${baseUrl}${path}`;
+  const ctx = getProjectContext();
+  if (!ctx) throw new ApiError(0, "No active project");
 
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetch(path, {
       method: "GET",
       headers: {
-        Authorization: basicAuthHeader(publicKey, secretKey),
+        Authorization: basicAuthHeader(ctx.publicKey, ctx.secretKey),
         "Content-Type": "application/json",
       },
     });
   } catch (err) {
-    throw new ApiError(
-      0,
-      `Network error reaching lite-server at ${baseUrl || "same origin"}: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
+    throw new ApiError(0, `Network error: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (!res.ok) {
@@ -97,9 +96,7 @@ async function request<T>(path: string): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export function healthCheck(): Promise<{ status: string }> {
-  // Health does not require auth; hit it to verify connectivity/baseUrl.
-  const { baseUrl } = getAuthConfig();
-  return fetch(`${baseUrl}/api/public/health`).then(async (res) => {
+  return fetch("/api/public/health").then(async (res) => {
     if (!res.ok) throw new ApiError(res.status, `Health check failed (${res.status})`);
     return (await res.json()) as { status: string };
   });
@@ -138,4 +135,60 @@ export function listSessions(params: SessionListParams = {}): Promise<Paged<Sess
 
 export function getSession(sessionId: string): Promise<SessionDetail> {
   return request<SessionDetail>(`/api/public/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+// ---------------------------------------------------------------------------
+// Management API (no Basic auth required)
+// ---------------------------------------------------------------------------
+
+async function manageRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const body = (await res.json()) as { message?: string };
+      message = body.message ?? message;
+    } catch {
+      // non-JSON
+    }
+    throw new ApiError(res.status, message);
+  }
+  return (await res.json()) as T;
+}
+
+export function listProjects(): Promise<Project[]> {
+  return manageRequest<Project[]>("/api/manage/projects");
+}
+
+export function createProject(name: string): Promise<Project> {
+  return manageRequest<Project>("/api/manage/projects", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function listProjectKeys(projectId: string): Promise<ProjectKey[]> {
+  return manageRequest<ProjectKey[]>(`/api/manage/projects/${encodeURIComponent(projectId)}/keys`);
+}
+
+export function createProjectKey(projectId: string): Promise<CreatedKey> {
+  return manageRequest<CreatedKey>(`/api/manage/projects/${encodeURIComponent(projectId)}/keys`, {
+    method: "POST",
+  });
+}
+
+export function deleteProjectKey(keyId: string): Promise<void> {
+  return manageRequest<void>(`/api/manage/keys/${encodeURIComponent(keyId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function activateProject(projectId: string): Promise<ProjectContext> {
+  return manageRequest<ProjectContext>(
+    `/api/manage/projects/${encodeURIComponent(projectId)}/activate`,
+    { method: "POST" },
+  );
 }

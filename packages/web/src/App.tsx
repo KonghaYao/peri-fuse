@@ -1,28 +1,38 @@
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Layout } from "@/components/layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DashboardPage } from "@/pages/dashboard";
 import { ObservationsPage } from "@/pages/observations";
+import { OnboardingPage } from "@/pages/onboarding";
 import { ScoresPage } from "@/pages/scores";
 import { SessionDetailPage } from "@/pages/session-detail";
 import { SessionsPage } from "@/pages/sessions";
 import { SettingsPage } from "@/pages/settings";
 import { TraceDetailPage } from "@/pages/trace-detail";
 import { TracesPage } from "@/pages/traces";
-import { isAuthConfigured, useAuthConfig } from "@/store/auth";
+import { hasActiveProject, useProjectContext } from "@/store/project";
 
 /**
- * Redirects to /settings until API credentials are configured. The settings
- * page itself is always reachable.
+ * Guards data pages — redirects to onboarding if no project is active.
  */
-function RequireAuth({ children }: { children: React.ReactNode }) {
-  const config = useAuthConfig();
-  const location = useLocation();
-  if (!isAuthConfigured(config)) {
-    return <Navigate to="/settings" replace state={{ from: location }} />;
+function RequireProject({ children }: { children: React.ReactNode }) {
+  useProjectContext(); // subscribe to changes
+  if (!hasActiveProject()) {
+    return <Navigate to="/" replace />;
   }
   return <>{children}</>;
+}
+
+/**
+ * Root route: if a project is already active, go straight to dashboard.
+ */
+function RootRedirect() {
+  useProjectContext();
+  if (hasActiveProject()) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <OnboardingPage />;
 }
 
 export default function App() {
@@ -30,63 +40,71 @@ export default function App() {
     <TooltipProvider delayDuration={200}>
       <Routes>
         <Route element={<Layout />}>
+          <Route index element={<RootRedirect />} />
           <Route
-            index
+            path="dashboard"
             element={
-              <RequireAuth>
+              <RequireProject>
                 <DashboardPage />
-              </RequireAuth>
+              </RequireProject>
             }
           />
           <Route
             path="traces"
             element={
-              <RequireAuth>
+              <RequireProject>
                 <TracesPage />
-              </RequireAuth>
+              </RequireProject>
             }
           />
           <Route
             path="traces/:traceId"
             element={
-              <RequireAuth>
+              <RequireProject>
                 <TraceDetailPage />
-              </RequireAuth>
+              </RequireProject>
             }
           />
           <Route
             path="sessions"
             element={
-              <RequireAuth>
+              <RequireProject>
                 <SessionsPage />
-              </RequireAuth>
+              </RequireProject>
             }
           />
           <Route
             path="sessions/:sessionId"
             element={
-              <RequireAuth>
+              <RequireProject>
                 <SessionDetailPage />
-              </RequireAuth>
+              </RequireProject>
             }
           />
           <Route
             path="observations"
             element={
-              <RequireAuth>
+              <RequireProject>
                 <ObservationsPage />
-              </RequireAuth>
+              </RequireProject>
             }
           />
           <Route
             path="scores"
             element={
-              <RequireAuth>
+              <RequireProject>
                 <ScoresPage />
-              </RequireAuth>
+              </RequireProject>
             }
           />
-          <Route path="settings" element={<SettingsPage />} />
+          <Route
+            path="settings"
+            element={
+              <RequireProject>
+                <SettingsPage />
+              </RequireProject>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

@@ -43,6 +43,23 @@ if (!process.env.LANGFUSE_SQLITE_DB_PATH) {
   process.env.LANGFUSE_SQLITE_DB_PATH = path.join(projectRoot, ".langfuse", "telemetry.db");
 }
 
+// SALT for API key hashing. Auto-generate a stable one if not provided.
+if (!process.env.SALT) {
+  const saltFile = path.join(projectRoot, ".langfuse", ".salt");
+  const saltDir = path.dirname(saltFile);
+  if (!fs.existsSync(saltDir)) {
+    fs.mkdirSync(saltDir, { recursive: true });
+  }
+  if (fs.existsSync(saltFile)) {
+    process.env.SALT = fs.readFileSync(saltFile, "utf8").trim();
+  } else {
+    const { randomBytes } = require("node:crypto");
+    const salt = randomBytes(32).toString("hex");
+    fs.writeFileSync(saltFile, salt, "utf8");
+    process.env.SALT = salt;
+  }
+}
+
 export const liteEnv = {
   port: process.env.LITE_SERVER_PORT ? parseInt(process.env.LITE_SERVER_PORT, 10) : 23332,
   salt: process.env.SALT,
