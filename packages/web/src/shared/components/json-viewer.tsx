@@ -24,14 +24,14 @@ export function JsonViewer({
   // a simple preformatted block.
   if (typeof data !== "object") {
     return (
-      <pre className="max-h-[400px] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-xs">
+      <pre className="max-h-[400px] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-xs [overflow-wrap:anywhere]">
         {String(data)}
       </pre>
     );
   }
 
   return (
-    <div className="rounded-md border border-border bg-muted/20 p-2 text-xs">
+    <div className="min-w-0 rounded-md border border-border bg-muted/20 p-2 text-xs [overflow-wrap:anywhere]">
       <JsonView
         src={data as Record<string, unknown> | unknown[]}
         collapsed={collapsed}
