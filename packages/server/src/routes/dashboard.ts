@@ -47,7 +47,7 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
           params: { projectId },
         }),
         db.query<{ count: number }>({
-          query: `SELECT COUNT(*) as count FROM observations WHERE project_id = @projectId AND is_deleted = 0`,
+          query: `SELECT COALESCE(SUM(obs_count), 0) as count FROM trace_metrics WHERE project_id = @projectId`,
           params: { projectId },
         }),
         db.query<{ count: number }>({
@@ -55,11 +55,11 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
           params: { projectId },
         }),
         db.query<{ total: number | null }>({
-          query: `SELECT COALESCE(SUM(total_cost), 0) as total FROM observations WHERE project_id = @projectId AND is_deleted = 0`,
+          query: `SELECT COALESCE(SUM(total_cost), 0) as total FROM trace_metrics WHERE project_id = @projectId`,
           params: { projectId },
         }),
         db.query<{ total: number | null }>({
-          query: `SELECT COALESCE(SUM(COALESCE(json_extract(usage_details, '$.total'), json_extract(usage_details, '$.input') + json_extract(usage_details, '$.output'), 0)), 0) as total FROM observations WHERE project_id = @projectId AND is_deleted = 0`,
+          query: `SELECT COALESCE(SUM(total_tokens), 0) as total FROM trace_metrics WHERE project_id = @projectId`,
           params: { projectId },
         }),
         db.query<{ count: number }>({
@@ -119,6 +119,7 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
     const daily = Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
 
     // Per-model breakdown (generations only) and observation level mix.
+    // Bounded to the same time window as the daily series.
     const [modelRows, levelRows] = await Promise.all([
       db.query<{
         model: string | null;
@@ -132,17 +133,19 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
                  COALESCE(SUM(total_cost), 0) as cost
           FROM observations
           WHERE project_id = @projectId AND is_deleted = 0 AND type = 'GENERATION'
+            AND start_time >= @since
           GROUP BY model ORDER BY cost DESC LIMIT 6
         `,
-        params: { projectId },
+        params: { projectId, since },
       }),
       db.query<{ level: string | null; count: number }>({
         query: `
           SELECT level, COUNT(*) as count FROM observations
           WHERE project_id = @projectId AND is_deleted = 0
+            AND start_time >= @since
           GROUP BY level ORDER BY count DESC
         `,
-        params: { projectId },
+        params: { projectId, since },
       }),
     ]);
 

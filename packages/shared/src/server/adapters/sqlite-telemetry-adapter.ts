@@ -122,6 +122,26 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         PRIMARY KEY (project_id, id)
       );
 
+      -- Materialized per-trace observation metrics (avoids full-table GROUP BY)
+      CREATE TABLE IF NOT EXISTS trace_metrics (
+        project_id TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        user_id TEXT,
+        session_id TEXT,
+        obs_count INTEGER DEFAULT 0,
+        total_cost REAL DEFAULT 0,
+        input_cost REAL DEFAULT 0,
+        output_cost REAL DEFAULT 0,
+        input_tokens INTEGER DEFAULT 0,
+        output_tokens INTEGER DEFAULT 0,
+        total_tokens INTEGER DEFAULT 0,
+        PRIMARY KEY (project_id, trace_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_trace_metrics_session
+        ON trace_metrics(project_id, session_id);
+      CREATE INDEX IF NOT EXISTS idx_trace_metrics_user
+        ON trace_metrics(project_id, user_id);
+
       CREATE TABLE IF NOT EXISTS scores (
         id TEXT NOT NULL,
         project_id TEXT NOT NULL,
@@ -166,17 +186,18 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         ON scores(project_id, name);
 
       -- Performance indexes for aggregation-heavy queries (sessions/users/dashboard)
-      -- Covers observations list filtering by name/level
+      -- Covers observations list filtering by name
       CREATE INDEX IF NOT EXISTS idx_obs_deleted_name
         ON observations(project_id, is_deleted, name);
-      CREATE INDEX IF NOT EXISTS idx_obs_deleted_level
-        ON observations(project_id, is_deleted, level);
-      -- Covers dashboard daily series (start_time bucketing)
-      CREATE INDEX IF NOT EXISTS idx_obs_deleted_start
-        ON observations(project_id, is_deleted, start_time);
-      -- Covers dashboard model breakdown
-      CREATE INDEX IF NOT EXISTS idx_obs_deleted_type_model
-        ON observations(project_id, is_deleted, type, model, total_cost);
+      -- Covers dashboard daily observations (time-bounded COUNT + SUM)
+      CREATE INDEX IF NOT EXISTS idx_obs_start_cost
+        ON observations(project_id, is_deleted, start_time, total_cost);
+      -- Covers dashboard model breakdown (type + time filter)
+      CREATE INDEX IF NOT EXISTS idx_obs_type_start_model
+        ON observations(project_id, is_deleted, type, start_time, model, total_cost);
+      -- Covers dashboard level mix (time-bounded GROUP BY level)
+      CREATE INDEX IF NOT EXISTS idx_obs_start_level
+        ON observations(project_id, is_deleted, start_time, level);
       -- Covers sessions list: GROUP BY session_id with timestamp/user aggregation
       CREATE INDEX IF NOT EXISTS idx_traces_deleted_session
         ON traces(project_id, is_deleted, session_id, timestamp, user_id, environment, tags);

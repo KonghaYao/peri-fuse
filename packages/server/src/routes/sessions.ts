@@ -152,64 +152,53 @@ app.get("/api/public/sessions", authMiddleware, async (c) => {
 
     const rows = await db.query<SessionListRow>({
       query: `
-        WITH obs_per_trace AS (
-          SELECT trace_id,
-                 SUM(total_cost) AS cost,
-                 SUM(COALESCE(json_extract(cost_details, '$.input'), 0)) AS input_cost,
-                 SUM(COALESCE(json_extract(cost_details, '$.output'), 0)) AS output_cost,
-                 SUM(COALESCE(json_extract(usage_details, '$.input'), 0)) AS input_tokens,
-                 SUM(COALESCE(json_extract(usage_details, '$.output'), 0)) AS output_tokens,
-                 SUM(COALESCE(json_extract(usage_details, '$.total'),
-                     COALESCE(json_extract(usage_details, '$.input'), 0) +
-                     COALESCE(json_extract(usage_details, '$.output'), 0))) AS total_tokens
-          FROM observations
-          WHERE project_id = @projectId AND is_deleted = 0
-          GROUP BY trace_id
-        ),
-        distinct_users AS (
-          SELECT DISTINCT t.session_id AS session_id, t.user_id AS user_id
-          FROM traces t
-          WHERE t.project_id = @projectId
-            AND t.is_deleted = 0
-            AND t.session_id IS NOT NULL
-            AND t.session_id != ''
-            AND t.user_id IS NOT NULL
-            AND t.user_id != ''
-            ${filterSql}
-        ),
-        users_per_session AS (
-          SELECT session_id, GROUP_CONCAT(user_id, CHAR(31)) AS users_concat
-          FROM distinct_users
-          GROUP BY session_id
-        ),
-        sessions AS (
+        WITH page_sessions AS (
           SELECT t.session_id AS id,
                  MIN(t.timestamp) AS created_at,
                  COUNT(*) AS count_traces,
                  (julianday(MAX(t.timestamp)) - julianday(MIN(t.timestamp))) * 86400.0
                    AS session_duration,
                  GROUP_CONCAT(t.tags, CHAR(31)) AS tags_concat,
-                 MAX(t.environment) AS environment,
-                 SUM(o.input_cost) AS input_cost,
-                 SUM(o.output_cost) AS output_cost,
-                 SUM(o.cost) AS total_cost,
-                 COALESCE(SUM(o.input_tokens), 0) AS input_tokens,
-                 COALESCE(SUM(o.output_tokens), 0) AS output_tokens,
-                 COALESCE(SUM(o.total_tokens), 0) AS total_tokens
+                 MAX(t.environment) AS environment
           FROM traces t
-          LEFT JOIN obs_per_trace o ON o.trace_id = t.id
           WHERE t.project_id = @projectId
             AND t.is_deleted = 0
             AND t.session_id IS NOT NULL
             AND t.session_id != ''
             ${filterSql}
           GROUP BY t.session_id
+          ORDER BY ${orderExpr} ${orderDir}, t.session_id ASC
+          LIMIT @limit OFFSET @offset
         )
-        SELECT s.*, u.users_concat AS users_concat
-        FROM sessions s
-        LEFT JOIN users_per_session u ON u.session_id = s.id
-        ORDER BY ${orderExpr} ${orderDir}, s.id ASC
-        LIMIT @limit OFFSET @offset
+        SELECT ps.*,
+               m.input_cost, m.output_cost, m.total_cost,
+               m.input_tokens, m.output_tokens, m.total_tokens,
+               u.users_concat
+        FROM page_sessions ps
+        LEFT JOIN (
+          SELECT session_id,
+                 SUM(input_cost) AS input_cost,
+                 SUM(output_cost) AS output_cost,
+                 SUM(total_cost) AS total_cost,
+                 COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                 COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                 COALESCE(SUM(total_tokens), 0) AS total_tokens
+          FROM trace_metrics
+          WHERE project_id = @projectId
+            AND session_id IN (SELECT id FROM page_sessions)
+          GROUP BY session_id
+        ) m ON m.session_id = ps.id
+        LEFT JOIN (
+          SELECT session_id, GROUP_CONCAT(user_id, CHAR(31)) AS users_concat
+          FROM (
+            SELECT DISTINCT session_id, user_id
+            FROM trace_metrics
+            WHERE project_id = @projectId
+              AND session_id IN (SELECT id FROM page_sessions)
+              AND user_id IS NOT NULL AND user_id != ''
+          )
+          GROUP BY session_id
+        ) u ON u.session_id = ps.id
       `,
       params: { ...params, limit, offset: (page - 1) * limit },
     });

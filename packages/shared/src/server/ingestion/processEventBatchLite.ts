@@ -328,5 +328,46 @@ export const processEventBatchLite = async (
     }
   }
 
+  // Update materialized trace_metrics for affected traces
+  if (rowsByTable.observations.length > 0) {
+    const affectedTraceIds = new Set<string>();
+    for (const obs of rowsByTable.observations) {
+      if (obs.trace_id) affectedTraceIds.add(String(obs.trace_id));
+    }
+    if (affectedTraceIds.size > 0) {
+      try {
+        const placeholders = [...affectedTraceIds].map((_, i) => `@tid${i}`).join(",");
+        const params: Record<string, unknown> = { projectId };
+        [...affectedTraceIds].forEach((id, i) => {
+          params[`tid${i}`] = id;
+        });
+        await db.command({
+          query: `
+            INSERT OR REPLACE INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count, total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens)
+            SELECT o.project_id, o.trace_id, t.user_id, t.session_id,
+                   COUNT(*),
+                   COALESCE(SUM(o.total_cost), 0),
+                   COALESCE(SUM(COALESCE(json_extract(o.cost_details, '$.input'), 0)), 0),
+                   COALESCE(SUM(COALESCE(json_extract(o.cost_details, '$.output'), 0)), 0),
+                   COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.input'), 0)), 0),
+                   COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.output'), 0)), 0),
+                   COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.total'),
+                       COALESCE(json_extract(o.usage_details, '$.input'), 0) +
+                       COALESCE(json_extract(o.usage_details, '$.output'), 0))), 0)
+            FROM observations o
+            LEFT JOIN traces t ON t.project_id = o.project_id AND t.id = o.trace_id
+            WHERE o.project_id = @projectId AND o.trace_id IN (${placeholders}) AND o.is_deleted = 0
+            GROUP BY o.project_id, o.trace_id
+          `,
+          params,
+        });
+      } catch (error) {
+        logger.error("[processEventBatchLite] Failed to update trace_metrics", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
   return { successes, errors };
 };
