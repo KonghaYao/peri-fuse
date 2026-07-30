@@ -690,6 +690,106 @@ export async function liteGetObservationsForTrace(
   }
 }
 
+/**
+ * Get observations for MULTIPLE traces in a single query (batch variant).
+ * Returns a Map keyed by trace_id. Avoids N+1 queries when loading
+ * observations for all traces in a session.
+ */
+export async function liteGetObservationsForTraces(
+  projectId: string,
+  traceIds: string[],
+  includeIO = false,
+): Promise<Map<string, ObservationRecordReadType[]>> {
+  const result = new Map<string, ObservationRecordReadType[]>();
+  if (traceIds.length === 0) return result;
+
+  const db = getTelemetryDB();
+  const ioColumns = includeIO ? "input, output, metadata," : "";
+  const placeholders = traceIds.map((_, i) => `@id${i}`).join(",");
+  const params: Record<string, unknown> = { projectId };
+  traceIds.forEach((id, i) => {
+    params[`id${i}`] = id;
+  });
+
+  try {
+    const rows = await db.query<Record<string, unknown>>({
+      query: `
+        SELECT id, trace_id, project_id, type, parent_observation_id,
+               environment, start_time, end_time, name, level, status_message,
+               version, ${ioColumns}
+               model as provided_model_name,
+               '' as internal_model_id,
+               model_parameters,
+               provided_usage_details, usage_details,
+               provided_cost_details, cost_details,
+               total_cost,
+               '' as usage_pricing_tier_id,
+               '' as usage_pricing_tier_name,
+               completion_start_time,
+               prompt_id, prompt_name, prompt_version,
+               created_at, updated_at, event_ts
+        FROM observations
+        WHERE project_id = @projectId AND trace_id IN (${placeholders}) AND is_deleted = 0
+        ORDER BY start_time ASC
+      `,
+      params,
+    });
+
+    for (const row of rows) {
+      const record = {
+        id: String(row.id),
+        trace_id: row.trace_id ? String(row.trace_id) : null,
+        project_id: String(row.project_id),
+        type: String(row.type ?? "SPAN"),
+        parent_observation_id: row.parent_observation_id ? String(row.parent_observation_id) : null,
+        environment: String(row.environment ?? "default"),
+        name: row.name ? String(row.name) : null,
+        metadata: includeIO ? safeJsonParse<Record<string, string>>(row.metadata, {}) : {},
+        level: row.level ? String(row.level) : null,
+        status_message: row.status_message ? String(row.status_message) : null,
+        version: row.version ? String(row.version) : null,
+        input: includeIO && row.input ? String(row.input) : null,
+        output: includeIO && row.output ? String(row.output) : null,
+        provided_model_name: row.provided_model_name ? String(row.provided_model_name) : null,
+        internal_model_id: null,
+        model_parameters: row.model_parameters ? String(row.model_parameters) : null,
+        total_cost: row.total_cost ? Number(row.total_cost) : null,
+        usage_pricing_tier_id: null,
+        usage_pricing_tier_name: null,
+        prompt_id: row.prompt_id ? String(row.prompt_id) : null,
+        prompt_name: row.prompt_name ? String(row.prompt_name) : null,
+        prompt_version: row.prompt_version ? Number(row.prompt_version) : null,
+        tool_definitions: undefined,
+        tool_calls: undefined,
+        tool_call_names: undefined,
+        is_deleted: 0,
+        start_time: toDateStr(row.start_time),
+        end_time: row.end_time ? toDateStr(row.end_time) : null,
+        completion_start_time: row.completion_start_time
+          ? toDateStr(row.completion_start_time)
+          : null,
+        created_at: toDateStr(row.created_at),
+        updated_at: toDateStr(row.updated_at),
+        event_ts: toDateStr(row.event_ts),
+        provided_usage_details: toUsageRecord(row.provided_usage_details),
+        provided_cost_details: toUsageRecord(row.provided_cost_details),
+        usage_details: toUsageRecord(row.usage_details),
+        cost_details: toUsageRecord(row.cost_details),
+      } as ObservationRecordReadType;
+
+      const tid = record.trace_id;
+      if (tid) {
+        const list = result.get(tid) ?? [];
+        list.push(record);
+        result.set(tid, list);
+      }
+    }
+  } catch (error) {
+    logger.error("[liteGetObservationsForTraces] Batch query failed", error);
+  }
+  return result;
+}
+
 // ============================================================================
 // Score Queries
 // ============================================================================

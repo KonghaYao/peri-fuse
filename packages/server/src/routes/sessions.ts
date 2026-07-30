@@ -10,7 +10,11 @@
  */
 
 import { LangfuseNotFoundError } from "@peri-fuse/shared";
-import { getObservationsForTrace, logger } from "@peri-fuse/shared/src/server";
+import {
+  convertObservation,
+  liteGetObservationsForTraces,
+  logger,
+} from "@peri-fuse/shared/src/server";
 import { getTelemetryDB } from "@peri-fuse/shared/src/server/adapters";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -345,32 +349,27 @@ app.get("/api/public/sessions/:sessionId", authMiddleware, async (c) => {
     scoresByTrace.set(row.trace_id, list);
   }
 
-  // Full observation shapes per trace (lite mode: one SQLite query per trace)
-  // so the session view can render the merged observation tree and open a
-  // per-observation detail panel. IO is included (matching the trace detail
-  // endpoint) so the panel's Input/Output/Metadata tabs are populated.
+  // Full observation shapes per trace — batched into a single SQLite query
+  // (avoids N+1) so the session view can render the merged observation tree
+  // and open a per-observation detail panel. IO is included (matching the
+  // trace detail endpoint) so the panel's Input/Output/Metadata tabs are
+  // populated.
   type ApiObservation = ReturnType<typeof transformDbToApiObservation>;
   const observationsByTraceId = new Map<string, ApiObservation[]>();
-  await Promise.all(
-    traceIds.map(async (tid) => {
-      const obs = await getObservationsForTrace({
-        traceId: tid,
-        projectId,
-        includeIO: true,
-      });
-      observationsByTraceId.set(
-        tid,
-        obs.map((o) =>
-          transformDbToApiObservation({
-            ...o,
-            inputPrice: null,
-            outputPrice: null,
-            totalPrice: null,
-          }),
-        ),
-      );
-    }),
-  );
+  const batchedObs = await liteGetObservationsForTraces(projectId, traceIds, true);
+  for (const [tid, records] of batchedObs) {
+    observationsByTraceId.set(
+      tid,
+      records.map((r) =>
+        transformDbToApiObservation({
+          ...convertObservation({ ...r, metadata: r.metadata ?? {} }),
+          inputPrice: null,
+          outputPrice: null,
+          totalPrice: null,
+        }),
+      ),
+    );
+  }
 
   const timestamps = traceRows
     .map((t) => toMs(t.timestamp))
