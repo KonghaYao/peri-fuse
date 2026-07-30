@@ -164,6 +164,25 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         ON scores(project_id, trace_id);
       CREATE INDEX IF NOT EXISTS idx_scores_project_name
         ON scores(project_id, name);
+
+      -- Performance indexes for aggregation-heavy queries (sessions/users/dashboard)
+      -- Covers observations list filtering by name/level
+      CREATE INDEX IF NOT EXISTS idx_obs_deleted_name
+        ON observations(project_id, is_deleted, name);
+      CREATE INDEX IF NOT EXISTS idx_obs_deleted_level
+        ON observations(project_id, is_deleted, level);
+      -- Covers dashboard daily series (start_time bucketing)
+      CREATE INDEX IF NOT EXISTS idx_obs_deleted_start
+        ON observations(project_id, is_deleted, start_time);
+      -- Covers dashboard model breakdown
+      CREATE INDEX IF NOT EXISTS idx_obs_deleted_type_model
+        ON observations(project_id, is_deleted, type, model, total_cost);
+      -- Covers sessions list: GROUP BY session_id with timestamp/user aggregation
+      CREATE INDEX IF NOT EXISTS idx_traces_deleted_session
+        ON traces(project_id, is_deleted, session_id, timestamp, user_id, environment, tags);
+      -- Covers users list: GROUP BY user_id with timestamp aggregation
+      CREATE INDEX IF NOT EXISTS idx_traces_deleted_user
+        ON traces(project_id, is_deleted, user_id, timestamp, environment);
     `);
   }
 
