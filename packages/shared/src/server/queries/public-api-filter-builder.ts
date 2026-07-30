@@ -34,16 +34,23 @@ type BaseQueryType = {
 // Column mapping factories
 // ---------------------------------------------------------------------------
 
-const TRACES_COLUMN_DEFINITIONS = [
+const TRACES_COLUMN_DEFINITIONS: {
+  id: string;
+  column: string;
+  filterType: string;
+  operator?: string;
+}[] = [
   { id: "timestamp", column: "timestamp", filterType: "DateTimeFilter" },
-  { id: "userId", column: "user_id", filterType: "StringFilter" },
-  { id: "name", column: "name", filterType: "StringFilter" },
-  { id: "environment", column: "environment", filterType: "StringOptionsFilter" },
+  // Search-box fields use substring matching (the UI commits free text);
+  // id-like fields stay exact.
+  { id: "userId", column: "user_id", filterType: "StringFilter", operator: "contains" },
+  { id: "name", column: "name", filterType: "StringFilter", operator: "contains" },
+  { id: "environment", column: "environment", filterType: "StringFilter", operator: "contains" },
   { id: "sessionId", column: "session_id", filterType: "StringFilter" },
   { id: "version", column: "version", filterType: "StringFilter" },
   { id: "release", column: "release", filterType: "StringFilter" },
   { id: "tags", column: "tags", filterType: "ArrayOptionsFilter" },
-] as const;
+];
 
 export function createPublicApiTracesColumnMapping(
   tableName: "traces",
@@ -77,6 +84,7 @@ export function createPublicApiTracesColumnMapping(
         filterType: def.filterType,
         clickhouseTable: tableName,
         clickhousePrefix: tablePrefix,
+        ...(def.operator ? { operator: def.operator } : {}),
       });
     }
   }
@@ -117,6 +125,7 @@ export function createPublicApiObservationsColumnMapping(
       id: "name",
       clickhouseSelect: "name",
       filterType: "StringFilter",
+      operator: "contains",
       clickhouseTable: tableName,
       clickhousePrefix: tablePrefix,
     },
@@ -230,7 +239,7 @@ export function convertApiProvidedFilterToClickhouseFilter(
           filterInstance = new StringFilter({
             clickhouseTable: mapping.clickhouseTable,
             field: mapping.clickhouseSelect,
-            operator: "=",
+            operator: mapping.operator ?? "=",
             value,
             tablePrefix: mapping.clickhousePrefix,
           });

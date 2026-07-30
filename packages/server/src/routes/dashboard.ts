@@ -20,6 +20,18 @@ type DailyBucket = {
   cost: number;
 };
 
+type ModelBucket = {
+  model: string;
+  observations: number;
+  tokens: number;
+  cost: number;
+};
+
+type LevelBucket = {
+  level: string;
+  count: number;
+};
+
 const DAILY_RANGE_DAYS = 30;
 
 app.get("/api/public/dashboard", authMiddleware, async (c) => {
@@ -28,24 +40,33 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
   const db = getTelemetryDB();
 
   try {
-    const [traceCount, observationCount, scoreCount, costRows] = await Promise.all([
-      db.query<{ count: number }>({
-        query: `SELECT COUNT(*) as count FROM traces WHERE project_id = @projectId AND is_deleted = 0`,
-        params: { projectId },
-      }),
-      db.query<{ count: number }>({
-        query: `SELECT COUNT(*) as count FROM observations WHERE project_id = @projectId AND is_deleted = 0`,
-        params: { projectId },
-      }),
-      db.query<{ count: number }>({
-        query: `SELECT COUNT(*) as count FROM scores WHERE project_id = @projectId AND is_deleted = 0`,
-        params: { projectId },
-      }),
-      db.query<{ total: number | null }>({
-        query: `SELECT COALESCE(SUM(total_cost), 0) as total FROM observations WHERE project_id = @projectId AND is_deleted = 0`,
-        params: { projectId },
-      }),
-    ]);
+    const [traceCount, observationCount, scoreCount, costRows, tokenRows, userRows] =
+      await Promise.all([
+        db.query<{ count: number }>({
+          query: `SELECT COUNT(*) as count FROM traces WHERE project_id = @projectId AND is_deleted = 0`,
+          params: { projectId },
+        }),
+        db.query<{ count: number }>({
+          query: `SELECT COUNT(*) as count FROM observations WHERE project_id = @projectId AND is_deleted = 0`,
+          params: { projectId },
+        }),
+        db.query<{ count: number }>({
+          query: `SELECT COUNT(*) as count FROM scores WHERE project_id = @projectId AND is_deleted = 0`,
+          params: { projectId },
+        }),
+        db.query<{ total: number | null }>({
+          query: `SELECT COALESCE(SUM(total_cost), 0) as total FROM observations WHERE project_id = @projectId AND is_deleted = 0`,
+          params: { projectId },
+        }),
+        db.query<{ total: number | null }>({
+          query: `SELECT COALESCE(SUM(COALESCE(json_extract(usage_details, '$.total'), json_extract(usage_details, '$.input') + json_extract(usage_details, '$.output'), 0)), 0) as total FROM observations WHERE project_id = @projectId AND is_deleted = 0`,
+          params: { projectId },
+        }),
+        db.query<{ count: number }>({
+          query: `SELECT COUNT(DISTINCT user_id) as count FROM traces WHERE project_id = @projectId AND is_deleted = 0 AND user_id IS NOT NULL`,
+          params: { projectId },
+        }),
+      ]);
 
     // Daily time series for the last N days. Timestamps are stored as
     // "YYYY-MM-DD HH:MM:SS.sss" TEXT, so SQLite's date() can bucket them.
@@ -97,14 +118,57 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
 
     const daily = Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
 
+    // Per-model breakdown (generations only) and observation level mix.
+    const [modelRows, levelRows] = await Promise.all([
+      db.query<{
+        model: string | null;
+        observations: number;
+        tokens: number | null;
+        cost: number | null;
+      }>({
+        query: `
+          SELECT model, COUNT(*) as observations,
+                 COALESCE(SUM(COALESCE(json_extract(usage_details, '$.total'), json_extract(usage_details, '$.input') + json_extract(usage_details, '$.output'), 0)), 0) as tokens,
+                 COALESCE(SUM(total_cost), 0) as cost
+          FROM observations
+          WHERE project_id = @projectId AND is_deleted = 0 AND type = 'GENERATION'
+          GROUP BY model ORDER BY cost DESC LIMIT 6
+        `,
+        params: { projectId },
+      }),
+      db.query<{ level: string | null; count: number }>({
+        query: `
+          SELECT level, COUNT(*) as count FROM observations
+          WHERE project_id = @projectId AND is_deleted = 0
+          GROUP BY level ORDER BY count DESC
+        `,
+        params: { projectId },
+      }),
+    ]);
+
+    const byModel: ModelBucket[] = modelRows.map((r) => ({
+      model: r.model ?? "(unknown)",
+      observations: Number(r.observations),
+      tokens: Number(r.tokens ?? 0),
+      cost: Number(r.cost ?? 0),
+    }));
+    const levels: LevelBucket[] = levelRows.map((r) => ({
+      level: r.level ?? "DEFAULT",
+      count: Number(r.count),
+    }));
+
     return c.json({
       summary: {
         totalTraces: Number(traceCount[0]?.count ?? 0),
         totalObservations: Number(observationCount[0]?.count ?? 0),
         totalScores: Number(scoreCount[0]?.count ?? 0),
         totalCost: Number(costRows[0]?.total ?? 0),
+        totalTokens: Number(tokenRows[0]?.total ?? 0),
+        totalUsers: Number(userRows[0]?.count ?? 0),
       },
       daily,
+      byModel,
+      levels,
     });
   } catch (error) {
     logger.error("[lite-server] dashboard query failed", error);
@@ -115,8 +179,12 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
           totalObservations: 0,
           totalScores: 0,
           totalCost: 0,
+          totalTokens: 0,
+          totalUsers: 0,
         },
         daily: [],
+        byModel: [],
+        levels: [],
       },
       200,
     );

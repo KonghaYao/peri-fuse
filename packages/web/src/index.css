@@ -4,59 +4,146 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Standard shadcn/ui "neutral" theme tokens (oklch). The app defaults to dark
-   (see <html class="dark"> in index.html); light tokens are included so the
-   theme can be flipped later without rework. */
+/* ==========================================================================
+   Spectra Design System tokens (see DESIGN.md)
+   --------------------------------------------------------------------------
+   Two layers:
+   1. shadcn-compatible semantic vars (--background, --primary, ...) so the
+      existing Radix-based component kit picks up the Spectra look as-is.
+   2. Spectra-native vars (--brand, --surface-*, --fg-*, semantic colors,
+      chart palette) exposed to Tailwind via @theme inline for new code.
+   ========================================================================== */
+
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --radius: 0.375rem;
+
+  /* --- shadcn mapping (light) ------------------------------------------- */
+  --background: oklch(0.977 0.002 250);
+  --foreground: oklch(0.18 0.01 250);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.18 0.01 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.18 0.01 250);
+  --primary: oklch(0.55 0.19 262);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  --secondary: oklch(0.955 0.003 250);
+  --secondary-foreground: oklch(0.18 0.01 250);
+  --muted: oklch(0.955 0.003 250);
+  --muted-foreground: oklch(0.42 0.01 250);
+  --accent: oklch(0.55 0.19 262 / 8%);
+  --accent-foreground: oklch(0.5 0.19 262);
+  --destructive: oklch(0.55 0.2 27);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.2 0.01 250 / 10%);
+  --input: oklch(0.2 0.01 250 / 15%);
+  --ring: oklch(0.55 0.19 262);
+
+  /* --- Spectra brand ----------------------------------------------------- */
+  --brand: oklch(0.55 0.19 262);
+  --brand-strong: oklch(0.48 0.2 262);
+  --brand-subtle: oklch(0.55 0.19 262 / 8%);
+  --brand-fg: oklch(0.985 0 0);
+
+  /* --- Spectra semantic -------------------------------------------------- */
+  --success: oklch(0.55 0.15 155);
+  --success-subtle: oklch(0.55 0.15 155 / 10%);
+  --warning: oklch(0.6 0.16 75);
+  --warning-subtle: oklch(0.65 0.16 75 / 12%);
+  --danger: oklch(0.55 0.2 27);
+  --danger-subtle: oklch(0.55 0.2 27 / 9%);
+  --info: oklch(0.55 0.14 230);
+  --info-subtle: oklch(0.55 0.14 230 / 9%);
+
+  /* --- Spectra surfaces / text / lines ----------------------------------- */
+  --surface-base: oklch(0.977 0.002 250);
+  --surface-raised: oklch(1 0 0);
+  --surface-overlay: oklch(1 0 0);
+  --surface-inset: oklch(0.955 0.003 250);
+  --fg-primary: oklch(0.18 0.01 250);
+  --fg-secondary: oklch(0.42 0.01 250);
+  --fg-tertiary: oklch(0.58 0.008 250);
+  --line-default: oklch(0.2 0.01 250 / 10%);
+  --line-strong: oklch(0.2 0.01 250 / 18%);
+
+  /* --- Chart palette ------------------------------------------------------ */
+  --chart-1: oklch(0.6 0.19 262);
+  --chart-2: oklch(0.65 0.14 195);
+  --chart-3: oklch(0.7 0.14 80);
+  --chart-4: oklch(0.62 0.17 330);
+  --chart-5: oklch(0.65 0.15 155);
+  --chart-6: oklch(0.6 0.15 30);
+
+  /* --- Elevation (light: soft) ------------------------------------------- */
+  --elev-sm: 0 1px 2px oklch(0 0 0 / 10%);
+  --elev-md: 0 4px 12px oklch(0 0 0 / 14%);
+  --elev-lg: 0 8px 30px oklch(0 0 0 / 18%);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  --background: oklch(0.13 0.008 250);
+  --foreground: oklch(0.93 0.005 250);
+  --card: oklch(0.16 0.008 250);
+  --card-foreground: oklch(0.93 0.005 250);
+  --popover: oklch(0.19 0.01 250);
+  --popover-foreground: oklch(0.93 0.005 250);
+  --primary: oklch(0.65 0.19 262);
+  --primary-foreground: oklch(0.14 0.02 262);
+  --secondary: oklch(0.19 0.01 250);
+  --secondary-foreground: oklch(0.93 0.005 250);
+  --muted: oklch(0.17 0.008 250);
+  --muted-foreground: oklch(0.72 0.01 250);
+  --accent: oklch(0.65 0.19 262 / 12%);
+  --accent-foreground: oklch(0.72 0.17 262);
+  --destructive: oklch(0.68 0.19 25);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.65 0.19 262);
+
+  --brand: oklch(0.65 0.19 262);
+  --brand-strong: oklch(0.72 0.17 262);
+  --brand-subtle: oklch(0.65 0.19 262 / 12%);
+  --brand-fg: oklch(0.14 0.02 262);
+
+  --success: oklch(0.72 0.15 155);
+  --success-subtle: oklch(0.72 0.15 155 / 12%);
+  --warning: oklch(0.78 0.14 80);
+  --warning-subtle: oklch(0.78 0.14 80 / 12%);
+  --danger: oklch(0.68 0.19 25);
+  --danger-subtle: oklch(0.68 0.19 25 / 12%);
+  --info: oklch(0.7 0.13 230);
+  --info-subtle: oklch(0.7 0.13 230 / 12%);
+
+  --surface-base: oklch(0.13 0.008 250);
+  --surface-raised: oklch(0.16 0.008 250);
+  --surface-overlay: oklch(0.19 0.01 250);
+  --surface-inset: oklch(0.11 0.008 250);
+  --fg-primary: oklch(0.93 0.005 250);
+  --fg-secondary: oklch(0.72 0.01 250);
+  --fg-tertiary: oklch(0.55 0.01 250);
+  --line-default: oklch(1 0 0 / 8%);
+  --line-strong: oklch(1 0 0 / 14%);
+
+  --chart-1: oklch(0.65 0.19 262);
+  --chart-2: oklch(0.7 0.14 195);
+  --chart-3: oklch(0.75 0.14 80);
+  --chart-4: oklch(0.68 0.17 330);
+  --chart-5: oklch(0.72 0.15 155);
+  --chart-6: oklch(0.65 0.15 30);
+
+  --elev-sm: 0 1px 2px oklch(0 0 0 / 20%);
+  --elev-md: 0 4px 12px oklch(0 0 0 / 30%);
+  --elev-lg: 0 8px 30px oklch(0 0 0 / 40%);
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* radii */
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+
+  /* shadcn colors */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -76,13 +163,162 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* Spectra brand + semantic */
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-subtle: var(--brand-subtle);
+  --color-brand-fg: var(--brand-fg);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+
+  /* Spectra surfaces / text / lines */
+  --color-surface-base: var(--surface-base);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-surface-inset: var(--surface-inset);
+  --color-fg-primary: var(--fg-primary);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-tertiary: var(--fg-tertiary);
+  --color-line: var(--line-default);
+  --color-line-strong: var(--line-strong);
+
+  /* charts */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+
+  /* typography */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Fira Code", monospace;
+  --text-xs: 0.6875rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.78125rem;
+  --text-sm--line-height: 1.125rem;
+  --text-md: 0.84375rem;
+  --text-md--line-height: 1.25rem;
+  --text-lg: 0.9375rem;
+  --text-lg--line-height: 1.375rem;
+  --text-xl: 1.125rem;
+  --text-xl--line-height: 1.625rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+
+  /* elevation */
+  --shadow-sm: var(--elev-sm);
+  --shadow-md: var(--elev-md);
+  --shadow-lg: var(--elev-lg);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
+    font-size: var(--text-md);
+    line-height: var(--text-md--line-height);
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    background: var(--brand-subtle);
+    color: var(--fg-primary);
+  }
+
+  /* Quiet scrollbars that follow the theme */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Numeric alignment for data-dense cells */
+  .tnum {
+    font-feature-settings: "tnum";
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Skeleton shimmer (DESIGN.md §10) */
+@keyframes spectra-shimmer {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Toast entrance (DESIGN.md §7 — spring-like overshoot) */
+@keyframes spectra-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Peek / slide-over entrance */
+@keyframes spectra-slide-in-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Mobile drawer entrance (from the left) */
+@keyframes spectra-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

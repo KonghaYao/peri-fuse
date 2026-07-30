@@ -21,6 +21,33 @@ function findProjectRoot(): string {
 }
 
 /**
+ * Enable WAL journal mode on the SQLite database.
+ *
+ * Prisma's connection pool keeps multiple connections open. In the default
+ * rollback-journal mode a reader holding a shared lock blocks any writer on a
+ * separate connection, which deadlocks writes (e.g. API-key creation) while
+ * reads still succeed. WAL allows concurrent readers and a single writer, so
+ * enabling it removes that self-deadlock. journal_mode is persisted in the
+ * database file header, so this only flips it once.
+ */
+function ensureWalMode(dbPath: string): void {
+  if (!fs.existsSync(dbPath)) return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Database = require("better-sqlite3");
+    const db = new Database(dbPath);
+    const row = db.prepare("PRAGMA journal_mode").get() as { journal_mode: string } | undefined;
+    if (row?.journal_mode?.toLowerCase() !== "wal") {
+      db.prepare("PRAGMA journal_mode = WAL").run();
+      logger.info("[db-init] Enabled WAL journal mode on the Prisma database.");
+    }
+    db.close();
+  } catch (error) {
+    logger.warn(`[db-init] Could not ensure WAL mode: ${String(error)}`);
+  }
+}
+
+/**
  * Returns true if the Prisma database already has tables (i.e. schema was pushed).
  */
 function isDbInitialized(dbPath: string): boolean {
@@ -53,6 +80,9 @@ export function ensurePrismaSchema(): void {
 
   const dbPath = dbUrl.slice("file:".length);
   const absDbPath = path.isAbsolute(dbPath) ? dbPath : path.resolve(process.cwd(), dbPath);
+
+  // Must run before Prisma opens its pool — see ensureWalMode for rationale.
+  ensureWalMode(absDbPath);
 
   if (isDbInitialized(absDbPath)) {
     return;

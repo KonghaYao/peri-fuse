@@ -136,12 +136,13 @@ app.get("/api/public/sessions", authMiddleware, async (c) => {
     const filters: string[] = [];
     const params: Record<string, unknown> = { projectId };
     if (userId) {
-      filters.push("t.user_id = @userId");
-      params.userId = userId;
+      // Substring match — the UI commits free text from a search box.
+      filters.push("t.user_id LIKE @userId");
+      params.userId = `%${userId}%`;
     }
     if (environment) {
-      filters.push("t.environment = @environment");
-      params.environment = environment;
+      filters.push("t.environment LIKE @environment");
+      params.environment = `%${environment}%`;
     }
     const filterSql = filters.length > 0 ? `AND ${filters.join(" AND ")}` : "";
 

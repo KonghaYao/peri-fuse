@@ -43,6 +43,7 @@ const secureScoreFilterOptions = [
     clickhouseSelect: "name",
     clickhouseTable: "scores",
     filterType: "StringFilter",
+    operator: "contains",
     clickhousePrefix: "s",
   },
   {

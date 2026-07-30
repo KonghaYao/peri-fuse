@@ -19,6 +19,7 @@ import otelRoutes from "./routes/otel";
 import scoresRoutes from "./routes/scores";
 import sessionsRoutes from "./routes/sessions";
 import tracesRoutes from "./routes/traces";
+import usersRoutes from "./routes/users";
 
 export function createApp(): Hono<LiteServerEnv> {
   const app = new Hono<LiteServerEnv>();
@@ -69,6 +70,7 @@ export function createApp(): Hono<LiteServerEnv> {
   app.route("/", observationsRoutes);
   app.route("/", scoresRoutes);
   app.route("/", sessionsRoutes);
+  app.route("/", usersRoutes);
   app.route("/", dashboardRoutes);
 
   // Serve the web SPA build (packages/web/dist) when present. In

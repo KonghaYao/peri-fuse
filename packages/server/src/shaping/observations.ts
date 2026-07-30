@@ -98,7 +98,9 @@ export const transformDbToApiObservation = (
 
   const promptTokens = reducedUsageDetails.input ?? 0;
   const completionTokens = reducedUsageDetails.output ?? 0;
-  const totalTokens = reducedUsageDetails.total ?? 0;
+  // Fall back to input+output when `total` was not provided, matching the
+  // aggregation used by trace-metrics so the two endpoints agree.
+  const totalTokens = reducedUsageDetails.total ?? promptTokens + completionTokens;
 
   const {
     providedUsageDetails,
