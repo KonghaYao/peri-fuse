@@ -55,9 +55,6 @@ const GatewayModelsPage = lazy(() =>
     default: m.GatewayModelsPage,
   })),
 );
-const GatewayKeysPage = lazy(() =>
-  import("@/features/gateway/gateway-keys-page").then((m) => ({ default: m.GatewayKeysPage })),
-);
 const GatewayUsagePage = lazy(() =>
   import("@/features/gateway/gateway-usage-page").then((m) => ({ default: m.GatewayUsagePage })),
 );
@@ -229,14 +226,6 @@ export default function App() {
             element={
               <Suspense fallback={<PageFallback />}>
                 <GatewayModelsPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="gateway/keys"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <GatewayKeysPage />
               </Suspense>
             }
           />

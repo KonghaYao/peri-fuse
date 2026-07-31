@@ -11,7 +11,6 @@ import {
   Boxes,
   Database,
   Gauge,
-  KeyRound,
   LayoutDashboard,
   ListTree,
   Menu,
@@ -52,7 +51,6 @@ const gatewayNavItems = [
   { to: "/gateway", label: "Overview", icon: LayoutDashboard },
   { to: "/gateway/providers", label: "Providers", icon: Server },
   { to: "/gateway/models", label: "Models", icon: Boxes },
-  { to: "/gateway/keys", label: "Keys", icon: KeyRound },
   { to: "/gateway/usage", label: "Usage", icon: BarChart3 },
   { to: "/gateway/logs", label: "Logs", icon: ScrollText },
 ];

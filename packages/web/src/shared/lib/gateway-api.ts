@@ -83,25 +83,6 @@ export interface ModelDeployment {
   };
 }
 
-export interface GatewayApiKey {
-  id: string;
-  publicKey: string;
-  keyName: string | null;
-  models: string[];
-  metadata: Record<string, unknown>;
-  spend: number;
-  maxParallel: number | null;
-  tpmLimit: number | null;
-  rpmLimit: number | null;
-  maxBudget: number | null;
-  budgetId: string | null;
-  isEnabled: boolean;
-  lastActive: string | null;
-  createdAt: string;
-  updatedAt: string;
-  budget: { id: string; maxBudget: number | null } | null;
-}
-
 export interface UsageSummary {
   totalSpend: number;
   totalPromptTokens: number;
@@ -265,48 +246,6 @@ export function gwUpdateModel(
 
 export function gwDeleteModel(id: string): Promise<{ success: boolean }> {
   return gatewayRequest(`/models/${encodeURIComponent(id)}`, { method: "DELETE" });
-}
-
-// ---------------------------------------------------------------------------
-// Keys
-// ---------------------------------------------------------------------------
-
-export function gwListKeys(): Promise<{ data: GatewayApiKey[] }> {
-  return gatewayRequest("/keys");
-}
-
-export function gwCreateKey(body: {
-  publicKey: string;
-  keyName?: string;
-  models?: string[];
-  maxParallel?: number | null;
-  tpmLimit?: number | null;
-  rpmLimit?: number | null;
-  maxBudget?: number | null;
-}): Promise<GatewayApiKey> {
-  return gatewayRequest("/keys", { method: "POST", body: JSON.stringify(body) });
-}
-
-export function gwUpdateKey(
-  id: string,
-  body: Partial<{
-    keyName: string;
-    models: string[];
-    maxParallel: number | null;
-    tpmLimit: number | null;
-    rpmLimit: number | null;
-    maxBudget: number | null;
-    isEnabled: boolean;
-  }>,
-): Promise<GatewayApiKey> {
-  return gatewayRequest(`/keys/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
-}
-
-export function gwDeleteKey(id: string): Promise<{ success: boolean }> {
-  return gatewayRequest(`/keys/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------

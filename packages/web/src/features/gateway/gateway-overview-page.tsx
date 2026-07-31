@@ -1,13 +1,12 @@
 /**
  * Gateway Overview — stat cards + provider status list.
  */
-import { Boxes, DollarSign, KeyRound, Server, Zap } from "lucide-react";
+import { Boxes, DollarSign, Server, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { StatusBadge } from "@/features/gateway/components/status-badge";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import {
-  useGwKeysQuery,
   useGwProvidersQuery,
   useGwUsageSummaryQuery,
 } from "@/shared/hooks/gateway-queries";
@@ -51,7 +50,6 @@ function StatCard({
 function OverviewContent() {
   const { startDate, endDate } = last7Days();
   const providersQuery = useGwProvidersQuery();
-  const keysQuery = useGwKeysQuery();
   const usageQuery = useGwUsageSummaryQuery({ startDate, endDate });
 
   if (providersQuery.isLoading) {
@@ -63,10 +61,8 @@ function OverviewContent() {
   }
 
   const providers = providersQuery.data ?? [];
-  const keys = keysQuery.data ?? [];
   const usage = usageQuery.data;
   const activeProviders = providers.filter((p) => p.isEnabled).length;
-  const activeKeys = keys.filter((k) => k.isEnabled).length;
 
   return (
     <div className="space-y-6 p-6">
@@ -83,7 +79,6 @@ function OverviewContent() {
           icon={Zap}
         />
         <StatCard label="Active Providers" value={String(activeProviders)} icon={Server} />
-        <StatCard label="Active Keys" value={String(activeKeys)} icon={KeyRound} />
       </div>
 
       {/* Provider status */}
@@ -143,7 +138,6 @@ function OverviewContent() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               { to: "/gateway/models", label: "Models" },
-              { to: "/gateway/keys", label: "API Keys" },
               { to: "/gateway/usage", label: "Usage" },
               { to: "/gateway/logs", label: "Logs" },
             ].map((link) => (

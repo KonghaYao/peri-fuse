@@ -5,18 +5,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   gwAuditLogs,
-  gwCreateKey,
   gwCreateModel,
   gwCreateProvider,
-  gwDeleteKey,
   gwDeleteModel,
   gwDeleteProvider,
   gwErrorLogs,
-  gwListKeys,
   gwListModels,
   gwListProviders,
   gwRequestLogs,
-  gwUpdateKey,
   gwUpdateModel,
   gwUpdateProvider,
   gwUsageByModel,
@@ -32,7 +28,6 @@ import {
 export const gwQueryKeys = {
   providers: ["gw-providers"] as const,
   models: ["gw-models"] as const,
-  keys: ["gw-keys"] as const,
   usageSummary: (params: Record<string, string>) => ["gw-usage-summary", params] as const,
   usageDaily: (params: Record<string, string | number>) => ["gw-usage-daily", params] as const,
   usageByModel: (params: Record<string, string>) => ["gw-usage-by-model", params] as const,
@@ -111,42 +106,6 @@ export function useGwDeleteModelMutation() {
   return useMutation({
     mutationFn: gwDeleteModel,
     onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.models }),
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Keys
-// ---------------------------------------------------------------------------
-
-export function useGwKeysQuery() {
-  return useQuery({
-    queryKey: gwQueryKeys.keys,
-    queryFn: () => gwListKeys().then((r) => r.data),
-  });
-}
-
-export function useGwCreateKeyMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: gwCreateKey,
-    onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.keys }),
-  });
-}
-
-export function useGwUpdateKeyMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Parameters<typeof gwUpdateKey>[1] }) =>
-      gwUpdateKey(id, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.keys }),
-  });
-}
-
-export function useGwDeleteKeyMutation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: gwDeleteKey,
-    onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.keys }),
   });
 }
 
