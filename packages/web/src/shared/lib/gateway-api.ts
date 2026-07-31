@@ -55,11 +55,10 @@ export interface GatewayProvider {
   isEnabled: boolean;
   status: string;
   cooldownUntil: string | null;
-  consecutiveFailures: number;
   budgetLimit: number | null;
   budgetPeriod: string | null;
+  budgetSpend: number;
   budgetResetAt: string | null;
-  spend: number;
   deploymentCount: number;
   createdAt: string;
   updatedAt: string;

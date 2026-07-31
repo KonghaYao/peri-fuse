@@ -127,7 +127,7 @@ function ProvidersContent() {
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-fg-secondary">
-                      ${p.spend.toFixed(4)}
+                      ${p.budgetSpend.toFixed(4)}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
