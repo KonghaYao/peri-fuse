@@ -1,0 +1,209 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("GATEWAY_DB_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+// ═══════════════════════════════════════════
+// 凭证 & Provider
+// ═══════════════════════════════════════════
+
+// 命名凭证（借鉴 LiteLLM_CredentialsTable）
+// 一个凭证可被多个 Provider 复用
+model Credential {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  values    String // JSON: { apiKey, baseUrl, ... } 加密存储
+  info      String? // JSON: 备注信息
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 模型提供商
+model Provider {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  type            String // "openai" | "anthropic" | "google" | "custom"
+  credentialId    String?
+  baseUrl         String
+  apiKeyEncrypted String? // 加密的 API key（无 credential 时）
+  isEnabled       Boolean  @default(true)
+  // 预算限制（借鉴 RouterBudgetLimiting）
+  budgetLimit     Float?
+  budgetPeriod    String? // "1d" | "7d" | "30d"
+  budgetSpend     Float    @default(0)
+  budgetResetAt   DateTime?
+  // 健康状态
+  status          String   @default("healthy") // "healthy" | "cooldown" | "disabled"
+  cooldownUntil   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deployments     ModelDeployment[]
+}
+
+// 模型部署（借鉴 LiteLLM_ProxyModelTable）
+// 一个 modelName 可以有多个 deployment（不同 provider）
+model ModelDeployment {
+  id            String   @id @default(cuid())
+  modelName     String // 对外暴露的模型名 "gpt-4o", "claude-sonnet"
+  providerId    String
+  providerModel String // Provider 侧真实模型名
+  litellmParams String   @default("{}") // JSON: { weight, rpm, tpm, timeout, ... }
+  modelInfo     String? // JSON: { maxTokens, inputPrice, outputPrice, ... }
+  isEnabled     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  provider      Provider @relation(fields: [providerId], references: [id])
+
+  @@index([modelName, isEnabled])
+}
+
+// ═══════════════════════════════════════════
+// 预算（借鉴 LiteLLM_BudgetTable）
+// ═══════════════════════════════════════════
+
+model Budget {
+  id             String    @id @default(cuid())
+  maxBudget      Float?
+  softBudget     Float?
+  maxParallel    Int?
+  tpmLimit       Int?
+  rpmLimit       Int?
+  duration       String? // "1d" | "30d" | null=永久
+  resetAt        DateTime?
+  modelMaxBudget String? // JSON: { "gpt-4o": 10.0, ... }
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  keys           ApiKey[]
+}
+
+// ═══════════════════════════════════════════
+// API Key 配置（关联共享 DB 的 publicKey）
+// 鉴权由 server 端统一管理，此表仅存储网关侧限流/预算配置
+// ═══════════════════════════════════════════
+
+model ApiKey {
+  id          String    @id @default(cuid())
+  publicKey   String    @unique // 关联共享 DB api_keys.public_key
+  keyName     String?
+  spend       Float     @default(0)
+  models      String    @default("[]") // JSON array, "[]" = 全部
+  metadata    String    @default("{}")
+  // 限流（可覆盖 Budget 的设置）
+  maxParallel Int?
+  tpmLimit    Int?
+  rpmLimit    Int?
+  maxBudget   Float?
+  budgetId    String?
+  budget      Budget?   @relation(fields: [budgetId], references: [id])
+  // 状态
+  isEnabled   Boolean   @default(true)
+  lastActive  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([publicKey])
+}
+
+// ═══════════════════════════════════════════
+// 日志（借鉴 LiteLLM_SpendLogs）
+// ═══════════════════════════════════════════
+
+model SpendLog {
+  id                  String    @id @default(cuid())
+  callType            String // "chat" | "messages" | "embeddings"
+  apiKey              String    @default("")
+  spend               Float     @default(0)
+  totalTokens         Int       @default(0)
+  promptTokens        Int       @default(0)
+  completionTokens    Int       @default(0)
+  startTime           DateTime
+  endTime             DateTime
+  completionStartTime DateTime? // TTFT
+  requestDurationMs   Int?
+  model               String    @default("")
+  modelId             String?
+  modelGroup          String?
+  provider            String?
+  apiBase             String?
+  protocol            String? // "openai" | "anthropic"
+  user                String?
+  metadata            String    @default("{}")
+  requestTags         String    @default("[]")
+  sessionId           String?
+  status              String? // "success" | "failure"
+  messages            String? // JSON
+  response            String? // JSON
+  errorMessage        String?
+  traceId             String?
+
+  @@index([startTime])
+  @@index([apiKey, startTime])
+  @@index([model, startTime])
+  @@index([sessionId])
+}
+
+// 错误日志（借鉴 LiteLLM_ErrorLogs）
+model ErrorLog {
+  id              String   @id @default(cuid())
+  startTime       DateTime
+  endTime         DateTime
+  apiBase         String   @default("")
+  modelGroup      String   @default("")
+  providerModel   String   @default("")
+  modelId         String   @default("")
+  requestKwargs   String   @default("{}")
+  exceptionType   String   @default("")
+  exceptionString String   @default("")
+  statusCode      String   @default("")
+
+  @@index([startTime])
+}
+
+// ═══════════════════════════════════════════
+// 用量聚合（借鉴 LiteLLM_DailyUserSpend 等）
+// ═══════════════════════════════════════════
+
+model DailySpend {
+  id                 String   @id @default(cuid())
+  apiKey             String
+  date               String // "2026-07-30"
+  model              String?
+  modelGroup         String?
+  provider           String?
+  promptTokens       Int      @default(0)
+  completionTokens   Int      @default(0)
+  spend              Float    @default(0)
+  apiRequests        Int      @default(0)
+  successfulRequests Int      @default(0)
+  failedRequests     Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([apiKey, date, model, provider])
+  @@index([date])
+  @@index([apiKey, date])
+  @@index([model])
+}
+
+// ═══════════════════════════════════════════
+// 审计（借鉴 LiteLLM_AuditLog）
+// ═══════════════════════════════════════════
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String // "create" | "update" | "delete"
+  tableName   String // "Provider" | "ApiKey" | "ModelDeployment" | ...
+  objectId    String
+  beforeValue String? // JSON
+  afterValue  String? // JSON
+  changedBy   String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@index([tableName, objectId])
+  @@index([createdAt])
+}

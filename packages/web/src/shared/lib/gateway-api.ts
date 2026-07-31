@@ -1,0 +1,409 @@
+/**
+ * Typed REST client for the PeriGateway Admin API.
+ *
+ * All requests go through the Vite dev proxy at `/gateway-api/*` which
+ * rewrites to `http://localhost:4100/admin/*`. Auth is via `x-admin-key`.
+ */
+
+import { ApiError } from "./api";
+
+const ADMIN_KEY_STORAGE = "peri-gateway-admin-key";
+
+export function getGatewayAdminKey(): string {
+  try {
+    return localStorage.getItem(ADMIN_KEY_STORAGE) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function setGatewayAdminKey(key: string): void {
+  try {
+    localStorage.setItem(ADMIN_KEY_STORAGE, key);
+  } catch {
+    // ignore
+  }
+}
+
+export function clearGatewayAdminKey(): void {
+  try {
+    localStorage.removeItem(ADMIN_KEY_STORAGE);
+  } catch {
+    // ignore
+  }
+}
+
+async function gatewayRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const adminKey = getGatewayAdminKey();
+  if (!adminKey) throw new ApiError(0, "No gateway admin key configured");
+
+  let res: Response;
+  try {
+    res = await fetch(`/gateway-api${path}`, {
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-key": adminKey,
+      },
+      ...init,
+    });
+  } catch (err) {
+    throw new ApiError(0, `Network error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const body = (await res.json()) as { error?: { message?: string }; message?: string };
+      message = body.error?.message ?? body.message ?? message;
+    } catch {
+      // non-JSON error body
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  return (await res.json()) as T;
+}
+
+function toQueryString(params: Record<string, unknown>): string {
+  const sp = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    sp.set(key, String(value));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : "";
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface GatewayProvider {
+  id: string;
+  name: string;
+  type: string;
+  baseUrl: string;
+  isEnabled: boolean;
+  status: string;
+  cooldownUntil: string | null;
+  consecutiveFailures: number;
+  budgetLimit: number | null;
+  budgetPeriod: string | null;
+  budgetResetAt: string | null;
+  spend: number;
+  deploymentCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModelDeployment {
+  id: string;
+  modelName: string;
+  providerId: string;
+  providerModel: string;
+  litellmParams: Record<string, unknown>;
+  modelInfo: { inputPrice?: number; outputPrice?: number } | null;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  provider: {
+    id: string;
+    name: string;
+    type: string;
+    isEnabled: boolean;
+    status: string;
+  };
+}
+
+export interface GatewayApiKey {
+  id: string;
+  publicKey: string;
+  keyName: string | null;
+  models: string[];
+  metadata: Record<string, unknown>;
+  spend: number;
+  maxParallel: number | null;
+  tpmLimit: number | null;
+  rpmLimit: number | null;
+  maxBudget: number | null;
+  budgetId: string | null;
+  isEnabled: boolean;
+  lastActive: string | null;
+  createdAt: string;
+  updatedAt: string;
+  budget: { id: string; maxBudget: number | null } | null;
+}
+
+export interface UsageSummary {
+  totalSpend: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
+}
+
+export interface DailySpendRow {
+  id: string;
+  date: string;
+  apiKey: string;
+  model: string;
+  modelGroup: string | null;
+  provider: string;
+  spend: number;
+  promptTokens: number;
+  completionTokens: number;
+  apiRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
+}
+
+export interface UsageByModelRow {
+  model: string;
+  modelGroup: string | null;
+  totalSpend: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalRequests: number;
+}
+
+export interface UsageByProviderRow {
+  provider: string;
+  totalSpend: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalRequests: number;
+}
+
+export interface RequestLog {
+  id: string;
+  callType: string;
+  apiKey: string;
+  model: string;
+  modelGroup: string | null;
+  provider: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  spend: number;
+  status: string;
+  startTime: string;
+  endTime: string | null;
+  ttftMs: number | null;
+  metadata: Record<string, unknown>;
+  requestTags: string[];
+  messages: unknown;
+  response: unknown;
+  sessionId: string | null;
+}
+
+export interface ErrorLog {
+  id: string;
+  modelGroup: string | null;
+  provider: string;
+  exceptionType: string;
+  exceptionMessage: string;
+  requestKwargs: Record<string, unknown>;
+  startTime: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  tableName: string;
+  objectId: string;
+  beforeValue: string | null;
+  afterValue: string | null;
+  changedBy: string;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Providers
+// ---------------------------------------------------------------------------
+
+export function gwListProviders(): Promise<{ data: GatewayProvider[] }> {
+  return gatewayRequest("/providers");
+}
+
+export function gwCreateProvider(body: {
+  name: string;
+  type: string;
+  baseUrl: string;
+  apiKey?: string;
+  isEnabled?: boolean;
+  budgetLimit?: number | null;
+  budgetPeriod?: string | null;
+}): Promise<GatewayProvider> {
+  return gatewayRequest("/providers", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function gwUpdateProvider(
+  id: string,
+  body: Partial<{
+    name: string;
+    type: string;
+    baseUrl: string;
+    apiKey: string;
+    isEnabled: boolean;
+    status: string;
+    budgetLimit: number | null;
+    budgetPeriod: string | null;
+  }>,
+): Promise<GatewayProvider> {
+  return gatewayRequest(`/providers/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function gwDeleteProvider(id: string): Promise<{ success: boolean }> {
+  return gatewayRequest(`/providers/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+export function gwListModels(): Promise<{ data: ModelDeployment[] }> {
+  return gatewayRequest("/models");
+}
+
+export function gwCreateModel(body: {
+  modelName: string;
+  providerId: string;
+  providerModel: string;
+  modelInfo?: { inputPrice?: number; outputPrice?: number } | null;
+  isEnabled?: boolean;
+}): Promise<ModelDeployment> {
+  return gatewayRequest("/models", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function gwUpdateModel(
+  id: string,
+  body: Partial<{
+    modelName: string;
+    providerModel: string;
+    providerId: string;
+    modelInfo: { inputPrice?: number; outputPrice?: number } | null;
+    isEnabled: boolean;
+  }>,
+): Promise<ModelDeployment> {
+  return gatewayRequest(`/models/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function gwDeleteModel(id: string): Promise<{ success: boolean }> {
+  return gatewayRequest(`/models/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Keys
+// ---------------------------------------------------------------------------
+
+export function gwListKeys(): Promise<{ data: GatewayApiKey[] }> {
+  return gatewayRequest("/keys");
+}
+
+export function gwCreateKey(body: {
+  publicKey: string;
+  keyName?: string;
+  models?: string[];
+  maxParallel?: number | null;
+  tpmLimit?: number | null;
+  rpmLimit?: number | null;
+  maxBudget?: number | null;
+}): Promise<GatewayApiKey> {
+  return gatewayRequest("/keys", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function gwUpdateKey(
+  id: string,
+  body: Partial<{
+    keyName: string;
+    models: string[];
+    maxParallel: number | null;
+    tpmLimit: number | null;
+    rpmLimit: number | null;
+    maxBudget: number | null;
+    isEnabled: boolean;
+  }>,
+): Promise<GatewayApiKey> {
+  return gatewayRequest(`/keys/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function gwDeleteKey(id: string): Promise<{ success: boolean }> {
+  return gatewayRequest(`/keys/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Usage
+// ---------------------------------------------------------------------------
+
+export function gwUsageSummary(params: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<UsageSummary> {
+  return gatewayRequest(`/usage/summary${toQueryString(params)}`);
+}
+
+export function gwUsageDaily(params: {
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+}): Promise<{ data: DailySpendRow[] }> {
+  return gatewayRequest(`/usage/daily${toQueryString(params)}`);
+}
+
+export function gwUsageByModel(params: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ data: UsageByModelRow[] }> {
+  return gatewayRequest(`/usage/by-model${toQueryString(params)}`);
+}
+
+export function gwUsageByProvider(params: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ data: UsageByProviderRow[] }> {
+  return gatewayRequest(`/usage/by-provider${toQueryString(params)}`);
+}
+
+// ---------------------------------------------------------------------------
+// Logs
+// ---------------------------------------------------------------------------
+
+export function gwRequestLogs(params: {
+  model?: string;
+  provider?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: RequestLog[]; total: number }> {
+  return gatewayRequest(`/logs/requests${toQueryString(params)}`);
+}
+
+export function gwErrorLogs(params: {
+  modelGroup?: string;
+  exceptionType?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ data: ErrorLog[]; total: number }> {
+  return gatewayRequest(`/logs/errors${toQueryString(params)}`);
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+export function gwAuditLogs(params: {
+  tableName?: string;
+  limit?: number;
+}): Promise<{ data: AuditLogEntry[] }> {
+  return gatewayRequest(`/audit${toQueryString(params)}`);
+}

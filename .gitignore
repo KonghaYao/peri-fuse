@@ -44,3 +44,6 @@ Thumbs.db
 # Prisma
 packages/shared/prisma/*.db
 packages/shared/prisma/*.db-journal
+packages/gateway/src/generated/
+
+.peri

@@ -40,6 +40,30 @@ const SettingsPage = lazy(() =>
 const OnboardingPage = lazy(() =>
   import("@/features/onboarding/onboarding-page").then((m) => ({ default: m.OnboardingPage })),
 );
+const GatewayOverviewPage = lazy(() =>
+  import("@/features/gateway/gateway-overview-page").then((m) => ({
+    default: m.GatewayOverviewPage,
+  })),
+);
+const GatewayProvidersPage = lazy(() =>
+  import("@/features/gateway/gateway-providers-page").then((m) => ({
+    default: m.GatewayProvidersPage,
+  })),
+);
+const GatewayModelsPage = lazy(() =>
+  import("@/features/gateway/gateway-models-page").then((m) => ({
+    default: m.GatewayModelsPage,
+  })),
+);
+const GatewayKeysPage = lazy(() =>
+  import("@/features/gateway/gateway-keys-page").then((m) => ({ default: m.GatewayKeysPage })),
+);
+const GatewayUsagePage = lazy(() =>
+  import("@/features/gateway/gateway-usage-page").then((m) => ({ default: m.GatewayUsagePage })),
+);
+const GatewayLogsPage = lazy(() =>
+  import("@/features/gateway/gateway-logs-page").then((m) => ({ default: m.GatewayLogsPage })),
+);
 
 /**
  * Route-level suspense fallback: a page-shaped skeleton instead of a spinner.
@@ -181,6 +205,55 @@ export default function App() {
                   <SettingsPage />
                 </Suspense>
               </RequireProject>
+            }
+          />
+          {/* Gateway pages — independent of project context */}
+          <Route
+            path="gateway"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <GatewayOverviewPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="gateway/providers"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <GatewayProvidersPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="gateway/models"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <GatewayModelsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="gateway/keys"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <GatewayKeysPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="gateway/usage"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <GatewayUsagePage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="gateway/logs"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <GatewayLogsPage />
+              </Suspense>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />

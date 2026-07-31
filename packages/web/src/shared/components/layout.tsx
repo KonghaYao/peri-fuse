@@ -7,14 +7,20 @@
  */
 import {
   Activity,
+  BarChart3,
+  Boxes,
   Database,
   Gauge,
+  KeyRound,
+  LayoutDashboard,
   ListTree,
   Menu,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  ScrollText,
   Search,
+  Server,
   Settings as SettingsIcon,
   Star,
   Sun,
@@ -40,6 +46,15 @@ const navItems = [
   { to: "/users", label: "Users", icon: UserRound },
   { to: "/observations", label: "Observations", icon: Activity },
   { to: "/scores", label: "Scores", icon: Star },
+];
+
+const gatewayNavItems = [
+  { to: "/gateway", label: "Overview", icon: LayoutDashboard },
+  { to: "/gateway/providers", label: "Providers", icon: Server },
+  { to: "/gateway/models", label: "Models", icon: Boxes },
+  { to: "/gateway/keys", label: "Keys", icon: KeyRound },
+  { to: "/gateway/usage", label: "Usage", icon: BarChart3 },
+  { to: "/gateway/logs", label: "Logs", icon: ScrollText },
 ];
 
 function useSidebarCollapsed() {
@@ -177,18 +192,29 @@ function SidebarContent({
       )}
 
       {/* Navigation */}
-      {active && (
-        <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-          {!collapsed && (
-            <p className="px-3 pb-1 pt-1 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-              Observability
-            </p>
-          )}
-          {navItems.map((item) => (
-            <NavItem key={item.to} {...item} collapsed={collapsed} onNavigate={onNavigate} />
-          ))}
-        </nav>
-      )}
+      <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
+        {active && (
+          <>
+            {!collapsed && (
+              <p className="px-3 pb-1 pt-1 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
+                Observability
+              </p>
+            )}
+            {navItems.map((item) => (
+              <NavItem key={item.to} {...item} collapsed={collapsed} onNavigate={onNavigate} />
+            ))}
+          </>
+        )}
+        {!collapsed && (
+          <p className="px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
+            Gateway
+          </p>
+        )}
+        {collapsed && <div className="my-2 border-t border-border" />}
+        {gatewayNavItems.map((item) => (
+          <NavItem key={item.to} {...item} collapsed={collapsed} onNavigate={onNavigate} />
+        ))}
+      </nav>
 
       {/* Bottom: settings / theme / collapse */}
       <div className="shrink-0 space-y-0.5 border-t border-border p-2">
