@@ -13,7 +13,7 @@
     "build": "tsc",
     "build:check": "tsc",
     "typecheck": "tsc --noEmit --skipLibCheck",
-    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "dev": "tsx watch --clear-screen=false --ignore '../web/**' --ignore '../../node_modules/.vite/**' src/index.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write ."
   },

@@ -18,18 +18,35 @@ ensurePrismaSchema();
 
 const app = createApp();
 
+const server = serve({ fetch: app.fetch, port: liteEnv.port }, (info) => {
+  logger.info(
+    `[lite-server] Peri-Fuse server listening on http://localhost:${info.port} (mode=${process.env.LANGFUSE_MODE})`,
+  );
+});
+
 async function main() {
   // Create default org/project/API key if database is empty
   await ensureBootstrap();
-
-  serve({ fetch: app.fetch, port: liteEnv.port }, (info) => {
-    logger.info(
-      `[lite-server] Peri-Fuse server listening on http://localhost:${info.port} (mode=${process.env.LANGFUSE_MODE})`,
-    );
-  });
 }
 
 main().catch((err) => {
   logger.error("[lite-server] Fatal startup error", err);
   process.exit(1);
 });
+
+// Graceful shutdown — close HTTP server and Prisma connections so tsx watch can restart cleanly
+async function shutdown() {
+  server.close();
+  try {
+    const { prisma } = await import("@peri-fuse/shared/src/db");
+    await prisma.$disconnect();
+  } catch { /* ignore */ }
+  try {
+    // @ts-expect-error -- runtime import, TS can't resolve gateway internal path
+    const { getDb } = await import("@peri/gateway/src/db");
+    await getDb().$disconnect();
+  } catch { /* ignore */ }
+  process.exit(0);
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
