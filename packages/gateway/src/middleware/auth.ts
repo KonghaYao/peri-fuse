@@ -1,10 +1,10 @@
 /**
  * Authentication middleware for PeriGateway.
  *
- * Proxy auth uses the SAME mechanism as the Peri-Fuse server:
- *   Authorization: Basic <base64(publicKey:secretKey)>
- * Verification is done against the shared database (api_keys table),
- * using SHA-256 fast path + bcrypt slow path — identical to server/src/auth.ts.
+ * Proxy auth uses ONLY the secret key (sk):
+ *   Authorization: Bearer <secretKey>
+ * The secret key is verified against the shared database (api_keys table)
+ * via SHA-256 fast path + bcrypt slow path. No public key required.
  *
  * Admin auth remains a simple static key check (x-admin-key header).
  */
@@ -64,19 +64,13 @@ const authCache = new Map<string, CachedAuth>();
 const AUTH_CACHE_TTL_MS = 30_000;
 
 // ---------------------------------------------------------------------------
-// Basic auth parsing
+// Bearer token (secret key) extraction
 // ---------------------------------------------------------------------------
 
-function extractBasicAuth(header: string | undefined): { publicKey: string; secretKey: string } | null {
-  if (!header?.startsWith("Basic ")) return null;
-  try {
-    const decoded = Buffer.from(header.slice(6), "base64").toString("utf8");
-    const idx = decoded.indexOf(":");
-    if (idx === -1) return null;
-    return { publicKey: decoded.slice(0, idx), secretKey: decoded.slice(idx + 1) };
-  } catch {
-    return null;
-  }
+function extractBearerToken(header: string | undefined): string | null {
+  if (!header?.startsWith("Bearer ")) return null;
+  const token = header.slice(7).trim();
+  return token || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,24 +79,20 @@ function extractBasicAuth(header: string | undefined): { publicKey: string; secr
 
 export async function proxyAuth(c: Context<GatewayEnv>, next: Next): Promise<Response | void> {
   const authHeader = c.req.header("authorization");
-  const creds = extractBasicAuth(authHeader);
+  const secretKey = extractBearerToken(authHeader);
 
-  if (!creds) {
+  if (!secretKey) {
     return c.json(
-      { error: { message: "Missing or invalid Authorization header. Use Basic auth (publicKey:secretKey).", type: "authentication_error" } },
+      { error: { message: "Missing or invalid Authorization header. Use Bearer <secretKey>.", type: "authentication_error" } },
       401,
     );
   }
 
-  const { publicKey, secretKey } = creds;
-
   // Check cache
-  const cacheKey = `${publicKey}:${secretKey}`;
-  const cached = authCache.get(cacheKey);
+  const cached = authCache.get(secretKey);
   if (cached && cached.expiresAt > Date.now()) {
     c.set("apiKeyId", cached.publicKey);
     c.set("apiKeyPrefix", cached.publicKey);
-    // Look up gateway config
     const gwConfig = await getGatewayConfig(cached.publicKey);
     c.set("apiKeyRecord", gwConfig);
     return next();
@@ -114,7 +104,7 @@ export async function proxyAuth(c: Context<GatewayEnv>, next: Next): Promise<Res
 
   let apiKey: any = null;
 
-  // Fast path: SHA-256 hash lookup
+  // Fast path: SHA-256 hash lookup (no public key needed)
   if (salt) {
     const fastHash = createShaHash(secretKey, salt);
     apiKey = (await db.$queryRawUnsafe(
@@ -123,33 +113,31 @@ export async function proxyAuth(c: Context<GatewayEnv>, next: Next): Promise<Res
     ) as any[])[0] ?? null;
   }
 
-  // Slow path: bcrypt comparison
+  // Slow path: bcrypt comparison across all keys
   if (!apiKey) {
     const rows: any[] = await db.$queryRawUnsafe(
-      `SELECT id, public_key, hashed_secret_key, project_id, expires_at FROM api_keys WHERE public_key = ? LIMIT 1`,
-      publicKey,
+      `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key, project_id, expires_at FROM api_keys LIMIT 100`,
     );
-    const row = rows[0];
-    if (!row) {
-      return c.json({ error: { message: "Invalid credentials", type: "authentication_error" } }, 401);
+    for (const row of rows) {
+      const isValid = await compare(secretKey, row.hashed_secret_key);
+      if (isValid) {
+        // Backfill fast hash for future requests
+        if (salt && !row.fast_hashed_secret_key) {
+          const shaHash = createShaHash(secretKey, salt);
+          await db.$executeRawUnsafe(
+            `UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`,
+            shaHash,
+            row.id,
+          ).catch(() => {});
+        }
+        apiKey = row;
+        break;
+      }
     }
 
-    const isValid = await compare(secretKey, row.hashed_secret_key);
-    if (!isValid) {
-      return c.json({ error: { message: "Invalid credentials", type: "authentication_error" } }, 401);
+    if (!apiKey) {
+      return c.json({ error: { message: "Invalid secret key", type: "authentication_error" } }, 401);
     }
-
-    // Backfill fast hash for future requests
-    if (salt && !row.fast_hashed_secret_key) {
-      const shaHash = createShaHash(secretKey, salt);
-      await db.$executeRawUnsafe(
-        `UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`,
-        shaHash,
-        row.id,
-      ).catch(() => {});
-    }
-
-    apiKey = row;
   }
 
   // Check expiry
@@ -157,11 +145,11 @@ export async function proxyAuth(c: Context<GatewayEnv>, next: Next): Promise<Res
     return c.json({ error: { message: "API key is expired", type: "authentication_error" } }, 401);
   }
 
-  const resolvedPublicKey = apiKey.public_key ?? apiKey.publicKey ?? publicKey;
+  const resolvedPublicKey = apiKey.public_key ?? apiKey.publicKey;
   const projectId = apiKey.project_id ?? apiKey.projectId ?? null;
 
   // Cache the auth result
-  authCache.set(cacheKey, { publicKey: resolvedPublicKey, projectId, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
+  authCache.set(secretKey, { publicKey: resolvedPublicKey, projectId, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
 
   // Look up gateway-specific config (rate limits, budget)
   const gwConfig = await getGatewayConfig(resolvedPublicKey);

@@ -3,7 +3,7 @@
  *
  * Tests the full proxy flow in-process using app.request() with a real
  * mock LLM backend server for outbound provider calls.
- * Auth uses Basic auth (publicKey:secretKey) verified against a shared DB.
+ * Auth uses Bearer token (secretKey only) verified against a shared DB.
  */
 import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
@@ -79,8 +79,8 @@ let mockServer: ServerType;
 let app: Hono<any>;
 let providerId: string;
 
-function basicAuth(publicKey: string, secretKey: string): string {
-  return `Basic ${Buffer.from(`${publicKey}:${secretKey}`).toString("base64")}`;
+function bearer(secretKey: string): string {
+  return `Bearer ${secretKey}`;
 }
 
 async function adminPost(path: string, body: unknown) {
@@ -102,12 +102,12 @@ async function adminGet(path: string) {
   return { status: res.status, body: await res.json() as any };
 }
 
-async function proxyPost(path: string, body: unknown, publicKey = TEST_PUBLIC_KEY, secretKey = TEST_SECRET_KEY) {
+async function proxyPost(path: string, body: unknown, secretKey = TEST_SECRET_KEY) {
   const res = await app.request(path, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: basicAuth(publicKey, secretKey),
+      Authorization: bearer(secretKey),
     },
     body: JSON.stringify(body),
   });
@@ -240,14 +240,14 @@ describe("auth", () => {
 
   it("rejects invalid credentials", async () => {
     const res = await app.request("/v1/models", {
-      headers: { Authorization: basicAuth("pk-invalid", "sk-invalid") },
+      headers: { Authorization: bearer("sk-invalid") },
     });
     expect(res.status).toBe(401);
   });
 
-  it("accepts valid Basic auth", async () => {
+  it("accepts valid Bearer secret key", async () => {
     const res = await app.request("/v1/models", {
-      headers: { Authorization: basicAuth(TEST_PUBLIC_KEY, TEST_SECRET_KEY) },
+      headers: { Authorization: bearer(TEST_SECRET_KEY) },
     });
     expect(res.status).toBe(200);
   });
@@ -333,7 +333,7 @@ describe("proxy: anthropic messages", () => {
 describe("models", () => {
   it("lists configured models", async () => {
     const res = await app.request("/v1/models", {
-      headers: { Authorization: basicAuth(TEST_PUBLIC_KEY, TEST_SECRET_KEY) },
+      headers: { Authorization: bearer(TEST_SECRET_KEY) },
     });
     const body = await res.json() as any;
     expect(body.object).toBe("list");
@@ -431,20 +431,20 @@ describe("rate limiting", () => {
     const r1 = await proxyPost("/v1/chat/completions", {
       model: "test-model",
       messages: [{ role: "user", content: "1" }],
-    }, "pk-ratelimit", "sk-ratelimit");
+    }, "sk-ratelimit");
     expect(r1.status).toBe(200);
 
     const r2 = await proxyPost("/v1/chat/completions", {
       model: "test-model",
       messages: [{ role: "user", content: "2" }],
-    }, "pk-ratelimit", "sk-ratelimit");
+    }, "sk-ratelimit");
     expect(r2.status).toBe(200);
 
     // Third should be rate limited
     const r3 = await proxyPost("/v1/chat/completions", {
       model: "test-model",
       messages: [{ role: "user", content: "3" }],
-    }, "pk-ratelimit", "sk-ratelimit");
+    }, "sk-ratelimit");
     expect(r3.status).toBe(429);
     const body = await r3.json() as any;
     expect(body.error.message).toContain("Rate limit");
@@ -482,7 +482,7 @@ describe("budget limiting", () => {
     const res = await proxyPost("/v1/chat/completions", {
       model: "test-model",
       messages: [{ role: "user", content: "Hi" }],
-    }, "pk-budget", "sk-budget");
+    }, "sk-budget");
     expect(res.status).toBe(429);
     const body = await res.json() as any;
     expect(body.error.message).toContain("Budget");
