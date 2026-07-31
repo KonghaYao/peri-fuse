@@ -3,7 +3,6 @@
  */
 import { Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { GatewayGuard } from "@/features/gateway/components/gateway-guard";
 import { ProviderDialog } from "@/features/gateway/components/provider-dialog";
 import { StatusBadge } from "@/features/gateway/components/status-badge";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
@@ -223,9 +222,7 @@ export function GatewayProvidersPage() {
     <div className="flex h-full flex-col">
       <PageHeader title="Providers" description="LLM provider connections and health." />
       <div className="flex-1 overflow-y-auto">
-        <GatewayGuard>
-          <ProvidersContent />
-        </GatewayGuard>
+        <ProvidersContent />
       </div>
     </div>
   );

@@ -3,7 +3,6 @@
  */
 import { Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { GatewayGuard } from "@/features/gateway/components/gateway-guard";
 import { KeyDialog } from "@/features/gateway/components/key-dialog";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { toast } from "@/shared/components/toast";
@@ -276,9 +275,7 @@ export function GatewayKeysPage() {
     <div className="flex h-full flex-col">
       <PageHeader title="API Keys" description="Gateway access keys with rate limits and budgets." />
       <div className="flex-1 overflow-y-auto">
-        <GatewayGuard>
-          <KeysContent />
-        </GatewayGuard>
+        <KeysContent />
       </div>
     </div>
   );

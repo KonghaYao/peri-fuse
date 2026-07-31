@@ -3,7 +3,6 @@
  */
 import { Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { GatewayGuard } from "@/features/gateway/components/gateway-guard";
 import { ModelDialog } from "@/features/gateway/components/model-dialog";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { toast } from "@/shared/components/toast";
@@ -192,9 +191,7 @@ export function GatewayModelsPage() {
     <div className="flex h-full flex-col">
       <PageHeader title="Models" description="Model alias → provider deployments." />
       <div className="flex-1 overflow-y-auto">
-        <GatewayGuard>
-          <ModelsContent />
-        </GatewayGuard>
+        <ModelsContent />
       </div>
     </div>
   );

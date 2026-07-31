@@ -2,7 +2,6 @@
  * Gateway Usage statistics page.
  */
 import { useState } from "react";
-import { GatewayGuard } from "@/features/gateway/components/gateway-guard";
 import { ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Input } from "@/shared/components/ui/input";
@@ -227,9 +226,7 @@ export function GatewayUsagePage() {
     <div className="flex h-full flex-col">
       <PageHeader title="Usage" description="Spend and token usage analytics." />
       <div className="flex-1 overflow-y-auto">
-        <GatewayGuard>
-          <UsageContent />
-        </GatewayGuard>
+        <UsageContent />
       </div>
     </div>
   );

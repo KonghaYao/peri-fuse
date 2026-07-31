@@ -3,7 +3,6 @@
  */
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { GatewayGuard } from "@/features/gateway/components/gateway-guard";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { Card, CardContent } from "@/shared/components/ui/card";
 import { Input } from "@/shared/components/ui/input";
@@ -282,9 +281,7 @@ export function GatewayLogsPage() {
     <div className="flex h-full flex-col">
       <PageHeader title="Logs" description="Request and error logs from the gateway proxy." />
       <div className="flex-1 overflow-y-auto">
-        <GatewayGuard>
-          <LogsContent />
-        </GatewayGuard>
+        <LogsContent />
       </div>
     </div>
   );

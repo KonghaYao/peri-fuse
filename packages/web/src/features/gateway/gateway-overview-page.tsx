@@ -3,7 +3,6 @@
  */
 import { Boxes, DollarSign, KeyRound, Server, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
-import { GatewayGuard } from "@/features/gateway/components/gateway-guard";
 import { StatusBadge } from "@/features/gateway/components/status-badge";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
@@ -168,9 +167,7 @@ export function GatewayOverviewPage() {
     <div className="flex h-full flex-col">
       <PageHeader title="Gateway" description="LLM proxy gateway overview." />
       <div className="flex-1 overflow-y-auto">
-        <GatewayGuard>
-          <OverviewContent />
-        </GatewayGuard>
+        <OverviewContent />
       </div>
     </div>
   );

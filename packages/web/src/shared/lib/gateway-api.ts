@@ -1,49 +1,18 @@
 /**
  * Typed REST client for the PeriGateway Admin API.
  *
- * All requests go through the Vite dev proxy at `/gateway-api/*` which
- * rewrites to `http://localhost:4100/admin/*`. Auth is via `x-admin-key`.
+ * All requests go through the server proxy at `/api/gateway/*` which
+ * forwards to the gateway admin API with the admin key injected server-side.
+ * No client-side auth configuration needed.
  */
 
 import { ApiError } from "./api";
 
-const ADMIN_KEY_STORAGE = "peri-gateway-admin-key";
-
-export function getGatewayAdminKey(): string {
-  try {
-    return localStorage.getItem(ADMIN_KEY_STORAGE) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export function setGatewayAdminKey(key: string): void {
-  try {
-    localStorage.setItem(ADMIN_KEY_STORAGE, key);
-  } catch {
-    // ignore
-  }
-}
-
-export function clearGatewayAdminKey(): void {
-  try {
-    localStorage.removeItem(ADMIN_KEY_STORAGE);
-  } catch {
-    // ignore
-  }
-}
-
 async function gatewayRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const adminKey = getGatewayAdminKey();
-  if (!adminKey) throw new ApiError(0, "No gateway admin key configured");
-
   let res: Response;
   try {
-    res = await fetch(`/gateway-api${path}`, {
-      headers: {
-        "Content-Type": "application/json",
-        "x-admin-key": adminKey,
-      },
+    res = await fetch(`/api/gateway${path}`, {
+      headers: { "Content-Type": "application/json" },
       ...init,
     });
   } catch (err) {

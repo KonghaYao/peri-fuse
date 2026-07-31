@@ -11,6 +11,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { LiteServerEnv } from "./auth";
 import dashboardRoutes from "./routes/dashboard";
+import gatewayProxyRoutes from "./routes/gateway-proxy";
 import healthRoutes from "./routes/health";
 import ingestionRoutes from "./routes/ingestion";
 import manageRoutes from "./routes/manage";
@@ -72,6 +73,7 @@ export function createApp(): Hono<LiteServerEnv> {
   app.route("/", sessionsRoutes);
   app.route("/", usersRoutes);
   app.route("/", dashboardRoutes);
+  app.route("/", gatewayProxyRoutes);
 
   // Serve the web SPA build (packages/web/dist) when present. In
   // development the frontend runs on its own Vite dev server, so the dist

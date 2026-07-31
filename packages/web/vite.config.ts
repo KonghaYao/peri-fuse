@@ -19,11 +19,6 @@ export default defineConfig({
         target: "http://localhost:23332",
         changeOrigin: true,
       },
-      "/gateway-api": {
-        target: "http://localhost:4100",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/gateway-api/, "/admin"),
-      },
     },
   },
   build: {
