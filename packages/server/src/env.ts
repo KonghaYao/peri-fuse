@@ -63,6 +63,4 @@ if (!process.env.SALT) {
 export const liteEnv = {
   port: process.env.LITE_SERVER_PORT ? parseInt(process.env.LITE_SERVER_PORT, 10) : 23332,
   salt: process.env.SALT,
-  gatewayUrl: process.env.GATEWAY_URL ?? "http://localhost:4100",
-  gatewayAdminKey: process.env.GATEWAY_ADMIN_KEY ?? "peri-admin-dev",
 };
