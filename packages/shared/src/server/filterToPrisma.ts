@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../db/prisma-compat.js";
 import type { z } from "zod";
 import { InvalidRequestError } from "../errors";
 import { filterOperators, type timeFilter } from "../interfaces/filters";

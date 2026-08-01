@@ -1,5 +1,7 @@
-import type { Model, Price } from "@prisma/client";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { prisma } from "../../db";
+import { models } from "../../db/schema/index.js";
+import type { Model, Price } from "../../db/types.js";
 import type {
   EventsObservation,
   Observation,
@@ -20,7 +22,7 @@ import {
 import { parseClickhouseUTCDateTimeFormat } from "./clickhouse";
 import type { EventsObservationRecordReadType, ObservationRecordReadType } from "./definitions";
 
-export type ModelWithPrice = Model & { Price: Price[] };
+export type ModelWithPrice = Model & { prices: Price[] };
 
 /**
  * Creates a model cache that fetches models from the database on demand and stores them in memory.
@@ -38,17 +40,15 @@ export const createModelCache = (projectId: string) => {
       return modelCache.get(internalModelId) ?? null;
     }
 
-    const model = await prisma.model.findFirst({
-      where: {
-        id: internalModelId,
-        OR: [{ projectId }, { projectId: null }],
-      },
-      include: {
-        Price: true,
-      },
+    const model = await prisma.query.models.findFirst({
+      where: and(
+        eq(models.id, internalModelId),
+        or(eq(models.projectId, projectId), isNull(models.projectId)),
+      ),
+      with: { prices: true },
     });
 
-    modelCache.set(internalModelId, model);
+    modelCache.set(internalModelId, model ?? null);
 
     logger.debug(`Model ${internalModelId} fetched from database`);
     return model;
@@ -120,9 +120,9 @@ function ensureObservationCoreFields(
 export const enrichObservationWithModelData = (model: ModelWithPrice | null | undefined) => {
   return {
     modelId: model?.id ?? null,
-    inputPrice: model?.Price?.find((m) => m.usageType === "input")?.price ?? null,
-    outputPrice: model?.Price?.find((m) => m.usageType === "output")?.price ?? null,
-    totalPrice: model?.Price?.find((m) => m.usageType === "total")?.price ?? null,
+    inputPrice: model?.prices?.find((m) => m.usageType === "input")?.price ?? null,
+    outputPrice: model?.prices?.find((m) => m.usageType === "output")?.price ?? null,
+    totalPrice: model?.prices?.find((m) => m.usageType === "total")?.price ?? null,
   };
 };
 

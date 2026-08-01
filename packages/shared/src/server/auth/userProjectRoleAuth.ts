@@ -111,7 +111,7 @@ export const getUserProjectRoles = async ({
   page?: number;
   orderBy: Prisma.Sql;
 }) => {
-  return await prisma.$queryRaw<Array<{ id: string; name: string; email: string; role: Role }>>(
+  return await prisma.all<{ id: string; name: string; email: string; role: Role }>(
     generateUserProjectRolesQuery({
       select: Prisma.sql`all_eligible_users.id, all_eligible_users.name, all_eligible_users.email, all_eligible_users.role`,
       projectId,
@@ -136,7 +136,7 @@ export const getUserProjectRolesCount = async ({
   filterCondition: FilterState;
   searchFilter: Prisma.Sql;
 }) => {
-  const count = await prisma.$queryRaw<Array<{ count: bigint }>>(
+  const count = await prisma.all<{ count: number | bigint }>(
     generateUserProjectRolesQuery({
       select: Prisma.sql`COUNT(*) AS count`,
       projectId,

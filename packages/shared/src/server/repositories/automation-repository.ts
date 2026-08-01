@@ -1,11 +1,17 @@
+import { and, desc, eq, gt, inArray, type SQL } from "drizzle-orm";
 import {
   type Action,
   ActionExecutionStatus,
   type JobConfigState,
-  type Prisma,
   prisma,
   type Trigger,
 } from "../../db";
+import {
+  actions as actionsTable,
+  automationExecutions as automationExecutionsTable,
+  automations as automationsTable,
+  triggers as triggersTable,
+} from "../../db/schema/index.js";
 import {
   type ActionDomain,
   type ActionDomainWithSecrets,
@@ -29,12 +35,12 @@ export const getActionByIdWithSecrets = async ({
   projectId: string;
   actionId: string;
 }): Promise<ActionDomainWithSecrets | null> => {
-  const actionConfig = await prisma.action.findFirst({
-    where: {
-      id: actionId,
-      projectId,
-    },
-  });
+  const actionConfig = await prisma
+    .select()
+    .from(actionsTable)
+    .where(and(eq(actionsTable.id, actionId), eq(actionsTable.projectId, projectId)))
+    .limit(1)
+    .then((rows) => rows[0]);
 
   if (!actionConfig) {
     return null;
@@ -82,12 +88,12 @@ export const getActionById = async ({
   projectId: string;
   actionId: string;
 }): Promise<ActionDomain | null> => {
-  const actionConfig = await prisma.action.findFirst({
-    where: {
-      id: actionId,
-      projectId,
-    },
-  });
+  const actionConfig = await prisma
+    .select()
+    .from(actionsTable)
+    .where(and(eq(actionsTable.id, actionId), eq(actionsTable.projectId, projectId)))
+    .limit(1)
+    .then((rows) => rows[0]);
 
   if (!actionConfig) {
     return null;
@@ -112,22 +118,20 @@ export const getTriggerConfigurations = async ({
   eventSource: TriggerEventSource;
   status: JobConfigState;
 }): Promise<TriggerDomainWithActions[]> => {
-  const triggers = await prisma.trigger.findMany({
-    where: {
-      projectId,
-      eventSource,
-      status,
-    },
-    include: {
+  const foundTriggers = await prisma.query.triggers.findMany({
+    where: and(
+      eq(triggersTable.projectId, projectId),
+      eq(triggersTable.eventSource, eventSource),
+      eq(triggersTable.status, status),
+    ),
+    with: {
       automations: {
-        include: {
-          action: true,
-        },
+        with: { action: true },
       },
     },
   });
 
-  const triggerConfigurations = triggers.map((trigger) => ({
+  const triggerConfigurations = foundTriggers.map((trigger) => ({
     ...convertTriggerToDomain(trigger),
     actionIds: trigger.automations.map((automation) => automation.action.id),
     automations: trigger.automations.map((automation) => ({
@@ -188,12 +192,9 @@ export const getAutomationById = async ({
   projectId: string;
   automationId: string;
 }): Promise<AutomationDomain | null> => {
-  const automation = await prisma.automation.findFirst({
-    where: {
-      id: automationId,
-      projectId,
-    },
-    include: {
+  const automation = await prisma.query.automations.findFirst({
+    where: and(eq(automationsTable.id, automationId), eq(automationsTable.projectId, projectId)),
+    with: {
       action: true,
       trigger: true,
     },
@@ -222,28 +223,27 @@ export const getAutomations = async ({
   actionId?: string;
   eventSource?: TriggerEventSource;
 }): Promise<AutomationDomain[]> => {
-  const automations = await prisma.automation.findMany({
-    where: {
-      projectId,
-      ...(triggerId ? { triggerId } : {}),
-      ...(actionId ? { actionId } : {}),
-      ...(eventSource ? { trigger: { eventSource } } : {}),
-    },
-    include: {
+  const conditions: SQL[] = [eq(automationsTable.projectId, projectId)];
+  if (triggerId) conditions.push(eq(automationsTable.triggerId, triggerId));
+  if (actionId) conditions.push(eq(automationsTable.actionId, actionId));
+
+  const foundAutomations = await prisma.query.automations.findMany({
+    where: and(...conditions),
+    with: {
       action: true,
       trigger: true,
     },
-    orderBy: {
-      createdAt: "desc",
-    },
+    orderBy: desc(automationsTable.createdAt),
   });
 
-  const domains = automations.map((automation) => ({
-    id: automation.id,
-    name: automation.name,
-    trigger: convertTriggerToDomain(automation.trigger),
-    action: convertActionToDomain(automation.action),
-  }));
+  const domains = foundAutomations
+    .filter((automation) => !eventSource || automation.trigger.eventSource === eventSource)
+    .map((automation) => ({
+      id: automation.id,
+      name: automation.name,
+      trigger: convertTriggerToDomain(automation.trigger),
+      action: convertActionToDomain(automation.action),
+    }));
 
   return domains;
 };
@@ -265,14 +265,15 @@ export const getConsecutiveAutomationFailures = async ({
   }
 
   // Build where clause - if lastFailingExecutionId is set, only consider executions newer than it
-  const whereClause: Prisma.AutomationExecutionWhereInput = {
-    triggerId: automation.trigger.id,
-    actionId: automation.action.id,
-    projectId,
-    status: {
-      in: [ActionExecutionStatus.ERROR, ActionExecutionStatus.COMPLETED],
-    },
-  };
+  const whereConditions: SQL[] = [
+    eq(automationExecutionsTable.triggerId, automation.trigger.id),
+    eq(automationExecutionsTable.actionId, automation.action.id),
+    eq(automationExecutionsTable.projectId, projectId),
+    inArray(automationExecutionsTable.status, [
+      ActionExecutionStatus.ERROR,
+      ActionExecutionStatus.COMPLETED,
+    ]),
+  ];
 
   // If there's a lastFailingExecutionId, we need to get executions that are newer than that execution
   if (
@@ -280,32 +281,24 @@ export const getConsecutiveAutomationFailures = async ({
     automation.action.config.lastFailingExecutionId
   ) {
     // First get the timestamp of the last failing execution
-    const lastFailingExecution = await prisma.automationExecution.findUnique({
-      where: {
-        id: automation.action.config.lastFailingExecutionId,
-      },
-      select: {
-        createdAt: true,
-      },
-    });
+    const lastFailingExecution = await prisma
+      .select({ createdAt: automationExecutionsTable.createdAt })
+      .from(automationExecutionsTable)
+      .where(eq(automationExecutionsTable.id, automation.action.config.lastFailingExecutionId))
+      .limit(1)
+      .then((rows) => rows[0]);
 
     if (lastFailingExecution) {
-      whereClause.createdAt = {
-        gt: lastFailingExecution.createdAt,
-      };
+      whereConditions.push(gt(automationExecutionsTable.createdAt, lastFailingExecution.createdAt));
     }
   }
 
-  const executions = await prisma.automationExecution.findMany({
-    where: whereClause,
-    orderBy: {
-      createdAt: "desc",
-    },
-    take: 20,
-    select: {
-      status: true,
-    },
-  });
+  const executions = await prisma
+    .select({ status: automationExecutionsTable.status })
+    .from(automationExecutionsTable)
+    .where(and(...whereConditions))
+    .orderBy(desc(automationExecutionsTable.createdAt))
+    .limit(20);
 
   let consecutiveFailures = 0;
   for (const execution of executions) {

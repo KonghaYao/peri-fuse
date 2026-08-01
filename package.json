@@ -23,16 +23,12 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "pnpm -r run test",
-    "db:generate": "pnpm --filter @peri-fuse/shared run db:generate",
-    "db:push": "pnpm --filter @peri-fuse/shared run db:push"
+    "db:generate": "pnpm --filter @peri-fuse/shared run db:generate"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "@prisma/client",
-      "@prisma/engines",
       "better-sqlite3",
       "esbuild",
-      "prisma",
       "protobufjs"
     ]
   },

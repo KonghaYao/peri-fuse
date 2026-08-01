@@ -1,6 +1,8 @@
 import type { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import snakeCase from "lodash/snakeCase";
+import { and, eq } from "drizzle-orm";
 import { prisma } from "../../db";
+import { projects } from "../../db/schema/index.js";
 import { LISTABLE_SCORE_TYPES } from "../../domain/scores";
 import { env } from "../../env";
 import type { OrderByState } from "../../interfaces/orderBy";
@@ -271,10 +273,12 @@ export const getTracesBySessionId = async (
  */
 export const readProjectHasTracesFlag = async (projectId: string): Promise<boolean> => {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { hasTraces: true },
-    });
+    const project = await prisma
+      .select({ hasTraces: projects.hasTraces })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1)
+      .then((rows) => rows[0]);
     return project?.hasTraces === true;
   } catch (error) {
     traceException(error);
@@ -292,10 +296,10 @@ export const readProjectHasTracesFlag = async (projectId: string): Promise<boole
  */
 export const persistProjectHasTracesFlag = async (projectId: string): Promise<void> => {
   try {
-    await prisma.project.updateMany({
-      where: { id: projectId, hasTraces: false },
-      data: { hasTraces: true },
-    });
+    await prisma
+      .update(projects)
+      .set({ hasTraces: true })
+      .where(and(eq(projects.id, projectId), eq(projects.hasTraces, false)));
   } catch (error) {
     traceException(error);
     logger.error("Failed to persist hasTraces flag to PostgreSQL", {

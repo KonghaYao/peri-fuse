@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../db/prisma-compat.js";
 import { z } from "zod";
 import { InvalidRequestError } from "../errors";
 import type { OrderByState } from "../interfaces/orderBy";

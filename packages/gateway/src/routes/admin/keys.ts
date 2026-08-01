@@ -3,17 +3,20 @@
  * Keys are created in the shared DB (server); here we manage gateway-side
  * config (rate limits, budget) keyed by publicKey.
  */
+import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb } from "../../db.js";
+import { apiKey, auditLog } from "../../db/schema.js";
+import { generateId } from "../../utils/id.js";
 
 const keys = new Hono();
 
 // List all key configs
 keys.get("/", async (c) => {
   const db = getDb();
-  const items = await db.apiKey.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { budget: true },
+  const items = await db.query.apiKey.findMany({
+    orderBy: [desc(apiKey.createdAt)],
+    with: { budget: true },
   });
 
   const safe = items.map((k) => ({
@@ -28,9 +31,9 @@ keys.get("/", async (c) => {
 // Get single key config
 keys.get("/:id", async (c) => {
   const db = getDb();
-  const key = await db.apiKey.findUnique({
-    where: { id: c.req.param("id") },
-    include: { budget: true },
+  const key = await db.query.apiKey.findFirst({
+    where: eq(apiKey.id, c.req.param("id")),
+    with: { budget: true },
   });
 
   if (!key) {
@@ -50,13 +53,15 @@ keys.post("/", async (c) => {
   }
 
   // Check if config already exists for this publicKey
-  const existing = await db.apiKey.findUnique({ where: { publicKey: body.publicKey } });
+  const existing = await db.query.apiKey.findFirst({ where: eq(apiKey.publicKey, body.publicKey) });
   if (existing) {
     return c.json({ error: { message: "Config already exists for this publicKey" } }, 409);
   }
 
-  const key = await db.apiKey.create({
-    data: {
+  const [key] = await db
+    .insert(apiKey)
+    .values({
+      id: generateId(),
       publicKey: body.publicKey,
       keyName: body.keyName ?? null,
       models: JSON.stringify(body.models ?? []),
@@ -67,17 +72,16 @@ keys.post("/", async (c) => {
       maxBudget: body.maxBudget ?? null,
       budgetId: body.budgetId ?? null,
       isEnabled: body.isEnabled ?? true,
-    },
-  });
+    })
+    .returning();
 
-  await db.auditLog.create({
-    data: {
-      action: "create",
-      tableName: "ApiKey",
-      objectId: key.id,
-      afterValue: JSON.stringify({ keyName: key.keyName, publicKey: key.publicKey }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "create",
+    tableName: "ApiKey",
+    objectId: key.id,
+    afterValue: JSON.stringify({ keyName: key.keyName, publicKey: key.publicKey }),
+    changedBy: "admin",
   });
 
   return c.json({
@@ -93,7 +97,7 @@ keys.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.apiKey.findUnique({ where: { id } });
+  const existing = await db.query.apiKey.findFirst({ where: eq(apiKey.id, id) });
   if (!existing) {
     return c.json({ error: { message: "API key config not found" } }, 404);
   }
@@ -109,17 +113,16 @@ keys.put("/:id", async (c) => {
   if (body.budgetId !== undefined) data.budgetId = body.budgetId;
   if (body.isEnabled !== undefined) data.isEnabled = body.isEnabled;
 
-  const key = await db.apiKey.update({ where: { id }, data });
+  const [key] = await db.update(apiKey).set(data).where(eq(apiKey.id, id)).returning();
 
-  await db.auditLog.create({
-    data: {
-      action: "update",
-      tableName: "ApiKey",
-      objectId: id,
-      beforeValue: JSON.stringify({ keyName: existing.keyName, isEnabled: existing.isEnabled }),
-      afterValue: JSON.stringify({ keyName: key.keyName, isEnabled: key.isEnabled }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "update",
+    tableName: "ApiKey",
+    objectId: id,
+    beforeValue: JSON.stringify({ keyName: existing.keyName, isEnabled: existing.isEnabled }),
+    afterValue: JSON.stringify({ keyName: key.keyName, isEnabled: key.isEnabled }),
+    changedBy: "admin",
   });
 
   return c.json({ ...key, models: JSON.parse(key.models), metadata: JSON.parse(key.metadata) });
@@ -130,21 +133,20 @@ keys.delete("/:id", async (c) => {
   const db = getDb();
   const id = c.req.param("id");
 
-  const existing = await db.apiKey.findUnique({ where: { id } });
+  const existing = await db.query.apiKey.findFirst({ where: eq(apiKey.id, id) });
   if (!existing) {
     return c.json({ error: { message: "API key config not found" } }, 404);
   }
 
-  await db.apiKey.delete({ where: { id } });
+  await db.delete(apiKey).where(eq(apiKey.id, id));
 
-  await db.auditLog.create({
-    data: {
-      action: "delete",
-      tableName: "ApiKey",
-      objectId: id,
-      beforeValue: JSON.stringify({ keyName: existing.keyName, publicKey: existing.publicKey }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "delete",
+    tableName: "ApiKey",
+    objectId: id,
+    beforeValue: JSON.stringify({ keyName: existing.keyName, publicKey: existing.publicKey }),
+    changedBy: "admin",
   });
 
   return c.json({ success: true });

@@ -2,7 +2,9 @@
  * Budget reset scheduler.
  * Periodically checks and resets budgets whose duration has elapsed.
  */
+import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { getDb } from "../db.js";
+import { apiKey, budget, provider } from "../db/schema.js";
 
 let resetTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -27,46 +29,42 @@ function parseDuration(duration: string): number | null {
  */
 async function performReset(): Promise<void> {
   const db = getDb();
-  const now = new Date();
+  const nowIso = new Date().toISOString();
 
   // Reset Budget entries
-  const expiredBudgets = await db.budget.findMany({
-    where: { resetAt: { lte: now }, duration: { not: null } },
-  });
+  const expiredBudgets = await db
+    .select()
+    .from(budget)
+    .where(and(lte(budget.resetAt, nowIso), isNotNull(budget.duration)));
 
-  for (const budget of expiredBudgets) {
-    const durationMs = parseDuration(budget.duration!);
+  for (const b of expiredBudgets) {
+    const durationMs = parseDuration(b.duration!);
     if (!durationMs) continue;
 
-    const nextReset = new Date(now.getTime() + durationMs);
+    const nextReset = new Date(Date.now() + durationMs).toISOString();
 
     // Reset spend on all keys with this budget
-    await db.apiKey.updateMany({
-      where: { budgetId: budget.id },
-      data: { spend: 0 },
-    });
+    await db.update(apiKey).set({ spend: 0 }).where(eq(apiKey.budgetId, b.id));
 
-    await db.budget.update({
-      where: { id: budget.id },
-      data: { resetAt: nextReset, updatedAt: now },
-    });
+    await db.update(budget).set({ resetAt: nextReset }).where(eq(budget.id, b.id));
   }
 
   // Reset Provider budget spends
-  const expiredProviders = await db.provider.findMany({
-    where: { budgetResetAt: { lte: now }, budgetPeriod: { not: null } },
-  });
+  const expiredProviders = await db
+    .select()
+    .from(provider)
+    .where(and(lte(provider.budgetResetAt, nowIso), isNotNull(provider.budgetPeriod)));
 
-  for (const provider of expiredProviders) {
-    const durationMs = parseDuration(provider.budgetPeriod!);
+  for (const p of expiredProviders) {
+    const durationMs = parseDuration(p.budgetPeriod!);
     if (!durationMs) continue;
 
-    const nextReset = new Date(now.getTime() + durationMs);
+    const nextReset = new Date(Date.now() + durationMs).toISOString();
 
-    await db.provider.update({
-      where: { id: provider.id },
-      data: { budgetSpend: 0, budgetResetAt: nextReset, updatedAt: now },
-    });
+    await db
+      .update(provider)
+      .set({ budgetSpend: 0, budgetResetAt: nextReset })
+      .where(eq(provider.id, p.id));
   }
 }
 

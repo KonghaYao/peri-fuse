@@ -1,4 +1,7 @@
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { v4 } from "uuid";
 import { prisma } from "../../../db";
+import { defaultViews } from "../../../db/schema/index.js";
 import { TableViewPresetTableName } from "../../../domain/table-view-presets";
 import {
   getSystemTableViewPresetById,
@@ -61,15 +64,16 @@ export class DefaultViewService {
     userId,
   }: GetResolvedDefaultParams): Promise<DefaultViewAssignments> {
     const compatibleViewNames = getReadCompatibleViewNames(viewName);
-    const defaults = await prisma.defaultView.findMany({
-      where: {
-        projectId,
-        viewName: {
-          in: compatibleViewNames,
-        },
-        OR: userId ? [{ userId }, { userId: null }] : [{ userId: null }],
-      },
-    });
+    const defaults = await prisma
+      .select()
+      .from(defaultViews)
+      .where(
+        and(
+          eq(defaultViews.projectId, projectId),
+          inArray(defaultViews.viewName, compatibleViewNames),
+          userId ? or(eq(defaultViews.userId, userId), isNull(defaultViews.userId)) : isNull(defaultViews.userId),
+        ),
+      );
 
     return {
       userDefaultViewId: userId
@@ -132,36 +136,38 @@ export class DefaultViewService {
       throw new Error("userId is required for user-level defaults");
     }
 
-    // Use serializable transaction to prevent race conditions
-    // Two concurrent requests will be serialized, avoiding duplicate inserts
-    await prisma.$transaction(
-      async (tx) => {
-        const existing = await tx.defaultView.findFirst({
-          where: {
-            projectId,
-            viewName: canonicalViewName,
-            userId: userIdToUse,
-          },
-        });
+    // Use a transaction to prevent race conditions.
+    // Two concurrent requests will be serialized (SQLite writes are serialized),
+    // avoiding duplicate inserts.
+    await prisma.transaction(async (tx) => {
+      const existing = await tx
+        .select()
+        .from(defaultViews)
+        .where(
+          and(
+            eq(defaultViews.projectId, projectId),
+            eq(defaultViews.viewName, canonicalViewName),
+            userIdToUse ? eq(defaultViews.userId, userIdToUse) : isNull(defaultViews.userId),
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows[0]);
 
-        if (existing) {
-          await tx.defaultView.update({
-            where: { id: existing.id },
-            data: { viewId, viewName: canonicalViewName },
-          });
-        } else {
-          await tx.defaultView.create({
-            data: {
-              projectId,
-              userId: userIdToUse,
-              viewName: canonicalViewName,
-              viewId,
-            },
-          });
-        }
-      },
-      { isolationLevel: "Serializable" },
-    );
+      if (existing) {
+        await tx
+          .update(defaultViews)
+          .set({ viewId, viewName: canonicalViewName })
+          .where(eq(defaultViews.id, existing.id));
+      } else {
+        await tx.insert(defaultViews).values({
+          id: v4(),
+          projectId,
+          userId: userIdToUse,
+          viewName: canonicalViewName,
+          viewId,
+        });
+      }
+    });
   }
 
   public static async clearDefault({
@@ -177,12 +183,14 @@ export class DefaultViewService {
       throw new Error("userId is required for clearing user-level defaults");
     }
 
-    await prisma.defaultView.deleteMany({
-      where: {
-        projectId,
-        viewName: canonicalViewName,
-        userId: userIdToUse,
-      },
-    });
+    await prisma
+      .delete(defaultViews)
+      .where(
+        and(
+          eq(defaultViews.projectId, projectId),
+          eq(defaultViews.viewName, canonicalViewName),
+          userIdToUse ? eq(defaultViews.userId, userIdToUse) : isNull(defaultViews.userId),
+        ),
+      );
   }
 }

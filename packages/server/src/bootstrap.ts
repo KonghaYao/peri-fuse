@@ -7,11 +7,12 @@
  */
 import { randomUUID } from "node:crypto";
 import { prisma } from "@peri-fuse/shared/src/db";
+import { apiKeys, organizations, projects } from "@peri-fuse/shared/src/db/schema/index.js";
 import { logger } from "@peri-fuse/shared/src/server";
 import { createAndAddApiKeysToDb } from "@peri-fuse/shared/src/server/auth/apiKeys";
 
 export async function ensureBootstrap(): Promise<void> {
-  const existingKey = await prisma.apiKey.findFirst();
+  const existingKey = await prisma.select({ id: apiKeys.id }).from(apiKeys).limit(1).then((rows) => rows[0]);
   if (existingKey) {
     // Already bootstrapped
     return;
@@ -22,19 +23,15 @@ export async function ensureBootstrap(): Promise<void> {
   const orgId = randomUUID();
   const projectId = randomUUID();
 
-  await prisma.organization.create({
-    data: {
-      id: orgId,
-      name: "Default Org",
-    },
+  await prisma.insert(organizations).values({
+    id: orgId,
+    name: "Default Org",
   });
 
-  await prisma.project.create({
-    data: {
-      id: projectId,
-      name: "Default Project",
-      orgId,
-    },
+  await prisma.insert(projects).values({
+    id: projectId,
+    name: "Default Project",
+    orgId,
   });
 
   const keys = await createAndAddApiKeysToDb({

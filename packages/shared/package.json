@@ -6,7 +6,7 @@
   "description": "Shared domain logic for Peri-Fuse (SQLite-backed, no ClickHouse/Redis/S3)",
   "files": [
     "dist/**",
-    "prisma/**"
+    "drizzle/**"
   ],
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -21,6 +21,10 @@
     "./src/db": {
       "import": "./dist/src/db.js",
       "require": "./dist/src/db.js"
+    },
+    "./src/db/schema/index.js": {
+      "import": "./dist/src/db/schema/index.js",
+      "require": "./dist/src/db/schema/index.js"
     },
     "./src/env": {
       "import": "./dist/src/env.js",
@@ -63,16 +67,13 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "vitest run",
-    "db:generate": "npx prisma generate --schema=prisma/schema.sqlite.prisma --no-hints",
-    "db:push": "npx prisma db push --schema=prisma/schema.sqlite.prisma",
-    "db:migrate": "npx prisma migrate dev --schema=prisma/schema.sqlite.prisma"
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "@opentelemetry/api": ">=1.0.0 <1.10.0",
     "@opentelemetry/otlp-transformer": "^0.220.0",
     "@opentelemetry/resources": "^2.9.0",
     "@opentelemetry/sdk-trace-base": "^2.9.0",
-    "@prisma/client": "^6.19.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.0",
     "ajv": "^8.18.0",
@@ -81,6 +82,7 @@
     "better-sqlite3": "^11.0.0",
     "date-fns": "^3.6.0",
     "decimal.js": "^10.4.3",
+    "drizzle-orm": "^0.45.2",
     "exponential-backoff": "^3.1.2",
     "ipaddr.js": "^2.2.0",
     "jsonpath-plus": "10.3.0",
@@ -97,7 +99,7 @@
     "@types/lodash": "^4.17.24",
     "@types/node": "^24.3.0",
     "dotenv-cli": "^7.4.4",
-    "prisma": "^6.19.3",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"

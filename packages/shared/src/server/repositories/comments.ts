@@ -1,5 +1,6 @@
-import type { PrismaClient } from "../../db";
-import { Prisma } from "../../db";
+import { and, eq, like, notLike, sql } from "drizzle-orm";
+import { Prisma, type Db } from "../../db";
+import { comments as commentsTable } from "../../db/schema/index.js";
 import type { filterOperators } from "../../interfaces/filters";
 
 /**
@@ -40,7 +41,7 @@ export async function getObjectIdsByCommentCount({
   operator,
   value,
 }: {
-  prisma: PrismaClient;
+  prisma: Db;
   projectId: string;
   objectType: CommentObjectType;
   operator: CommentCountOperator;
@@ -60,7 +61,7 @@ export async function getObjectIdsByCommentCount({
     HAVING COUNT(*) ${Prisma.raw(operator)} ${value}
   `;
 
-  const results = await prisma.$queryRaw<{ object_id: string }[]>(rawQuery);
+  const results = await prisma.all<{ object_id: string }>(rawQuery);
   return results.map((r) => r.object_id);
 }
 
@@ -86,7 +87,7 @@ export async function getObjectIdsByCommentContent({
   searchQuery,
   operator = "contains",
 }: {
-  prisma: PrismaClient;
+  prisma: Db;
   projectId: string;
   objectType: CommentObjectType;
   searchQuery: string;
@@ -101,66 +102,41 @@ export async function getObjectIdsByCommentContent({
       return [];
     }
 
-    const rawResults = await prisma.$queryRaw<{ object_id: string }[]>`
+    const rawResults = await prisma.all<{ object_id: string }>(sql`
       SELECT DISTINCT object_id
       FROM comments
       WHERE project_id = ${projectId}
         AND object_type = ${objectType}::"CommentObjectType"
         AND to_tsvector('english', content) @@ plainto_tsquery('english', ${trimmedQuery})
-    `;
+    `);
 
     return rawResults.map((r) => r.object_id);
   }
 
-  // For other operators, use Prisma's query builder with ILIKE
-  let whereCondition: Prisma.CommentWhereInput;
-
+  // For other operators, use a case-insensitive LIKE match (SQLite).
+  const pattern = `%${searchQuery}%`;
+  let contentCondition;
   if (operator === "does not contain") {
-    whereCondition = {
-      projectId,
-      objectType,
-      NOT: {
-        content: {
-          contains: searchQuery,
-          mode: "insensitive",
-        } as unknown as Prisma.CommentWhereInput["content"],
-      },
-    };
+    contentCondition = notLike(commentsTable.content, pattern);
   } else if (operator === "starts with") {
-    whereCondition = {
-      projectId,
-      objectType,
-      content: {
-        startsWith: searchQuery,
-        mode: "insensitive",
-      } as unknown as Prisma.CommentWhereInput["content"],
-    };
+    contentCondition = like(commentsTable.content, `${searchQuery}%`);
   } else if (operator === "ends with") {
-    whereCondition = {
-      projectId,
-      objectType,
-      content: {
-        endsWith: searchQuery,
-        mode: "insensitive",
-      } as unknown as Prisma.CommentWhereInput["content"],
-    };
+    contentCondition = like(commentsTable.content, `%${searchQuery}`);
   } else {
     // Default to contains (for "=" operator which maps to exact match in string filters)
-    whereCondition = {
-      projectId,
-      objectType,
-      content: {
-        contains: searchQuery,
-        mode: "insensitive",
-      } as unknown as Prisma.CommentWhereInput["content"],
-    };
+    contentCondition = like(commentsTable.content, pattern);
   }
 
-  const comments = await prisma.comment.findMany({
-    where: whereCondition,
-    select: { objectId: true },
-    distinct: ["objectId"],
-  });
+  const commentRows = await prisma
+    .selectDistinct({ objectId: commentsTable.objectId })
+    .from(commentsTable)
+    .where(
+      and(
+        eq(commentsTable.projectId, projectId),
+        eq(commentsTable.objectType, objectType),
+        contentCondition,
+      ),
+    );
 
-  return comments.map((c) => c.objectId);
+  return commentRows.map((c) => c.objectId);
 }

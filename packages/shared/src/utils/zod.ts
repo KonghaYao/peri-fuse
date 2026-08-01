@@ -1,6 +1,16 @@
-import type { InputJsonValue } from "@prisma/client/runtime/library";
 import { z } from "zod";
 import { InvalidRequestError } from "../errors";
+
+// Recursive JSON value type (previously `InputJsonValue` from
+// `@prisma/client/runtime/library`). Defined locally so the Prisma runtime is
+// no longer required.
+export type InputJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | InputJsonValue[]
+  | { [key: string]: InputJsonValue };
 
 // to be used for Prisma JSON type
 // @see: https://github.com/colinhacks/zod#json-type

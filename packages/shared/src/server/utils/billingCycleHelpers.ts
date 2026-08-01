@@ -1,4 +1,4 @@
-import type { Organization } from "@prisma/client";
+import type { Organization } from "../../db/types.js";
 import { getDaysInMonth, subMonths } from "date-fns";
 
 /**

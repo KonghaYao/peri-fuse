@@ -2,8 +2,11 @@
  * SpendFlusher — batch write queue for spend logs (inspired by LiteLLM DBSpendUpdateWriter).
  * Queues spend events in memory and flushes to SQLite periodically.
  */
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "../db.js";
+import { apiKey, dailySpend, spendLog } from "../db/schema.js";
 import { gatewayEnv } from "../env.js";
+import { generateId } from "../utils/id.js";
 
 export interface SpendEvent {
   callType: string;
@@ -108,17 +111,18 @@ class SpendFlusher {
     const db = getDb();
 
     try {
-      await db.spendLog.createMany({
-        data: batch.map((e) => ({
+      await db.insert(spendLog).values(
+        batch.map((e) => ({
+          id: generateId(),
           callType: e.callType,
           apiKey: e.apiKey,
           spend: e.spend,
           totalTokens: e.totalTokens,
           promptTokens: e.promptTokens,
           completionTokens: e.completionTokens,
-          startTime: e.startTime,
-          endTime: e.endTime,
-          completionStartTime: e.completionStartTime,
+          startTime: e.startTime.toISOString(),
+          endTime: e.endTime.toISOString(),
+          completionStartTime: e.completionStartTime?.toISOString(),
           requestDurationMs: e.requestDurationMs,
           model: e.model,
           modelId: e.modelId,
@@ -136,7 +140,7 @@ class SpendFlusher {
           errorMessage: e.errorMessage,
           traceId: e.traceId,
         })),
-      });
+      );
     } catch (err) {
       console.error(`[spend-flusher] Failed to write ${batch.length} spend logs:`, err);
       // Re-queue failed items (at the front)
@@ -175,25 +179,31 @@ class SpendFlusher {
 
     for (const item of aggregated.values()) {
       try {
-        await db.dailySpend.upsert({
-          where: {
-            apiKey_date_model_provider: {
-              apiKey: item.apiKey,
-              date: item.date,
-              model: item.model,
-              provider: item.provider,
-            },
-          },
-          update: {
-            promptTokens: { increment: item.promptTokens },
-            completionTokens: { increment: item.completionTokens },
-            spend: { increment: item.spend },
-            apiRequests: { increment: 1 },
-            successfulRequests: item.success ? { increment: 1 } : undefined,
-            failedRequests: item.success ? undefined : { increment: 1 },
-            updatedAt: new Date(),
-          },
-          create: {
+        const compositeWhere = and(
+          eq(dailySpend.apiKey, item.apiKey),
+          eq(dailySpend.date, item.date),
+          eq(dailySpend.model, item.model),
+          eq(dailySpend.provider, item.provider),
+        );
+
+        const existing = await db.query.dailySpend.findFirst({ where: compositeWhere });
+
+        if (existing) {
+          const setClause: Record<string, unknown> = {
+            promptTokens: sql`${dailySpend.promptTokens} + ${item.promptTokens}`,
+            completionTokens: sql`${dailySpend.completionTokens} + ${item.completionTokens}`,
+            spend: sql`${dailySpend.spend} + ${item.spend}`,
+            apiRequests: sql`${dailySpend.apiRequests} + 1`,
+          };
+          if (item.success) {
+            setClause.successfulRequests = sql`${dailySpend.successfulRequests} + 1`;
+          } else {
+            setClause.failedRequests = sql`${dailySpend.failedRequests} + 1`;
+          }
+          await db.update(dailySpend).set(setClause).where(compositeWhere);
+        } else {
+          await db.insert(dailySpend).values({
+            id: generateId(),
             apiKey: item.apiKey,
             date: item.date,
             model: item.model,
@@ -205,8 +215,8 @@ class SpendFlusher {
             apiRequests: 1,
             successfulRequests: item.success ? 1 : 0,
             failedRequests: item.success ? 0 : 1,
-          },
-        });
+          });
+        }
       } catch (err) {
         console.error("[spend-flusher] Daily upsert error:", err);
       }
@@ -220,15 +230,16 @@ class SpendFlusher {
     this.keySpendQueue.clear();
 
     const db = getDb();
+    const nowIso = new Date().toISOString();
     for (const [publicKey, spend] of entries) {
       try {
-        await db.apiKey.updateMany({
-          where: { publicKey },
-          data: {
-            spend: { increment: spend },
-            lastActive: new Date(),
-          },
-        });
+        await db
+          .update(apiKey)
+          .set({
+            spend: sql`${apiKey.spend} + ${spend}`,
+            lastActive: nowIso,
+          })
+          .where(eq(apiKey.publicKey, publicKey));
       } catch (err) {
         console.error("[spend-flusher] Key spend update error:", err);
       }

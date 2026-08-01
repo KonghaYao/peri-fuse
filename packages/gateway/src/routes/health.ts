@@ -2,6 +2,7 @@
  * Health check route for PeriGateway.
  */
 import { Hono } from "hono";
+import { sql } from "drizzle-orm";
 import { getDb } from "../db.js";
 
 const health = new Hono();
@@ -9,7 +10,7 @@ const health = new Hono();
 health.get("/health", async (c) => {
   try {
     // Verify DB connectivity
-    await getDb().$queryRaw`SELECT 1`;
+    await getDb().get(sql`SELECT 1`);
     return c.json({
       status: "ok",
       service: "peri-gateway",

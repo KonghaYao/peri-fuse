@@ -1,26 +1,31 @@
 /**
  * Admin API — Provider CRUD.
  */
+import { desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb } from "../../db.js";
-import { encrypt, decrypt } from "../../utils/crypto.js";
+import { auditLog, modelDeployment, provider } from "../../db/schema.js";
+import { generateId } from "../../utils/id.js";
+import { encrypt } from "../../utils/crypto.js";
 
 const providers = new Hono();
 
 // List all providers
 providers.get("/", async (c) => {
   const db = getDb();
-  const items = await db.provider.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { deployments: { where: { isEnabled: true } } },
+  const items = await db.query.provider.findMany({
+    orderBy: [desc(provider.createdAt)],
+    with: {
+      deployments: { where: eq(modelDeployment.isEnabled, true) },
+    },
   });
 
   // Strip encrypted keys from response
   const safe = items.map((p) => ({
     ...p,
     apiKeyEncrypted: p.apiKeyEncrypted ? "***encrypted***" : null,
-    _deployments: undefined,
     deploymentCount: p.deployments.length,
+    deployments: undefined,
   }));
 
   return c.json({ data: safe });
@@ -29,18 +34,18 @@ providers.get("/", async (c) => {
 // Get single provider
 providers.get("/:id", async (c) => {
   const db = getDb();
-  const provider = await db.provider.findUnique({
-    where: { id: c.req.param("id") },
-    include: { deployments: true },
+  const found = await db.query.provider.findFirst({
+    where: eq(provider.id, c.req.param("id")),
+    with: { deployments: true },
   });
 
-  if (!provider) {
+  if (!found) {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
 
   return c.json({
-    ...provider,
-    apiKeyEncrypted: provider.apiKeyEncrypted ? "***encrypted***" : null,
+    ...found,
+    apiKeyEncrypted: found.apiKeyEncrypted ? "***encrypted***" : null,
   });
 });
 
@@ -50,6 +55,7 @@ providers.post("/", async (c) => {
   const body = await c.req.json();
 
   const data: any = {
+    id: generateId(),
     name: body.name,
     type: body.type,
     baseUrl: body.baseUrl,
@@ -68,20 +74,19 @@ providers.post("/", async (c) => {
     data.budgetResetAt = computeNextReset(data.budgetPeriod);
   }
 
-  const provider = await db.provider.create({ data });
+  const [created] = await db.insert(provider).values(data).returning();
 
   // Audit log
-  await db.auditLog.create({
-    data: {
-      action: "create",
-      tableName: "Provider",
-      objectId: provider.id,
-      afterValue: JSON.stringify({ ...provider, apiKeyEncrypted: "***" }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "create",
+    tableName: "Provider",
+    objectId: created.id,
+    afterValue: JSON.stringify({ ...created, apiKeyEncrypted: "***" }),
+    changedBy: "admin",
   });
 
-  return c.json(provider, 201);
+  return c.json(created, 201);
 });
 
 // Update provider
@@ -90,7 +95,7 @@ providers.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.provider.findUnique({ where: { id } });
+  const existing = await db.query.provider.findFirst({ where: eq(provider.id, id) });
   if (!existing) {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
@@ -111,20 +116,19 @@ providers.put("/:id", async (c) => {
   }
   if (body.status !== undefined) data.status = body.status;
 
-  const provider = await db.provider.update({ where: { id }, data });
+  const [updated] = await db.update(provider).set(data).where(eq(provider.id, id)).returning();
 
-  await db.auditLog.create({
-    data: {
-      action: "update",
-      tableName: "Provider",
-      objectId: id,
-      beforeValue: JSON.stringify({ ...existing, apiKeyEncrypted: "***" }),
-      afterValue: JSON.stringify({ ...provider, apiKeyEncrypted: "***" }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "update",
+    tableName: "Provider",
+    objectId: id,
+    beforeValue: JSON.stringify({ ...existing, apiKeyEncrypted: "***" }),
+    afterValue: JSON.stringify({ ...updated, apiKeyEncrypted: "***" }),
+    changedBy: "admin",
   });
 
-  return c.json(provider);
+  return c.json(updated);
 });
 
 // Delete provider
@@ -132,31 +136,30 @@ providers.delete("/:id", async (c) => {
   const db = getDb();
   const id = c.req.param("id");
 
-  const existing = await db.provider.findUnique({ where: { id } });
+  const existing = await db.query.provider.findFirst({ where: eq(provider.id, id) });
   if (!existing) {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
 
   // Delete associated deployments first
-  await db.modelDeployment.deleteMany({ where: { providerId: id } });
-  await db.provider.delete({ where: { id } });
+  await db.delete(modelDeployment).where(eq(modelDeployment.providerId, id));
+  await db.delete(provider).where(eq(provider.id, id));
 
-  await db.auditLog.create({
-    data: {
-      action: "delete",
-      tableName: "Provider",
-      objectId: id,
-      beforeValue: JSON.stringify({ ...existing, apiKeyEncrypted: "***" }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "delete",
+    tableName: "Provider",
+    objectId: id,
+    beforeValue: JSON.stringify({ ...existing, apiKeyEncrypted: "***" }),
+    changedBy: "admin",
   });
 
   return c.json({ success: true });
 });
 
-function computeNextReset(period: string): Date {
+function computeNextReset(period: string): string {
   const match = period.match(/^(\d+)([dhm])$/);
-  if (!match) return new Date(Date.now() + 86400000);
+  if (!match) return new Date(Date.now() + 86400000).toISOString();
   const value = parseInt(match[1], 10);
   const unit = match[2];
   let ms = 0;
@@ -165,7 +168,7 @@ function computeNextReset(period: string): Date {
     case "h": ms = value * 3600000; break;
     case "m": ms = value * 60000; break;
   }
-  return new Date(Date.now() + ms);
+  return new Date(Date.now() + ms).toISOString();
 }
 
 export default providers;

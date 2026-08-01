@@ -1,5 +1,13 @@
-// export db types only
-export * from "@prisma/client";
+// Model row/insert types (previously re-exported from `@prisma/client`) are now
+// inferred from the Drizzle schema. The `Prisma` namespace (sql builders, error
+// class, loose input types) comes from the prisma-compat module.
+export * from "./db/types.js";
+export {
+  Prisma,
+  PrismaClientKnownRequestError,
+  toKnownRequestError,
+  type Sql,
+} from "./db/prisma-compat.js";
 export * from "./constants";
 // domain
 export * from "./domain";

@@ -1,4 +1,4 @@
-import type { BatchExport } from "@prisma/client";
+import type { BatchExport } from "../../db/types.js";
 import z from "zod";
 
 import { singleFilter } from "../../interfaces/filters";

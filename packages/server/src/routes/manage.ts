@@ -6,8 +6,11 @@
  * server runs locally so no additional auth layer is needed.
  */
 import { prisma } from "@peri-fuse/shared/src/db";
+import { apiKeys, organizations, projects } from "@peri-fuse/shared/src/db/schema/index.js";
 import { createAndAddApiKeysToDb } from "@peri-fuse/shared/src/server/auth/apiKeys";
+import { and, asc, count, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
 
 const manage = new Hono();
 
@@ -16,24 +19,30 @@ const manage = new Hono();
 // ---------------------------------------------------------------------------
 
 manage.get("/api/manage/projects", async (c) => {
-  const projects = await prisma.project.findMany({
-    where: { deletedAt: null },
-    include: {
-      organization: { select: { name: true } },
-      _count: { select: { apiKeys: { where: { scope: "PROJECT" } } } },
-    },
-    orderBy: { createdAt: "asc" },
+  const rows = await prisma.query.projects.findMany({
+    where: isNull(projects.deletedAt),
+    with: { organization: true },
+    orderBy: asc(projects.createdAt),
   });
 
-  return c.json(
-    projects.map((p) => ({
-      id: p.id,
-      name: p.name,
-      orgName: p.organization?.name ?? "",
-      keyCount: p._count.apiKeys,
-      createdAt: p.createdAt.toISOString(),
-    })),
+  const withCounts = await Promise.all(
+    rows.map(async (p) => {
+      const keyCount = await prisma
+        .select({ value: count() })
+        .from(apiKeys)
+        .where(and(eq(apiKeys.projectId, p.id), eq(apiKeys.scope, "PROJECT")))
+        .then((r) => r[0]?.value ?? 0);
+      return {
+        id: p.id,
+        name: p.name,
+        orgName: p.organization?.name ?? "",
+        keyCount,
+        createdAt: p.createdAt.toISOString(),
+      };
+    }),
   );
+
+  return c.json(withCounts);
 });
 
 manage.post("/api/manage/projects", async (c) => {
@@ -44,21 +53,38 @@ manage.post("/api/manage/projects", async (c) => {
   }
 
   // Reuse the first org or create a default one
-  let org = await prisma.organization.findFirst({ orderBy: { createdAt: "asc" } });
+  let org = await prisma
+    .select()
+    .from(organizations)
+    .orderBy(asc(organizations.createdAt))
+    .limit(1)
+    .then((rows) => rows[0]);
   if (!org) {
-    org = await prisma.organization.create({ data: { name: "Default Org" } });
+    org = await prisma
+      .insert(organizations)
+      .values({ id: randomUUID(), name: "Default Org" })
+      .returning()
+      .then((rows) => rows[0]);
   }
 
-  const project = await prisma.project.create({
-    data: { name, orgId: org.id },
-    include: { organization: { select: { name: true } } },
-  });
+  const project = await prisma
+    .insert(projects)
+    .values({ id: randomUUID(), name, orgId: org.id })
+    .returning()
+    .then((rows) => rows[0]);
+
+  const orgName =
+    (await prisma
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, org.id))
+      .then((rows) => rows[0]?.name)) ?? "";
 
   return c.json(
     {
       id: project.id,
       name: project.name,
-      orgName: project.organization?.name ?? "",
+      orgName,
       createdAt: project.createdAt.toISOString(),
     },
     201,
@@ -72,10 +98,11 @@ manage.post("/api/manage/projects", async (c) => {
 manage.get("/api/manage/projects/:id/keys", async (c) => {
   const projectId = c.req.param("id");
 
-  const keys = await prisma.apiKey.findMany({
-    where: { projectId, scope: "PROJECT" },
-    orderBy: { createdAt: "asc" },
-  });
+  const keys = await prisma
+    .select()
+    .from(apiKeys)
+    .where(and(eq(apiKeys.projectId, projectId), eq(apiKeys.scope, "PROJECT")))
+    .orderBy(asc(apiKeys.createdAt));
 
   return c.json(
     keys.map((k) => ({
@@ -92,7 +119,12 @@ manage.post("/api/manage/projects/:id/keys", async (c) => {
   const projectId = c.req.param("id");
 
   // Verify project exists
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  const project = await prisma
+    .select({ id: projects.id })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1)
+    .then((rows) => rows[0]);
   if (!project) {
     return c.json({ message: "Project not found" }, 404);
   }
@@ -118,12 +150,17 @@ manage.post("/api/manage/projects/:id/keys", async (c) => {
 manage.delete("/api/manage/keys/:id", async (c) => {
   const keyId = c.req.param("id");
 
-  const key = await prisma.apiKey.findUnique({ where: { id: keyId } });
+  const key = await prisma
+    .select({ id: apiKeys.id })
+    .from(apiKeys)
+    .where(eq(apiKeys.id, keyId))
+    .limit(1)
+    .then((rows) => rows[0]);
   if (!key) {
     return c.json({ message: "API key not found" }, 404);
   }
 
-  await prisma.apiKey.delete({ where: { id: keyId } });
+  await prisma.delete(apiKeys).where(eq(apiKeys.id, keyId));
   return c.json({ success: true });
 });
 
@@ -134,15 +171,26 @@ manage.delete("/api/manage/keys/:id", async (c) => {
 manage.post("/api/manage/projects/:id/activate", async (c) => {
   const projectId = c.req.param("id");
 
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  const project = await prisma
+    .select({ id: projects.id, name: projects.name })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1)
+    .then((rows) => rows[0]);
   if (!project) {
     return c.json({ message: "Project not found" }, 404);
   }
 
   // Delete any previous web-ui key (its sk is hashed, cannot be recovered)
-  await prisma.apiKey.deleteMany({
-    where: { projectId, scope: "PROJECT", note: "web-ui" },
-  });
+  await prisma
+    .delete(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.projectId, projectId),
+        eq(apiKeys.scope, "PROJECT"),
+        eq(apiKeys.note, "web-ui"),
+      ),
+    );
 
   // Create a fresh key for the web UI
   const result = await createAndAddApiKeysToDb({

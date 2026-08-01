@@ -2,7 +2,9 @@
  * Provider cooldown manager.
  * Tracks consecutive failures and puts providers into cooldown.
  */
+import { and, eq, lte } from "drizzle-orm";
 import { getDb } from "../db.js";
+import { provider } from "../db/schema.js";
 
 const COOLDOWN_THRESHOLD = 3; // consecutive failures before cooldown
 const COOLDOWN_DURATION_MS = 60_000; // 60 seconds cooldown
@@ -29,14 +31,13 @@ export async function recordFailure(providerId: string): Promise<void> {
     const cooldownUntil = new Date(Date.now() + COOLDOWN_DURATION_MS);
     const db = getDb();
 
-    await db.provider.update({
-      where: { id: providerId },
-      data: {
+    await db
+      .update(provider)
+      .set({
         status: "cooldown",
-        cooldownUntil,
-        updatedAt: new Date(),
-      },
-    });
+        cooldownUntil: cooldownUntil.toISOString(),
+      })
+      .where(eq(provider.id, providerId));
 
     console.warn(
       `[router] Provider ${providerId} entered cooldown until ${cooldownUntil.toISOString()} (${count} consecutive failures)`,
@@ -53,19 +54,15 @@ export async function recordFailure(providerId: string): Promise<void> {
  */
 export async function recoverCooldowns(): Promise<void> {
   const db = getDb();
-  const now = new Date();
+  const nowIso = new Date().toISOString();
 
-  await db.provider.updateMany({
-    where: {
-      status: "cooldown",
-      cooldownUntil: { lte: now },
-    },
-    data: {
+  await db
+    .update(provider)
+    .set({
       status: "healthy",
       cooldownUntil: null,
-      updatedAt: now,
-    },
-  });
+    })
+    .where(and(eq(provider.status, "cooldown"), lte(provider.cooldownUntil, nowIso)));
 }
 
 // Start periodic cooldown recovery (every 10s)

@@ -1,8 +1,11 @@
 /**
  * Admin API — Credential CRUD.
  */
+import { count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb } from "../../db.js";
+import { auditLog, credential, provider } from "../../db/schema.js";
+import { generateId } from "../../utils/id.js";
 import { encrypt } from "../../utils/crypto.js";
 
 const credentials = new Hono();
@@ -10,7 +13,7 @@ const credentials = new Hono();
 // List all credentials (never expose values)
 credentials.get("/", async (c) => {
   const db = getDb();
-  const items = await db.credential.findMany({ orderBy: { createdAt: "desc" } });
+  const items = await db.query.credential.findMany({ orderBy: [desc(credential.createdAt)] });
 
   const safe = items.map((cr) => ({
     id: cr.id,
@@ -32,25 +35,26 @@ credentials.post("/", async (c) => {
     return c.json({ error: { message: "name and values are required" } }, 400);
   }
 
-  const credential = await db.credential.create({
-    data: {
+  const [created] = await db
+    .insert(credential)
+    .values({
+      id: generateId(),
       name: body.name,
       values: encrypt(JSON.stringify(body.values)),
       info: body.info ? JSON.stringify(body.info) : null,
-    },
+    })
+    .returning();
+
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "create",
+    tableName: "Credential",
+    objectId: created.id,
+    afterValue: JSON.stringify({ name: created.name }),
+    changedBy: "admin",
   });
 
-  await db.auditLog.create({
-    data: {
-      action: "create",
-      tableName: "Credential",
-      objectId: credential.id,
-      afterValue: JSON.stringify({ name: credential.name }),
-      changedBy: "admin",
-    },
-  });
-
-  return c.json({ id: credential.id, name: credential.name, createdAt: credential.createdAt }, 201);
+  return c.json({ id: created.id, name: created.name, createdAt: created.createdAt }, 201);
 });
 
 // Update credential
@@ -59,7 +63,7 @@ credentials.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.credential.findUnique({ where: { id } });
+  const existing = await db.query.credential.findFirst({ where: eq(credential.id, id) });
   if (!existing) {
     return c.json({ error: { message: "Credential not found" } }, 404);
   }
@@ -69,20 +73,19 @@ credentials.put("/:id", async (c) => {
   if (body.values !== undefined) data.values = encrypt(JSON.stringify(body.values));
   if (body.info !== undefined) data.info = JSON.stringify(body.info);
 
-  const credential = await db.credential.update({ where: { id }, data });
+  const [updated] = await db.update(credential).set(data).where(eq(credential.id, id)).returning();
 
-  await db.auditLog.create({
-    data: {
-      action: "update",
-      tableName: "Credential",
-      objectId: id,
-      beforeValue: JSON.stringify({ name: existing.name }),
-      afterValue: JSON.stringify({ name: credential.name }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "update",
+    tableName: "Credential",
+    objectId: id,
+    beforeValue: JSON.stringify({ name: existing.name }),
+    afterValue: JSON.stringify({ name: updated.name }),
+    changedBy: "admin",
   });
 
-  return c.json({ id: credential.id, name: credential.name, updatedAt: credential.updatedAt });
+  return c.json({ id: updated.id, name: updated.name, updatedAt: updated.updatedAt });
 });
 
 // Delete credential
@@ -90,27 +93,30 @@ credentials.delete("/:id", async (c) => {
   const db = getDb();
   const id = c.req.param("id");
 
-  const existing = await db.credential.findUnique({ where: { id } });
+  const existing = await db.query.credential.findFirst({ where: eq(credential.id, id) });
   if (!existing) {
     return c.json({ error: { message: "Credential not found" } }, 404);
   }
 
   // Check if any provider references this credential
-  const refs = await db.provider.count({ where: { credentialId: id } });
+  const [refRow] = await db
+    .select({ value: count() })
+    .from(provider)
+    .where(eq(provider.credentialId, id));
+  const refs = refRow?.value ?? 0;
   if (refs > 0) {
     return c.json({ error: { message: `Credential is referenced by ${refs} provider(s)` } }, 409);
   }
 
-  await db.credential.delete({ where: { id } });
+  await db.delete(credential).where(eq(credential.id, id));
 
-  await db.auditLog.create({
-    data: {
-      action: "delete",
-      tableName: "Credential",
-      objectId: id,
-      beforeValue: JSON.stringify({ name: existing.name }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "delete",
+    tableName: "Credential",
+    objectId: id,
+    beforeValue: JSON.stringify({ name: existing.name }),
+    changedBy: "admin",
   });
 
   return c.json({ success: true });

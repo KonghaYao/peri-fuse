@@ -1,5 +1,7 @@
 import type { ClickHouseClientConfigOptions } from "@clickhouse/client";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { prisma } from "../../db";
+import { models as modelsTable, prompts as promptsTable } from "../../db/schema/index.js";
 import type { ObservationType } from "../../domain";
 import {
   LEGACY_OBSERVATION_EXPORT_FIELDS,
@@ -559,16 +561,12 @@ export const getObservationsTableWithModelData = async (
 
   const [models, traces] = await Promise.all([
     uniqueModels.length > 0
-      ? prisma.model.findMany({
-          where: {
-            id: {
-              in: uniqueModels,
-            },
-            OR: [{ projectId: opts.projectId }, { projectId: null }],
-          },
-          include: {
-            Price: true,
-          },
+      ? prisma.query.models.findMany({
+          where: and(
+            inArray(modelsTable.id, uniqueModels),
+            or(eq(modelsTable.projectId, opts.projectId), isNull(modelsTable.projectId)),
+          ),
+          with: { prices: true },
         })
       : [],
     getTracesByIds(
@@ -1083,18 +1081,13 @@ export const getObservationsGroupedByPromptName = async (
 
   const pgPrompts =
     prompts.length > 0
-      ? await prisma.prompt.findMany({
-          select: {
-            id: true,
-            name: true,
-          },
-          where: {
-            id: {
-              in: prompts,
-            },
-            projectId,
-          },
-        })
+      ? await prisma
+          .select({
+            id: promptsTable.id,
+            name: promptsTable.name,
+          })
+          .from(promptsTable)
+          .where(and(inArray(promptsTable.id, prompts), eq(promptsTable.projectId, projectId)))
       : [];
 
   return pgPrompts.map((p) => ({

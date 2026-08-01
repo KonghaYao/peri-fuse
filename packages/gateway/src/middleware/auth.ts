@@ -10,10 +10,12 @@
  */
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
+import Database from "better-sqlite3";
+import { eq } from "drizzle-orm";
 import { compare } from "bcryptjs";
 import type { Context, Next } from "hono";
-import { PrismaClient } from "../generated/prisma/index.js";
 import { getDb } from "../db.js";
+import { apiKey } from "../db/schema.js";
 import { gatewayEnv } from "../env.js";
 import type { GatewayEnv } from "../app.js";
 
@@ -21,21 +23,22 @@ import type { GatewayEnv } from "../app.js";
 // Shared DB connection (for auth verification against server's api_keys)
 // ---------------------------------------------------------------------------
 
-let sharedDb: PrismaClient | null = null;
+let sharedDb: Database.Database | null = null;
 
-function getSharedDb(): PrismaClient {
+function getSharedDb(): Database.Database {
   if (sharedDb) return sharedDb;
 
   const rawUrl = process.env.DATABASE_URL ?? "file:./.langfuse/langfuse.db";
-  let datasourceUrl: string;
-  if (rawUrl.startsWith("file:") && !rawUrl.startsWith("file:/")) {
-    const relPath = rawUrl.slice("file:".length);
-    datasourceUrl = `file:${resolve(process.cwd(), relPath)}`;
+  let dbPath: string;
+  if (rawUrl.startsWith("file:")) {
+    const rawPath = rawUrl.slice("file:".length);
+    dbPath = rawPath.startsWith("/") ? rawPath : resolve(process.cwd(), rawPath);
   } else {
-    datasourceUrl = rawUrl;
+    dbPath = rawUrl;
   }
 
-  sharedDb = new PrismaClient({ datasourceUrl });
+  sharedDb = new Database(dbPath, { readonly: false });
+  sharedDb.pragma("busy_timeout = 5000");
   return sharedDb;
 }
 
@@ -102,51 +105,58 @@ export async function proxyAuth(c: Context<GatewayEnv>, next: Next): Promise<Res
   const db = getSharedDb();
   const salt = process.env.SALT;
 
-  let apiKey: any = null;
+  let apiKeyRow: any = null;
 
   // Fast path: SHA-256 hash lookup (no public key needed)
   if (salt) {
     const fastHash = createShaHash(secretKey, salt);
-    apiKey = (await db.$queryRawUnsafe(
-      `SELECT id, public_key, project_id, expires_at FROM api_keys WHERE fast_hashed_secret_key = ? LIMIT 1`,
-      fastHash,
-    ) as any[])[0] ?? null;
+    apiKeyRow =
+      (db
+        .prepare(
+          `SELECT id, public_key, project_id, expires_at FROM api_keys WHERE fast_hashed_secret_key = ? LIMIT 1`,
+        )
+        .get(fastHash) as any) ?? null;
   }
 
   // Slow path: bcrypt comparison across all keys
-  if (!apiKey) {
-    const rows: any[] = await db.$queryRawUnsafe(
-      `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key, project_id, expires_at FROM api_keys LIMIT 100`,
-    );
+  if (!apiKeyRow) {
+    const rows = db
+      .prepare(
+        `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key, project_id, expires_at FROM api_keys LIMIT 100`,
+      )
+      .all() as any[];
     for (const row of rows) {
       const isValid = await compare(secretKey, row.hashed_secret_key);
       if (isValid) {
         // Backfill fast hash for future requests
         if (salt && !row.fast_hashed_secret_key) {
           const shaHash = createShaHash(secretKey, salt);
-          await db.$executeRawUnsafe(
-            `UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`,
-            shaHash,
-            row.id,
-          ).catch(() => {});
+          try {
+            db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(
+              shaHash,
+              row.id,
+            );
+          } catch {
+            // ignore backfill errors
+          }
         }
-        apiKey = row;
+        apiKeyRow = row;
         break;
       }
     }
 
-    if (!apiKey) {
+    if (!apiKeyRow) {
       return c.json({ error: { message: "Invalid secret key", type: "authentication_error" } }, 401);
     }
   }
 
   // Check expiry
-  if (apiKey.expires_at && new Date(apiKey.expires_at).getTime() < Date.now()) {
+  if (apiKeyRow.expires_at && new Date(apiKeyRow.expires_at).getTime() < Date.now()) {
     return c.json({ error: { message: "API key is expired", type: "authentication_error" } }, 401);
   }
 
-  const resolvedPublicKey = apiKey.public_key ?? apiKey.publicKey;
-  const projectId = apiKey.project_id ?? apiKey.projectId ?? null;
+  const resolvedPublicKey = apiKeyRow.public_key ?? apiKeyRow.publicKey;
+  const projectId = apiKeyRow.project_id ?? apiKeyRow.projectId ?? null;
 
   // Cache the auth result
   authCache.set(secretKey, { publicKey: resolvedPublicKey, projectId, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
@@ -167,7 +177,7 @@ export async function proxyAuth(c: Context<GatewayEnv>, next: Next): Promise<Res
  */
 async function getGatewayConfig(publicKey: string) {
   const db = getDb();
-  const config = await db.apiKey.findUnique({ where: { publicKey } });
+  const config = await db.query.apiKey.findFirst({ where: eq(apiKey.publicKey, publicKey) });
 
   if (!config) {
     // No gateway-specific config — return defaults (unlimited)

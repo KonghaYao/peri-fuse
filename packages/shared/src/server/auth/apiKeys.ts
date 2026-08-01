@@ -1,8 +1,11 @@
 import * as crypto from "node:crypto";
 import { randomUUID } from "node:crypto";
-import type { PrismaClient } from "@prisma/client";
+import { and, eq } from "drizzle-orm";
+import { v4 } from "uuid";
 import { compare, hash } from "bcryptjs";
 import type { Cluster, Redis } from "ioredis";
+import type { Db } from "../../db";
+import { apiKeys } from "../../db/schema/index.js";
 import { env } from "../../env";
 import type { ApiKeyScope } from "../../prisma-enums";
 import { invalidateCachedApiKeys } from "./invalidateApiKeys";
@@ -40,7 +43,7 @@ export function createShaHash(privateKey: string, salt: string): string {
 }
 
 export async function createAndAddApiKeysToDb(p: {
-  prisma: PrismaClient;
+  prisma: Db;
   entityId: string;
   scope: ApiKeyScope;
   note?: string;
@@ -68,10 +71,13 @@ export async function createAndAddApiKeysToDb(p: {
 
   const hashFromProvidedKey = createShaHash(sk, salt);
 
-  const entity = p.scope === "PROJECT" ? { projectId: p.entityId } : { orgId: p.entityId };
+  const entity =
+    p.scope === "PROJECT" ? { projectId: p.entityId } : { organizationId: p.entityId };
 
-  const apiKey = await p.prisma.apiKey.create({
-    data: {
+  const apiKey = await p.prisma
+    .insert(apiKeys)
+    .values({
+      id: v4(),
       ...entity,
       publicKey: pk,
       hashedSecretKey: hashedSk,
@@ -82,8 +88,9 @@ export async function createAndAddApiKeysToDb(p: {
       isInAppAgentKey: p.isInAppAgentKey ?? false,
       createdByUserId: p.createdByUserId,
       createdByApiKeyId: p.createdByApiKeyId,
-    },
-  });
+    })
+    .returning()
+    .then((rows) => rows[0]);
 
   return {
     id: apiKey.id,
@@ -96,29 +103,34 @@ export async function createAndAddApiKeysToDb(p: {
 }
 
 export async function deleteApiKeyFromDb(p: {
-  prisma: PrismaClient;
+  prisma: Db;
   id: string;
   entityId: string;
   scope: ApiKeyScope;
   redis?: Redis | Cluster | null;
 }) {
-  const entity = p.scope === "PROJECT" ? { projectId: p.entityId } : { orgId: p.entityId };
+  const apiKey = await p.prisma
+    .select()
+    .from(apiKeys)
+    .where(
+      and(
+        p.scope === "PROJECT"
+          ? eq(apiKeys.projectId, p.entityId)
+          : eq(apiKeys.organizationId, p.entityId),
+        eq(apiKeys.id, p.id),
+        eq(apiKeys.scope, p.scope),
+      ),
+    )
+    .limit(1)
+    .then((rows) => rows[0]);
 
-  const apiKey = await p.prisma.apiKey.findFirstOrThrow({
-    where: {
-      ...entity,
-      id: p.id,
-      scope: p.scope,
-    },
-  });
+  if (!apiKey) {
+    throw new Error(`API key ${p.id} not found`);
+  }
 
   await invalidateCachedApiKeys([apiKey], `key ${p.id}`, p.redis);
 
-  await p.prisma.apiKey.delete({
-    where: {
-      id: apiKey.id,
-    },
-  });
+  await p.prisma.delete(apiKeys).where(eq(apiKeys.id, apiKey.id));
 
   return true;
 }

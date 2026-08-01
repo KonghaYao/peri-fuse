@@ -7,6 +7,9 @@
  */
 
 import { prisma } from "@peri-fuse/shared/src/db";
+import { models as modelsTable } from "@peri-fuse/shared/src/db/schema/index.js";
+import Decimal from "decimal.js";
+import { and, inArray, or, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 import { GetObservationsV1Query } from "../schemas/observations";
@@ -55,15 +58,13 @@ app.get("/api/public/observations", authMiddleware, async (c) => {
 
   const models =
     uniqueModels.length > 0
-      ? await prisma.model.findMany({
-          where: {
-            id: {
-              in: uniqueModels,
-            },
-            OR: [{ projectId: auth.scope.projectId }, { projectId: null }],
-          },
-          include: {
-            Price: true,
+      ? await prisma.query.models.findMany({
+          where: and(
+            inArray(modelsTable.id, uniqueModels),
+            or(eq(modelsTable.projectId, auth.scope.projectId), isNull(modelsTable.projectId)),
+          ),
+          with: {
+            prices: true,
           },
         })
       : [];
@@ -74,12 +75,15 @@ app.get("/api/public/observations", authMiddleware, async (c) => {
     data: items
       .map((i) => {
         const model = models.find((m) => m.id === i.internalModelId);
+        const inputPrice = model?.prices.find((p) => p.usageType === "input")?.price;
+        const outputPrice = model?.prices.find((p) => p.usageType === "output")?.price;
+        const totalPrice = model?.prices.find((p) => p.usageType === "total")?.price;
         return {
           ...i,
           modelId: model?.id ?? null,
-          inputPrice: model?.Price?.find((m) => m.usageType === "input")?.price ?? null,
-          outputPrice: model?.Price?.find((m) => m.usageType === "output")?.price ?? null,
-          totalPrice: model?.Price?.find((m) => m.usageType === "total")?.price ?? null,
+          inputPrice: inputPrice != null ? new Decimal(inputPrice) : null,
+          outputPrice: outputPrice != null ? new Decimal(outputPrice) : null,
+          totalPrice: totalPrice != null ? new Decimal(totalPrice) : null,
         };
       })
       .map(transformDbToApiObservation),

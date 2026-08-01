@@ -1,4 +1,4 @@
-import type { Action, Trigger } from "@prisma/client";
+import type { Action, Trigger } from "../db/types.js";
 import { z } from "zod";
 import type { FilterState } from "../types";
 

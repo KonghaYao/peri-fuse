@@ -1,44 +1,55 @@
 /**
  * Admin API — Budget CRUD.
  */
+import { count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb } from "../../db.js";
+import { apiKey, auditLog, budget } from "../../db/schema.js";
+import { generateId } from "../../utils/id.js";
 
 const budgets = new Hono();
 
 // List all budgets
 budgets.get("/", async (c) => {
   const db = getDb();
-  const items = await db.budget.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { keys: true } } },
+  const items = await db.query.budget.findMany({
+    orderBy: [desc(budget.createdAt)],
   });
 
-  const safe = items.map((b) => ({
-    ...b,
-    modelMaxBudget: b.modelMaxBudget ? JSON.parse(b.modelMaxBudget) : null,
-    keyCount: b._count.keys,
-    _count: undefined,
-  }));
+  const withCounts = await Promise.all(
+    items.map(async (b) => {
+      const [row] = await db
+        .select({ value: count() })
+        .from(apiKey)
+        .where(eq(apiKey.budgetId, b.id));
+      return {
+        ...b,
+        modelMaxBudget: b.modelMaxBudget ? JSON.parse(b.modelMaxBudget) : null,
+        keyCount: row?.value ?? 0,
+      };
+    }),
+  );
 
-  return c.json({ data: safe });
+  return c.json({ data: withCounts });
 });
 
 // Get single budget
 budgets.get("/:id", async (c) => {
   const db = getDb();
-  const budget = await db.budget.findUnique({
-    where: { id: c.req.param("id") },
-    include: { keys: { select: { id: true, keyName: true, publicKey: true, spend: true } } },
+  const found = await db.query.budget.findFirst({
+    where: eq(budget.id, c.req.param("id")),
+    with: {
+      keys: { columns: { id: true, keyName: true, publicKey: true, spend: true } },
+    },
   });
 
-  if (!budget) {
+  if (!found) {
     return c.json({ error: { message: "Budget not found" } }, 404);
   }
 
   return c.json({
-    ...budget,
-    modelMaxBudget: budget.modelMaxBudget ? JSON.parse(budget.modelMaxBudget) : null,
+    ...found,
+    modelMaxBudget: found.modelMaxBudget ? JSON.parse(found.modelMaxBudget) : null,
   });
 });
 
@@ -47,8 +58,10 @@ budgets.post("/", async (c) => {
   const db = getDb();
   const body = await c.req.json();
 
-  const budget = await db.budget.create({
-    data: {
+  const [created] = await db
+    .insert(budget)
+    .values({
+      id: generateId(),
       maxBudget: body.maxBudget ?? null,
       softBudget: body.softBudget ?? null,
       maxParallel: body.maxParallel ?? null,
@@ -57,20 +70,19 @@ budgets.post("/", async (c) => {
       duration: body.duration ?? null,
       resetAt: body.duration ? computeNextReset(body.duration) : null,
       modelMaxBudget: body.modelMaxBudget ? JSON.stringify(body.modelMaxBudget) : null,
-    },
+    })
+    .returning();
+
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "create",
+    tableName: "Budget",
+    objectId: created.id,
+    afterValue: JSON.stringify({ maxBudget: created.maxBudget, duration: created.duration }),
+    changedBy: "admin",
   });
 
-  await db.auditLog.create({
-    data: {
-      action: "create",
-      tableName: "Budget",
-      objectId: budget.id,
-      afterValue: JSON.stringify({ maxBudget: budget.maxBudget, duration: budget.duration }),
-      changedBy: "admin",
-    },
-  });
-
-  return c.json(budget, 201);
+  return c.json(created, 201);
 });
 
 // Update budget
@@ -79,7 +91,7 @@ budgets.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.budget.findUnique({ where: { id } });
+  const existing = await db.query.budget.findFirst({ where: eq(budget.id, id) });
   if (!existing) {
     return c.json({ error: { message: "Budget not found" } }, 404);
   }
@@ -98,20 +110,19 @@ budgets.put("/:id", async (c) => {
     data.modelMaxBudget = body.modelMaxBudget ? JSON.stringify(body.modelMaxBudget) : null;
   }
 
-  const budget = await db.budget.update({ where: { id }, data });
+  const [updated] = await db.update(budget).set(data).where(eq(budget.id, id)).returning();
 
-  await db.auditLog.create({
-    data: {
-      action: "update",
-      tableName: "Budget",
-      objectId: id,
-      beforeValue: JSON.stringify({ maxBudget: existing.maxBudget }),
-      afterValue: JSON.stringify({ maxBudget: budget.maxBudget }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "update",
+    tableName: "Budget",
+    objectId: id,
+    beforeValue: JSON.stringify({ maxBudget: existing.maxBudget }),
+    afterValue: JSON.stringify({ maxBudget: updated.maxBudget }),
+    changedBy: "admin",
   });
 
-  return c.json(budget);
+  return c.json(updated);
 });
 
 // Delete budget
@@ -119,31 +130,30 @@ budgets.delete("/:id", async (c) => {
   const db = getDb();
   const id = c.req.param("id");
 
-  const existing = await db.budget.findUnique({ where: { id } });
+  const existing = await db.query.budget.findFirst({ where: eq(budget.id, id) });
   if (!existing) {
     return c.json({ error: { message: "Budget not found" } }, 404);
   }
 
   // Unlink keys first
-  await db.apiKey.updateMany({ where: { budgetId: id }, data: { budgetId: null } });
-  await db.budget.delete({ where: { id } });
+  await db.update(apiKey).set({ budgetId: null }).where(eq(apiKey.budgetId, id));
+  await db.delete(budget).where(eq(budget.id, id));
 
-  await db.auditLog.create({
-    data: {
-      action: "delete",
-      tableName: "Budget",
-      objectId: id,
-      beforeValue: JSON.stringify({ maxBudget: existing.maxBudget, duration: existing.duration }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "delete",
+    tableName: "Budget",
+    objectId: id,
+    beforeValue: JSON.stringify({ maxBudget: existing.maxBudget, duration: existing.duration }),
+    changedBy: "admin",
   });
 
   return c.json({ success: true });
 });
 
-function computeNextReset(duration: string): Date {
+function computeNextReset(duration: string): string {
   const match = duration.match(/^(\d+)([dhm])$/);
-  if (!match) return new Date(Date.now() + 86400000);
+  if (!match) return new Date(Date.now() + 86400000).toISOString();
   const value = parseInt(match[1], 10);
   const unit = match[2];
   let ms = 0;
@@ -152,7 +162,7 @@ function computeNextReset(duration: string): Date {
     case "h": ms = value * 3600000; break;
     case "m": ms = value * 60000; break;
   }
-  return new Date(Date.now() + ms);
+  return new Date(Date.now() + ms).toISOString();
 }
 
 export default budgets;

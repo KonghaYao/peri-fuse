@@ -1,81 +1,30 @@
-// This file exports the prisma db connection, the Prisma Object, and the Typescript types.
+// This file exports the drizzle db connection and the TypeScript types.
 // This is not imported in the index.ts file of this package, as we must not import this into FE code.
+//
+// Migrated from Prisma to Drizzle (better-sqlite3). The `prisma` export is kept
+// as an alias of the Drizzle database for a smooth transition; new code should
+// prefer `getDb()`. Model types previously re-exported from `@prisma/client` are
+// now inferred from the Drizzle schema (see ./types). The `Prisma` namespace
+// (sql/raw/join/empty + error + input types) is provided by ./prisma-compat.
 
-import { resolve } from "node:path";
-import { env } from "node:process";
-import { type Prisma, PrismaClient } from "@prisma/client";
-import { logger } from "./server";
-import { isLiteMode } from "./server/adapters";
+import { getDb, closeDb, ensureSchema, type Db } from "./db/client.js";
 
-export class PrismaClientSingleton {
-  private static instance: PrismaClient;
+export { getDb, closeDb, ensureSchema, type Db };
 
-  public static getInstance(): PrismaClient {
-    if (PrismaClientSingleton.instance) {
-      return PrismaClientSingleton.instance;
-    }
+/**
+ * Drizzle database instance. Named `prisma` for historical continuity; it is a
+ * Drizzle `BetterSQLite3Database`, NOT a PrismaClient. Use Drizzle query APIs
+ * (`db.select()…`, `db.query.<table>…`, `db.insert()…`, `db.all(sql`…`)`).
+ */
+export const prisma = getDb();
 
-    PrismaClientSingleton.instance = createPrismaInstance();
+// Model row/insert types (User, ApiKey, Project, …) inferred from Drizzle tables.
+export * from "./db/types.js";
 
-    return PrismaClientSingleton.instance;
-  }
-}
+// `Prisma` namespace replacement (sql builders, error class, loose input types).
+export { Prisma, PrismaClientKnownRequestError, toKnownRequestError, type Sql } from "./db/prisma-compat.js";
 
-const createPrismaInstance = () => {
-  // In lite mode, Prisma uses SQLite via DATABASE_URL=file:./dev.db
-  // In full mode, Prisma uses PostgreSQL via DATABASE_URL=postgresql://...
-  let datasourceUrl: string | undefined;
-  if (isLiteMode()) {
-    const raw = env.DATABASE_URL ?? "file:./.langfuse/langfuse.db";
-    // Resolve relative file: paths to absolute so Prisma can always find the DB
-    // regardless of the process working directory.
-    if (raw.startsWith("file:") && !raw.startsWith("file:/")) {
-      const relPath = raw.slice("file:".length);
-      datasourceUrl = `file:${resolve(process.cwd(), relPath)}`;
-    } else {
-      datasourceUrl = raw;
-    }
-  }
-
-  const client = new PrismaClient<Prisma.PrismaClientOptions, "warn" | "error" | "query">({
-    ...(datasourceUrl ? { datasources: { db: { url: datasourceUrl } } } : {}),
-    log: [
-      { emit: "event", level: "query" },
-      { emit: "event", level: "error" },
-      { emit: "event", level: "warn" },
-    ],
-  });
-
-  if (env.NODE_ENV === "development") {
-    client.$on("query", (event) => {
-      logger.debug(`prisma:query ${event.query}, ${event.duration}ms`);
-    });
-  }
-
-  client.$on("warn", (event) => {
-    logger.warn(`prisma:warn ${event.message}`);
-  });
-
-  client.$on("error", (event) => {
-    logger.error(`prisma:error ${event.message}`);
-  });
-  return client;
-};
-
-// biome-ignore lint/suspicious/noShadowRestrictedNames: augmenting globalThis for Prisma singleton
-declare const globalThis: {
-  prismaGlobal: PrismaClient | undefined;
-} & typeof global;
-
-// eslint-disable-next-line turbo/no-undeclared-env-vars
-if (process.env.NODE_ENV === "development") {
-  globalThis.prismaGlobal ??= createPrismaInstance(); // regular instantiation
-}
-
-export const prisma = globalThis.prismaGlobal ?? PrismaClientSingleton.getInstance();
-
-export * from "@prisma/client";
-// Enum compat: explicit exports override star-export above (SQLite has no enums)
+// Enum compat (SQLite has no enums; string literal unions live in ./prisma-enums).
 export {
   ActionExecutionStatus,
   ActionType,
@@ -107,4 +56,4 @@ export {
   Role,
   ScoreConfigDataType,
   SurveyName,
-} from "./prisma-enums";
+} from "./prisma-enums.js";

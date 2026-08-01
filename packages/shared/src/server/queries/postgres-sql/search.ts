@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../../../db/prisma-compat.js";
 import type { TracingSearchType } from "../../../interfaces/search";
 import { isLiteMode } from "../../adapters";
 

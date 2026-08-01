@@ -5,7 +5,7 @@ import "./env.js";
 
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
-import { getDb } from "./db.js";
+import { closeDb, ensureSchema } from "./db.js";
 import { gatewayEnv } from "./env.js";
 import { spendFlusher } from "./spend/flusher.js";
 import { startBudgetReset, stopBudgetReset } from "./spend/budget-reset.js";
@@ -14,13 +14,9 @@ import { startCooldownRecovery, stopCooldownRecovery } from "./router/cooldown.j
 const app = createApp();
 
 async function main() {
-  // Ensure database connection
-  const db = getDb();
-  await db.$connect();
-
-  // Enable WAL mode for better concurrent read/write
-  await db.$queryRawUnsafe("PRAGMA journal_mode = WAL;");
-  await db.$queryRawUnsafe("PRAGMA busy_timeout = 5000;");
+  // Ensure database connection and create tables on first boot (WAL + busy_timeout
+  // pragmas are applied when the connection opens in db.ts).
+  ensureSchema();
 
   // Start background services
   spendFlusher.start();
@@ -53,8 +49,7 @@ async function shutdown() {
     console.error("[peri-gateway] Flush error on shutdown:", err);
   }
 
-  const db = getDb();
-  await db.$disconnect().catch(() => {});
+  closeDb();
   process.exit(0);
 }
 

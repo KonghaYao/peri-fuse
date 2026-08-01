@@ -1,4 +1,6 @@
+import { eq } from "drizzle-orm";
 import { prisma } from "../db";
+import { projects } from "../db/schema/index.js";
 import { env } from "../env";
 import { logger } from "./logger";
 
@@ -24,10 +26,12 @@ export async function shouldSkipDeletionFor(
   }
 
   // Check if project still exists (might have been deleted)
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    select: { id: true },
-  });
+  const project = await prisma
+    .select({ id: projects.id })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1)
+    .then((rows) => rows[0]);
 
   if (!project) {
     logger.info(

@@ -1,4 +1,4 @@
-import type { ScoreConfig as ScoreConfigDbType } from "@prisma/client";
+import type { ScoreConfig as ScoreConfigDbType } from "../../db/types.js";
 import type { z } from "zod";
 import { type ScoreConfigDomain, ScoreConfigSchema } from "../../domain/score-configs";
 

@@ -5,7 +5,7 @@
  * raw queries can work in both full mode (PostgreSQL) and lite mode (SQLite).
  */
 
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../../db/prisma-compat.js";
 import { isLiteMode } from "../adapters";
 
 /**

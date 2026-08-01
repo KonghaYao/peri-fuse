@@ -28,11 +28,10 @@
   },
   "scripts": {
     "start": "node dist/index.js",
-    "build": "tsc && node -e \"require('fs').cpSync('src/generated','dist/generated',{recursive:true})\"",
+    "build": "tsc",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "dev": "tsx watch --clear-screen=false src/index.ts",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push",
+    "db:generate": "drizzle-kit generate",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "vitest run"
@@ -40,14 +39,16 @@
   "dependencies": {
     "@hono/node-server": "^1.19.14",
     "@paralleldrive/cuid2": "^2.2.2",
-    "@prisma/client": "^6.19.3",
     "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.10.0",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.12.27",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.3.0",
-    "prisma": "^6.19.3",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.1"

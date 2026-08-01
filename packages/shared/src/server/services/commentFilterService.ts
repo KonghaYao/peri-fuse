@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { PrismaClient } from "../../db";
+import type { Db } from "../../db";
 import { InvalidRequestError } from "../../errors";
 import type { singleFilter } from "../../interfaces/filters";
 import {
@@ -96,7 +96,7 @@ export async function applyCommentFilters({
   idColumn = "id",
 }: {
   filterState: z.infer<typeof singleFilter>[];
-  prisma: PrismaClient;
+  prisma: Db;
   projectId: string;
   objectType: CommentObjectType;
   idColumn?: string;

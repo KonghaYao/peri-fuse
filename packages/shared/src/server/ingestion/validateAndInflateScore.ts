@@ -9,7 +9,9 @@ import {
   type ScoreDomain,
   ScorePropsAgainstConfig,
 } from "../../../src";
+import { and, eq } from "drizzle-orm";
 import { prisma } from "../../db";
+import { scoreConfigs } from "../../db/schema/index.js";
 import { InvalidRequestError, LangfuseNotFoundError } from "../../errors";
 import { validateDbScoreConfigSafe } from "../../features/scoreConfigs/validation";
 import type { ScoreEventType } from "./types";
@@ -31,12 +33,12 @@ export async function validateAndInflateScore(params: ValidateAndInflateScorePar
   }
 
   if (body.configId) {
-    const config = await prisma.scoreConfig.findFirst({
-      where: {
-        projectId,
-        id: body.configId,
-      },
-    });
+    const config = await prisma
+      .select()
+      .from(scoreConfigs)
+      .where(and(eq(scoreConfigs.projectId, projectId), eq(scoreConfigs.id, body.configId)))
+      .limit(1)
+      .then((rows) => rows[0]);
 
     if (!config || !validateDbScoreConfigSafe(config).success)
       throw new LangfuseNotFoundError(

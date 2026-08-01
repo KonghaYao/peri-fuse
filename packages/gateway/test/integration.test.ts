@@ -8,7 +8,6 @@
 import { serve, type ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { execSync } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -130,12 +129,9 @@ beforeAll(async () => {
   process.env.SALT = TEST_SALT;
   process.env.GATEWAY_ADMIN_KEY = ADMIN_KEY;
 
-  // Push gateway schema
-  execSync("npx prisma db push --skip-generate", {
-    cwd: import.meta.dirname + "/..",
-    env: { ...process.env, GATEWAY_DB_URL: `file:${TEST_DB}` },
-    stdio: "pipe",
-  });
+  // Create gateway schema (drizzle migration SQL)
+  const { ensureSchema } = await import("../src/db.js");
+  ensureSchema();
 
   // Create shared DB with api_keys table and seed a test key
   const { hashSync } = await import("bcryptjs");
@@ -175,13 +171,9 @@ beforeAll(async () => {
 
   // Import and create gateway app (after env is set)
   const { createApp } = await import("../src/app.js");
-  const { getDb } = await import("../src/db.js");
   const { spendFlusher } = await import("../src/spend/flusher.js");
 
   app = createApp();
-  const db = getDb();
-  await db.$connect();
-  await db.$queryRawUnsafe("PRAGMA journal_mode = WAL;");
   spendFlusher.start();
 
   // Seed: create provider → deployment → key config
@@ -213,10 +205,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const { spendFlusher } = await import("../src/spend/flusher.js");
-  const { getDb } = await import("../src/db.js");
+  const { closeDb } = await import("../src/db.js");
   spendFlusher.stop();
   await spendFlusher.flushAll();
-  await getDb().$disconnect();
+  closeDb();
   mockServer?.close();
 });
 
@@ -473,11 +465,10 @@ describe("budget limiting", () => {
 
     // Manually set spend above budget
     const { getDb } = await import("../src/db.js");
+    const { apiKey } = await import("../src/db/schema.js");
+    const { eq } = await import("drizzle-orm");
     const db = getDb();
-    await db.apiKey.updateMany({
-      where: { publicKey: "pk-budget" },
-      data: { spend: 1.0 },
-    });
+    await db.update(apiKey).set({ spend: 1.0 }).where(eq(apiKey.publicKey, "pk-budget"));
 
     const res = await proxyPost("/v1/chat/completions", {
       model: "test-model",

@@ -1,6 +1,9 @@
 import type { ClickHouseClientConfigOptions } from "@clickhouse/client";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { prisma } from "../../db";
+import { scoreConfigs as scoreConfigsTable } from "../../db/schema/index.js";
+import { parseJsonPrioritised } from "../../utils/json";
 import {
   AGGREGATABLE_SCORE_TYPES,
   type AggregatableScoreDataType,
@@ -1099,20 +1102,26 @@ export const getCategoricalScoresGroupedByName = async (
   // Query score_configs table for categorical configurations
   const scoreConfigs =
     scoreNames.length > 0
-      ? await prisma.scoreConfig.findMany({
-          where: {
-            projectId: projectId,
-            name: {
-              in: scoreNames,
-            },
-            dataType: "CATEGORICAL",
-            isArchived: false,
-          },
-          select: {
-            name: true,
-            categories: true,
-          },
-        })
+      ? await prisma
+          .select({
+            name: scoreConfigsTable.name,
+            categories: scoreConfigsTable.categories,
+          })
+          .from(scoreConfigsTable)
+          .where(
+            and(
+              eq(scoreConfigsTable.projectId, projectId),
+              inArray(scoreConfigsTable.name, scoreNames),
+              eq(scoreConfigsTable.dataType, "CATEGORICAL"),
+              eq(scoreConfigsTable.isArchived, false),
+            ),
+          )
+          .then((rows) =>
+            rows.map((r) => ({
+              name: r.name,
+              categories: r.categories ? (parseJsonPrioritised(r.categories) ?? null) : null,
+            })),
+          )
       : [];
 
   // Create a map of score configs for easy lookup

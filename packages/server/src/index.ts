@@ -14,10 +14,10 @@ import { ensurePrismaSchema } from "./db-init";
 import { ensureGatewaySchema } from "./gateway-init";
 import { liteEnv } from "./env";
 
-// Auto-create Prisma tables on first boot (no manual db:push needed)
+// Auto-create metadata tables on first boot (no manual migration needed)
 ensurePrismaSchema();
 
-// Auto-create gateway tables on first boot (no manual db:push needed)
+// Auto-create gateway tables on first boot (no manual migration needed)
 ensureGatewaySchema();
 
 const app = createApp();
@@ -38,16 +38,16 @@ main().catch((err) => {
   process.exit(1);
 });
 
-// Graceful shutdown — close HTTP server and Prisma connections so tsx watch can restart cleanly
+// Graceful shutdown — close HTTP server and SQLite connections so tsx watch can restart cleanly
 async function shutdown() {
   server.close();
   try {
-    const { prisma } = await import("@peri-fuse/shared/src/db");
-    await prisma.$disconnect();
+    const { closeDb } = await import("@peri-fuse/shared/src/db");
+    closeDb();
   } catch { /* ignore */ }
   try {
-    const { getDb } = await import("@peri/gateway/db");
-    await getDb().$disconnect();
+    const { closeDb } = await import("@peri/gateway/db");
+    closeDb();
   } catch { /* ignore */ }
   process.exit(0);
 }

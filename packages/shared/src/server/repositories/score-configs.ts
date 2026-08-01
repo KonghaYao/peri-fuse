@@ -1,4 +1,6 @@
+import { and, asc, count, desc, eq } from "drizzle-orm";
 import { prisma } from "../../db";
+import { scoreConfigs } from "../../db/schema/index.js";
 import { InternalServerError, LangfuseNotFoundError } from "../../errors";
 import {
   filterAndValidateDbScoreConfigList,
@@ -16,19 +18,18 @@ export const listScoreConfigs = async ({
   limit: number;
 }) => {
   const [rawConfigs, totalItems] = await Promise.all([
-    prisma.scoreConfig.findMany({
-      where: {
-        projectId,
-      },
-      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
-      take: limit,
-      skip: (page - 1) * limit,
-    }),
-    prisma.scoreConfig.count({
-      where: {
-        projectId,
-      },
-    }),
+    prisma
+      .select()
+      .from(scoreConfigs)
+      .where(eq(scoreConfigs.projectId, projectId))
+      .orderBy(desc(scoreConfigs.createdAt), asc(scoreConfigs.id))
+      .limit(limit)
+      .offset((page - 1) * limit),
+    prisma
+      .select({ value: count() })
+      .from(scoreConfigs)
+      .where(eq(scoreConfigs.projectId, projectId))
+      .then((rows) => rows[0]?.value ?? 0),
   ]);
 
   const configs = filterAndValidateDbScoreConfigList(rawConfigs, traceException);
@@ -51,12 +52,12 @@ export const getScoreConfig = async ({
   projectId: string;
   configId: string;
 }) => {
-  const config = await prisma.scoreConfig.findUnique({
-    where: {
-      id: configId,
-      projectId,
-    },
-  });
+  const config = await prisma
+    .select()
+    .from(scoreConfigs)
+    .where(and(eq(scoreConfigs.id, configId), eq(scoreConfigs.projectId, projectId)))
+    .limit(1)
+    .then((rows) => rows[0]);
 
   if (!config) {
     throw new LangfuseNotFoundError("Score config not found within authorized project");

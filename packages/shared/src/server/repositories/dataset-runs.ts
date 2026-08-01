@@ -1,6 +1,8 @@
+import { and, eq } from "drizzle-orm";
 import { v4 } from "uuid";
 import type z from "zod";
 import { prisma } from "../../db";
+import { datasetRuns } from "../../db/schema/index.js";
 import { asLiteColumn } from "../../prisma-enums";
 import type { jsonSchema } from "../../utils/zod";
 
@@ -8,12 +10,20 @@ type Json = z.infer<typeof jsonSchema>;
 
 const isUniqueConstraintError = (error: any): boolean => {
   return (
-    error.code === "P2002" || // Prisma unique constraint
+    error.code === "P2002" || // Prisma-style unique constraint (compat)
+    error.code === "SQLITE_CONSTRAINT_UNIQUE" ||
     error.message?.includes("duplicate key") ||
     error.message?.toLowerCase().includes("unique constraint") ||
     error.message?.includes("violates unique constraint")
   );
 };
+
+const runUniqueWhere = (datasetId: string, projectId: string, name: string) =>
+  and(
+    eq(datasetRuns.datasetId, datasetId),
+    eq(datasetRuns.projectId, projectId),
+    eq(datasetRuns.name, name),
+  );
 
 /**
  * Create or fetch a dataset run with optimistic concurrency handling.
@@ -45,46 +55,43 @@ export const createOrFetchDatasetRun = async ({
 }) => {
   try {
     // Attempt to fetch existing run
-    const existingRun = await prisma.datasetRuns.findUnique({
-      where: {
-        datasetId_projectId_name: {
-          datasetId,
-          projectId,
-          name: name,
-        },
-      },
-    });
+    const existingRun = await prisma
+      .select()
+      .from(datasetRuns)
+      .where(runUniqueWhere(datasetId, projectId, name))
+      .limit(1)
+      .then((rows) => rows[0]);
     if (existingRun) {
       return existingRun;
     }
 
     // Attempt creation
-    const datasetRun = await prisma.datasetRuns.create({
-      data: {
+    const ts = createdAt ?? new Date();
+    const datasetRun = await prisma
+      .insert(datasetRuns)
+      .values({
         id: v4(),
         datasetId,
         projectId,
         name,
         description: description ?? null,
         metadata: asLiteColumn(metadata ?? {}),
-        createdAt: createdAt ?? new Date(),
-        updatedAt: createdAt ?? new Date(),
-      },
-    });
+        createdAt: ts,
+        updatedAt: ts,
+      })
+      .returning()
+      .then((rows) => rows[0]);
     return datasetRun;
   } catch (error) {
     // Check if it's a unique constraint violation
     if (isUniqueConstraintError(error)) {
       // Fetch existing run
-      const existingRun = await prisma.datasetRuns.findUnique({
-        where: {
-          datasetId_projectId_name: {
-            datasetId,
-            projectId,
-            name: name,
-          },
-        },
-      });
+      const existingRun = await prisma
+        .select()
+        .from(datasetRuns)
+        .where(runUniqueWhere(datasetId, projectId, name))
+        .limit(1)
+        .then((rows) => rows[0]);
 
       if (existingRun) {
         return existingRun;

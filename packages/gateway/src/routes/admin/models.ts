@@ -1,17 +1,24 @@
 /**
  * Admin API — Model Deployment CRUD.
  */
+import { count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getDb } from "../../db.js";
+import { auditLog, modelDeployment, provider } from "../../db/schema.js";
+import { generateId } from "../../utils/id.js";
 
 const models = new Hono();
 
 // List all model deployments
 models.get("/", async (c) => {
   const db = getDb();
-  const items = await db.modelDeployment.findMany({
-    orderBy: { createdAt: "desc" },
-    include: { provider: { select: { id: true, name: true, type: true, isEnabled: true, status: true } } },
+  const items = await db.query.modelDeployment.findMany({
+    orderBy: [desc(modelDeployment.createdAt)],
+    with: {
+      provider: {
+        columns: { id: true, name: true, type: true, isEnabled: true, status: true },
+      },
+    },
   });
 
   const safe = items.map((d) => ({
@@ -26,23 +33,23 @@ models.get("/", async (c) => {
 // List unique model names (aliases)
 models.get("/aliases", async (c) => {
   const db = getDb();
-  const results = await db.modelDeployment.groupBy({
-    by: ["modelName"],
-    where: { isEnabled: true },
-    _count: true,
-  });
+  const results = await db
+    .select({ modelName: modelDeployment.modelName, value: count() })
+    .from(modelDeployment)
+    .where(eq(modelDeployment.isEnabled, true))
+    .groupBy(modelDeployment.modelName);
 
   return c.json({
-    data: results.map((r) => ({ modelName: r.modelName, deploymentCount: r._count })),
+    data: results.map((r) => ({ modelName: r.modelName, deploymentCount: r.value })),
   });
 });
 
 // Get single deployment
 models.get("/:id", async (c) => {
   const db = getDb();
-  const deployment = await db.modelDeployment.findUnique({
-    where: { id: c.req.param("id") },
-    include: { provider: true },
+  const deployment = await db.query.modelDeployment.findFirst({
+    where: eq(modelDeployment.id, c.req.param("id")),
+    with: { provider: true },
   });
 
   if (!deployment) {
@@ -66,30 +73,31 @@ models.post("/", async (c) => {
   }
 
   // Verify provider exists
-  const provider = await db.provider.findUnique({ where: { id: body.providerId } });
-  if (!provider) {
+  const prov = await db.query.provider.findFirst({ where: eq(provider.id, body.providerId) });
+  if (!prov) {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
 
-  const deployment = await db.modelDeployment.create({
-    data: {
+  const [deployment] = await db
+    .insert(modelDeployment)
+    .values({
+      id: generateId(),
       modelName: body.modelName,
       providerId: body.providerId,
       providerModel: body.providerModel,
       litellmParams: JSON.stringify(body.litellmParams ?? {}),
       modelInfo: body.modelInfo ? JSON.stringify(body.modelInfo) : null,
       isEnabled: body.isEnabled ?? true,
-    },
-  });
+    })
+    .returning();
 
-  await db.auditLog.create({
-    data: {
-      action: "create",
-      tableName: "ModelDeployment",
-      objectId: deployment.id,
-      afterValue: JSON.stringify({ modelName: deployment.modelName, providerModel: deployment.providerModel }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "create",
+    tableName: "ModelDeployment",
+    objectId: deployment.id,
+    afterValue: JSON.stringify({ modelName: deployment.modelName, providerModel: deployment.providerModel }),
+    changedBy: "admin",
   });
 
   return c.json(deployment, 201);
@@ -101,7 +109,7 @@ models.put("/:id", async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.modelDeployment.findUnique({ where: { id } });
+  const existing = await db.query.modelDeployment.findFirst({ where: eq(modelDeployment.id, id) });
   if (!existing) {
     return c.json({ error: { message: "Deployment not found" } }, 404);
   }
@@ -114,17 +122,20 @@ models.put("/:id", async (c) => {
   if (body.modelInfo !== undefined) data.modelInfo = body.modelInfo ? JSON.stringify(body.modelInfo) : null;
   if (body.isEnabled !== undefined) data.isEnabled = body.isEnabled;
 
-  const deployment = await db.modelDeployment.update({ where: { id }, data });
+  const [deployment] = await db
+    .update(modelDeployment)
+    .set(data)
+    .where(eq(modelDeployment.id, id))
+    .returning();
 
-  await db.auditLog.create({
-    data: {
-      action: "update",
-      tableName: "ModelDeployment",
-      objectId: id,
-      beforeValue: JSON.stringify({ modelName: existing.modelName, isEnabled: existing.isEnabled }),
-      afterValue: JSON.stringify({ modelName: deployment.modelName, isEnabled: deployment.isEnabled }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "update",
+    tableName: "ModelDeployment",
+    objectId: id,
+    beforeValue: JSON.stringify({ modelName: existing.modelName, isEnabled: existing.isEnabled }),
+    afterValue: JSON.stringify({ modelName: deployment.modelName, isEnabled: deployment.isEnabled }),
+    changedBy: "admin",
   });
 
   return c.json(deployment);
@@ -135,21 +146,20 @@ models.delete("/:id", async (c) => {
   const db = getDb();
   const id = c.req.param("id");
 
-  const existing = await db.modelDeployment.findUnique({ where: { id } });
+  const existing = await db.query.modelDeployment.findFirst({ where: eq(modelDeployment.id, id) });
   if (!existing) {
     return c.json({ error: { message: "Deployment not found" } }, 404);
   }
 
-  await db.modelDeployment.delete({ where: { id } });
+  await db.delete(modelDeployment).where(eq(modelDeployment.id, id));
 
-  await db.auditLog.create({
-    data: {
-      action: "delete",
-      tableName: "ModelDeployment",
-      objectId: id,
-      beforeValue: JSON.stringify({ modelName: existing.modelName, providerModel: existing.providerModel }),
-      changedBy: "admin",
-    },
+  await db.insert(auditLog).values({
+    id: generateId(),
+    action: "delete",
+    tableName: "ModelDeployment",
+    objectId: id,
+    beforeValue: JSON.stringify({ modelName: existing.modelName, providerModel: existing.providerModel }),
+    changedBy: "admin",
   });
 
   return c.json({ success: true });

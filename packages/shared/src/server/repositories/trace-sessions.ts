@@ -1,5 +1,7 @@
+import { and, eq } from "drizzle-orm";
 import type z from "zod";
 import { prisma } from "../../db";
+import { traceSessions } from "../../db/schema/index.js";
 import type { singleFilter } from "../../interfaces/filters";
 
 export const getPublicSessionsFilter = async (
@@ -17,18 +19,15 @@ export const getPublicSessionsFilter = async (
   if (sessionsBookmarkedFilter) {
     // We are only fetching bookmarked sessions.
     // They need to be manipulated in the UI and should not be as many.
-    const filteredSessions = await prisma.traceSession.findMany({
-      where: {
-        projectId: projectId,
-        bookmarked: true,
-      },
-      select: {
-        id: true,
-        createdAt: true,
-        bookmarked: true,
-        public: true,
-      },
-    });
+    const filteredSessions = await prisma
+      .select({
+        id: traceSessions.id,
+        createdAt: traceSessions.createdAt,
+        bookmarked: traceSessions.bookmarked,
+        public: traceSessions.public,
+      })
+      .from(traceSessions)
+      .where(and(eq(traceSessions.projectId, projectId), eq(traceSessions.bookmarked, true)));
 
     // Check which operator we want to use for the bookmark filter.
     let operator: "any of" | "none of" | undefined;
@@ -72,14 +71,12 @@ export const getPublicSessionsFilter = async (
 };
 
 export const hasAnySession = async (projectId: string) => {
-  const session = await prisma.traceSession.findFirst({
-    where: {
-      projectId,
-    },
-    select: {
-      id: true,
-    },
-  });
+  const session = await prisma
+    .select({ id: traceSessions.id })
+    .from(traceSessions)
+    .where(eq(traceSessions.projectId, projectId))
+    .limit(1)
+    .then((rows) => rows[0]);
 
-  return session !== null;
+  return session !== undefined;
 };

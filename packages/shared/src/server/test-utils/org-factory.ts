@@ -1,8 +1,8 @@
 import { v4 } from "uuid";
 import { prisma } from "../../db";
+import { apiKeys, organizations, projects } from "../../db/schema/index.js";
 import { env } from "../../env";
 import { CloudConfigSchema } from "../../interfaces/cloudConfigSchema";
-import { asLiteColumn } from "../../prisma-enums";
 import { createShaHash, getDisplaySecretKey } from "../auth/apiKeys";
 
 export function createBasicAuthHeader(username: string, password: string): string {
@@ -17,24 +17,28 @@ export type CreateOrgProjectAndApiKeyOptions = {
 
 export const createOrgProjectAndApiKey = async (props?: CreateOrgProjectAndApiKeyOptions) => {
   const projectId = props?.projectId ?? v4();
-  const org = await prisma.organization.create({
-    data: {
+  const org = await prisma
+    .insert(organizations)
+    .values({
       id: v4(),
       name: v4(),
-      cloudConfig: asLiteColumn(
+      cloudConfig: JSON.stringify(
         CloudConfigSchema.parse({
           plan: props?.plan ?? "Team",
         }),
       ),
-    },
-  });
-  const project = await prisma.project.create({
-    data: {
+    })
+    .returning()
+    .then((rows) => rows[0]);
+  const project = await prisma
+    .insert(projects)
+    .values({
       id: projectId,
       name: v4(),
       orgId: org.id,
-    },
-  });
+    })
+    .returning()
+    .then((rows) => rows[0]);
   const publicKey = v4();
   const secretKey = `sk-lf-${v4()}`;
   const salt = env.SALT;
@@ -43,19 +47,17 @@ export const createOrgProjectAndApiKey = async (props?: CreateOrgProjectAndApiKe
   }
 
   const auth = createBasicAuthHeader(publicKey, secretKey);
-  await prisma.apiKey.create({
-    data: {
-      id: v4(),
-      projectId: projectId,
-      publicKey: publicKey,
-      // Test fixtures use the modern fast-hash auth path. Avoid bcrypt here as
-      // cost-11 hashing adds ~100ms per fixture; keep the legacy hash unique to
-      // satisfy the database constraint without affecting authentication.
-      hashedSecretKey: `test-hashed-secret-key-${v4()}`,
-      fastHashedSecretKey: createShaHash(secretKey, salt),
-      displaySecretKey: getDisplaySecretKey(secretKey),
-      scope: "PROJECT",
-    },
+  await prisma.insert(apiKeys).values({
+    id: v4(),
+    projectId: projectId,
+    publicKey: publicKey,
+    // Test fixtures use the modern fast-hash auth path. Avoid bcrypt here as
+    // cost-11 hashing adds ~100ms per fixture; keep the legacy hash unique to
+    // satisfy the database constraint without affecting authentication.
+    hashedSecretKey: `test-hashed-secret-key-${v4()}`,
+    fastHashedSecretKey: createShaHash(secretKey, salt),
+    displaySecretKey: getDisplaySecretKey(secretKey),
+    scope: "PROJECT",
   });
 
   return { projectId, orgId: org.id, publicKey, secretKey, auth, org, project };

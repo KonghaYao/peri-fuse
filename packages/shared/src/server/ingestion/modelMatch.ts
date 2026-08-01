@@ -1,6 +1,8 @@
 import { Decimal } from "decimal.js";
-import { type Model, Prisma } from "../../";
+import { asc, eq, sql } from "drizzle-orm";
+import { type Model } from "../../";
 import { prisma } from "../../db";
+import { pricingTiers as pricingTiersTable } from "../../db/schema/index.js";
 import { env } from "../../env";
 import { instrumentAsync, logger, recordIncrement, redis, safeMultiDel, scanKeys } from "../";
 import { LocalCache } from "../cache";
@@ -203,17 +205,10 @@ const getModelWithPricesFromRedis = async (p: ModelMatchProps): Promise<ModelWit
 export async function findPricingTiersForModel(modelId: string): Promise<PricingTierWithPrices[]> {
   if (!modelId) return [];
 
-  const tiers = await prisma.pricingTier.findMany({
-    where: { modelId },
-    include: {
-      prices: {
-        select: {
-          usageType: true,
-          price: true,
-        },
-      },
-    },
-    orderBy: { priority: "asc" },
+  const tiers = await prisma.query.pricingTiers.findMany({
+    where: eq(pricingTiersTable.modelId, modelId),
+    with: { prices: true },
+    orderBy: asc(pricingTiersTable.priority),
   });
 
   return tiers.map((tier) => ({
@@ -230,10 +225,10 @@ export async function findModelInPostgres(p: ModelMatchProps): Promise<Model | n
   const { projectId, model } = p;
   // either get the model from the existing observation
   // or match pattern on the user provided model name
-  const modelCondition = model ? Prisma.sql`AND ${model} ~ match_pattern` : undefined;
+  const modelCondition = model ? sql`AND ${model} ~ match_pattern` : undefined;
   if (!modelCondition) return null;
 
-  const sql = Prisma.sql`
+  const stmt = sql`
     SELECT
       id,
       created_at AS "createdAt",
@@ -259,7 +254,7 @@ export async function findModelInPostgres(p: ModelMatchProps): Promise<Model | n
     LIMIT 1
   `;
 
-  const foundModels = await prisma.$queryRaw<Array<Model>>(sql);
+  const foundModels = await prisma.all<Model>(stmt);
 
   return foundModels[0] ?? null;
 }
@@ -322,15 +317,15 @@ export const redisModelToPrismaModel = (redisModel: Model): Model => {
     updatedAt: new Date(redisModel.updatedAt),
     inputPrice:
       redisModel.inputPrice !== null && redisModel.inputPrice !== undefined
-        ? new Decimal(redisModel.inputPrice)
+        ? Number(redisModel.inputPrice)
         : null,
     outputPrice:
       redisModel.outputPrice !== null && redisModel.outputPrice !== undefined
-        ? new Decimal(redisModel.outputPrice)
+        ? Number(redisModel.outputPrice)
         : null,
     totalPrice:
       redisModel.totalPrice !== null && redisModel.totalPrice !== undefined
-        ? new Decimal(redisModel.totalPrice)
+        ? Number(redisModel.totalPrice)
         : null,
     startDate:
       redisModel.startDate !== null && redisModel.startDate !== undefined

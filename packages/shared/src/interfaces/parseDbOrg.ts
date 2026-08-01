@@ -1,4 +1,4 @@
-import type { Organization } from "@prisma/client";
+import type { Organization } from "../db/types.js";
 import { CloudConfigSchema } from "./cloudConfigSchema";
 
 export type ParsedOrganization = Omit<Organization, "cloudConfig"> & {

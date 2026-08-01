@@ -8,6 +8,7 @@
 
 import { filterAndValidateDbLegacyTraceScoreList, LangfuseNotFoundError } from "@peri-fuse/shared";
 import { prisma } from "@peri-fuse/shared/src/db";
+import { models as modelsTable } from "@peri-fuse/shared/src/db/schema/index.js";
 import {
   getObservationsForTrace,
   getScoresForTraces,
@@ -18,6 +19,7 @@ import {
 } from "@peri-fuse/shared/src/server";
 import { getTelemetryDB } from "@peri-fuse/shared/src/server/adapters";
 import Decimal from "decimal.js";
+import { and, inArray, or, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 import { GetTracesV1Query, GetTraceV1Query } from "../schemas/traces";
@@ -214,24 +216,22 @@ app.get("/api/public/traces/:traceId", authMiddleware, async (c) => {
 
   const models =
     uniqueModels.length > 0
-      ? await prisma.model.findMany({
-          where: {
-            id: {
-              in: uniqueModels,
-            },
-            OR: [{ projectId: auth.scope.projectId }, { projectId: null }],
-          },
-          include: {
-            Price: true,
+      ? await prisma.query.models.findMany({
+          where: and(
+            inArray(modelsTable.id, uniqueModels),
+            or(eq(modelsTable.projectId, auth.scope.projectId), isNull(modelsTable.projectId)),
+          ),
+          with: {
+            prices: true,
           },
         })
       : [];
 
   const observationsView = observations.map((o) => {
     const model = models.find((m) => m.id === o.internalModelId);
-    const inputPrice = model?.Price.find((p) => p.usageType === "input")?.price ?? new Decimal(0);
-    const outputPrice = model?.Price.find((p) => p.usageType === "output")?.price ?? new Decimal(0);
-    const totalPrice = model?.Price.find((p) => p.usageType === "total")?.price ?? new Decimal(0);
+    const inputPrice = new Decimal(model?.prices.find((p) => p.usageType === "input")?.price ?? 0);
+    const outputPrice = new Decimal(model?.prices.find((p) => p.usageType === "output")?.price ?? 0);
+    const totalPrice = new Decimal(model?.prices.find((p) => p.usageType === "total")?.price ?? 0);
     return {
       ...o,
       inputPrice,
@@ -266,6 +266,8 @@ app.get("/api/public/traces/:traceId", authMiddleware, async (c) => {
 
   return c.json({
     ...trace,
+    input: includeIO ? parseJsonValue(trace.input) : null,
+    output: includeIO ? parseJsonValue(trace.output) : null,
     externalId: null,
     metadata: includeIO ? trace.metadata : {},
     scores: includeScores ? validatedScores : [],

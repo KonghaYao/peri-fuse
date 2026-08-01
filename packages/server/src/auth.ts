@@ -12,8 +12,9 @@
  *      then backfill the fast hash.
  */
 
-import { CloudConfigRateLimit } from "@peri-fuse/shared";
+import { CloudConfigRateLimit, parseJsonPrioritised } from "@peri-fuse/shared";
 import { prisma } from "@peri-fuse/shared/src/db";
+import { apiKeys } from "@peri-fuse/shared/src/db/schema/index.js";
 import {
   type ApiAccessScope,
   type AuthHeaderValidVerificationResultIngestion,
@@ -22,6 +23,7 @@ import {
   logger,
   verifySecretKey,
 } from "@peri-fuse/shared/src/server";
+import { eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 
 export type AuthScope = ApiAccessScope & {
@@ -48,14 +50,14 @@ function extractBasicAuthCredentials(basicAuthHeader: string): {
   return { username, password };
 }
 
-const apiKeyInclude = {
-  project: { include: { organization: true } },
+const apiKeyWith = {
+  project: { with: { organization: true } },
   organization: true,
 } as const;
 
 /**
  * Verifies an `Authorization` header against the API keys stored in the
- * lite SQLite database (Prisma). Returns the same shape as web's
+ * lite SQLite database (Drizzle). Returns the same shape as web's
  * ApiAuthService so downstream shared ingestion code can consume it as-is.
  */
 export async function verifyAuthHeader(
@@ -78,17 +80,17 @@ export async function verifyAuthHeader(
     // Fast path: resolve the key via the SHA-256 hash of the secret key.
     let apiKey =
       salt != null
-        ? await prisma.apiKey.findUnique({
-            where: { fastHashedSecretKey: createShaHash(secretKey, salt) },
-            include: apiKeyInclude,
+        ? await prisma.query.apiKeys.findFirst({
+            where: eq(apiKeys.fastHashedSecretKey, createShaHash(secretKey, salt)),
+            with: apiKeyWith,
           })
         : null;
 
     // Slow path: bcrypt comparison against the legacy hash, then backfill.
     if (!apiKey) {
-      const slowKey = await prisma.apiKey.findUnique({
-        where: { publicKey },
-        include: apiKeyInclude,
+      const slowKey = await prisma.query.apiKeys.findFirst({
+        where: eq(apiKeys.publicKey, publicKey),
+        with: apiKeyWith,
       });
 
       if (!slowKey) {
@@ -104,11 +106,10 @@ export async function verifyAuthHeader(
 
       if (salt != null && !slowKey.fastHashedSecretKey) {
         const shaKey = createShaHash(secretKey, salt);
-        await prisma.apiKey
-          .update({
-            where: { publicKey },
-            data: { fastHashedSecretKey: shaKey },
-          })
+        await prisma
+          .update(apiKeys)
+          .set({ fastHashedSecretKey: shaKey })
+          .where(eq(apiKeys.publicKey, publicKey))
           .catch((e) => logger.warn(`[lite-auth] Failed to backfill fast hash: ${e}`));
       }
 
@@ -128,8 +129,10 @@ export async function verifyAuthHeader(
     const accessLevel =
       apiKey.scope === "ORGANIZATION" ? ("organization" as const) : ("project" as const);
 
-    const orgCloudConfig =
+    // cloudConfig is stored as a JSON string in SQLite — parse before reading.
+    const rawCloudConfig =
       apiKey.project?.organization?.cloudConfig ?? apiKey.organization?.cloudConfig ?? null;
+    const orgCloudConfig = rawCloudConfig ? parseJsonPrioritised(rawCloudConfig) : null;
 
     const parsedRateLimitOverrides = CloudConfigRateLimit.safeParse(
       (orgCloudConfig as { rateLimitOverrides?: unknown } | null)?.rateLimitOverrides,
@@ -140,7 +143,7 @@ export async function verifyAuthHeader(
       scope: {
         projectId: apiKey.projectId,
         accessLevel,
-        orgId: apiKey.orgId ?? apiKey.project?.organization?.id ?? "",
+        orgId: apiKey.organizationId ?? apiKey.project?.organization?.id ?? "",
         plan: "oss",
         rateLimitOverrides: parsedRateLimitOverrides.success ? parsedRateLimitOverrides.data : [],
         apiKeyId: apiKey.id,

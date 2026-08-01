@@ -1,11 +1,13 @@
-import { Prisma } from "@prisma/client";
-import { prisma } from "../../../db";
+import { and, eq, inArray } from "drizzle-orm";
+import { v4 } from "uuid";
+import { Prisma, prisma, toKnownRequestError } from "../../../db";
+import { tableViewPresets as preset } from "../../../db/schema/index.js";
 import {
   type TableViewPresetDomain,
   TableViewPresetTableName,
 } from "../../../domain/table-view-presets";
 import { LangfuseConflictError, LangfuseNotFoundError } from "../../../errors";
-import { asLiteColumn } from "../../../prisma-enums";
+import { parseJsonPrioritised } from "../../../utils/json";
 import {
   getSystemTableViewPresetById,
   getSystemTableViewPresetByTableAndId,
@@ -46,12 +48,27 @@ const TABLE_VIEW_PRESET_NAME_CONFLICT_MESSAGE =
   "Table view preset with this name already exists. Please choose a different name.";
 
 const throwTableViewPresetConflictIfDuplicateName = (error: unknown): never => {
-  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+  const knownError = toKnownRequestError(error);
+  if (knownError && knownError.code === "P2002") {
     throw new LangfuseConflictError(TABLE_VIEW_PRESET_NAME_CONFLICT_MESSAGE);
   }
 
   throw error;
 };
+
+// JSON columns are stored as TEXT under drizzle/SQLite; serialize on write and
+// parse on read so downstream zod schemas receive plain objects/arrays.
+const parsePresetJsonColumns = (row: {
+  filters: string;
+  columnOrder: string;
+  columnVisibility: string;
+  orderBy: string | null;
+}) => ({
+  filters: parseJsonPrioritised(row.filters) ?? [],
+  columnOrder: parseJsonPrioritised(row.columnOrder) ?? [],
+  columnVisibility: parseJsonPrioritised(row.columnVisibility) ?? {},
+  orderBy: row.orderBy ? (parseJsonPrioritised(row.orderBy) ?? null) : null,
+});
 
 export class TableViewService {
   /**
@@ -61,19 +78,28 @@ export class TableViewService {
     input: CreateTableViewPresetsInput,
     createdBy: string,
   ): Promise<TableViewPresetDomain> {
-    const newTableViewPresets = await prisma.tableViewPreset.create({
-      data: {
+    const newTableViewPresets = await prisma
+      .insert(preset)
+      .values({
+        id: v4(),
+        projectId: input.projectId,
+        name: input.name,
+        tableName: input.tableName,
+        searchQuery: input.searchQuery,
         createdBy,
         updatedBy: createdBy,
-        ...input,
-        filters: asLiteColumn(input.filters),
-        columnOrder: asLiteColumn(input.columnOrder),
-        columnVisibility: asLiteColumn(input.columnVisibility),
-        orderBy: asLiteColumn(input.orderBy ?? undefined),
-      },
-    });
+        filters: JSON.stringify(input.filters),
+        columnOrder: JSON.stringify(input.columnOrder),
+        columnVisibility: JSON.stringify(input.columnVisibility),
+        orderBy: input.orderBy ? JSON.stringify(input.orderBy) : null,
+      })
+      .returning()
+      .then((rows) => rows[0]);
 
-    return newTableViewPresets as unknown as TableViewPresetDomain;
+    return {
+      ...newTableViewPresets,
+      ...parsePresetJsonColumns(newTableViewPresets),
+    } as unknown as TableViewPresetDomain;
   }
 
   /**
@@ -83,41 +109,51 @@ export class TableViewService {
     input: UpdateTableViewPresetsInput,
     updatedBy: string,
   ): Promise<TableViewPresetDomain> {
-    const tableViewPresets = await prisma.tableViewPreset.findFirst({
-      where: {
-        id: input.id,
-        projectId: input.projectId,
-        tableName: {
-          in: getReadCompatibleTableNames(input.tableName),
-        },
-      },
-    });
+    const foundPreset = await prisma
+      .select()
+      .from(preset)
+      .where(
+        and(
+          eq(preset.id, input.id),
+          eq(preset.projectId, input.projectId),
+          inArray(preset.tableName, getReadCompatibleTableNames(input.tableName)),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0]);
 
-    if (!tableViewPresets) {
+    if (!foundPreset) {
       throw new LangfuseNotFoundError(
         `Saved table view preset not found for table ${input.tableName} in project ${input.projectId}`,
       );
     }
 
     try {
-      const updatedTableViewPresets = await prisma.tableViewPreset.update({
-        where: {
-          id: input.id,
-          projectId: input.projectId,
-        },
-        data: {
+      const updatedTableViewPresets = await prisma
+        .update(preset)
+        .set({
           name: input.name,
           tableName: input.tableName,
-          filters: asLiteColumn(input.filters),
-          columnOrder: asLiteColumn(input.columnOrder),
-          columnVisibility: asLiteColumn(input.columnVisibility),
+          filters: JSON.stringify(input.filters),
+          columnOrder: JSON.stringify(input.columnOrder),
+          columnVisibility: JSON.stringify(input.columnVisibility),
           searchQuery: input.searchQuery,
-          orderBy: asLiteColumn(input.orderBy ?? undefined),
+          orderBy: input.orderBy ? JSON.stringify(input.orderBy) : null,
           updatedBy,
-        },
-      });
+        })
+        .where(
+          and(
+            eq(preset.id, input.id),
+            eq(preset.projectId, input.projectId),
+          ),
+        )
+        .returning()
+        .then((rows) => rows[0]);
 
-      return updatedTableViewPresets as unknown as TableViewPresetDomain;
+      return {
+        ...updatedTableViewPresets,
+        ...parsePresetJsonColumns(updatedTableViewPresets),
+      } as unknown as TableViewPresetDomain;
     } catch (error) {
       return throwTableViewPresetConflictIfDuplicateName(error);
     }
@@ -130,36 +166,46 @@ export class TableViewService {
     input: UpdateTableViewPresetsNameInput,
     updatedBy: string,
   ): Promise<TableViewPresetDomain> {
-    const tableViewPresets = await prisma.tableViewPreset.findFirst({
-      where: {
-        id: input.id,
-        projectId: input.projectId,
-        tableName: {
-          in: getReadCompatibleTableNames(input.tableName),
-        },
-      },
-    });
+    const foundPreset = await prisma
+      .select()
+      .from(preset)
+      .where(
+        and(
+          eq(preset.id, input.id),
+          eq(preset.projectId, input.projectId),
+          inArray(preset.tableName, getReadCompatibleTableNames(input.tableName)),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0]);
 
-    if (!tableViewPresets) {
+    if (!foundPreset) {
       throw new LangfuseNotFoundError(
         `Saved table view preset not found for table ${input.tableName} in project ${input.projectId}`,
       );
     }
 
     try {
-      const updatedTableViewPresets = await prisma.tableViewPreset.update({
-        where: {
-          id: input.id,
-          projectId: input.projectId,
-        },
-        data: {
+      const updatedTableViewPresets = await prisma
+        .update(preset)
+        .set({
           name: input.name,
           tableName: input.tableName,
           updatedBy,
-        },
-      });
+        })
+        .where(
+          and(
+            eq(preset.id, input.id),
+            eq(preset.projectId, input.projectId),
+          ),
+        )
+        .returning()
+        .then((rows) => rows[0]);
 
-      return updatedTableViewPresets as unknown as TableViewPresetDomain;
+      return {
+        ...updatedTableViewPresets,
+        ...parsePresetJsonColumns(updatedTableViewPresets),
+      } as unknown as TableViewPresetDomain;
     } catch (error) {
       return throwTableViewPresetConflictIfDuplicateName(error);
     }
@@ -172,12 +218,14 @@ export class TableViewService {
     TableViewPresetsId: string,
     projectId: string,
   ): Promise<void> {
-    await prisma.tableViewPreset.delete({
-      where: {
-        id: TableViewPresetsId,
-        projectId,
-      },
-    });
+    await prisma
+      .delete(preset)
+      .where(
+        and(
+          eq(preset.id, TableViewPresetsId),
+          eq(preset.projectId, projectId),
+        ),
+      );
   }
 
   /**
@@ -187,31 +235,23 @@ export class TableViewService {
     tableName: TableViewPresetTableName,
     projectId: string,
   ): Promise<TableViewPresetsNamesCreatorList> {
-    const records = await prisma.tableViewPreset.findMany({
-      where: {
-        tableName: {
-          in: getReadCompatibleTableNames(tableName),
-        },
-        projectId,
-      },
-      select: {
-        id: true,
-        name: true,
-        tableName: true,
-        createdBy: true,
-        createdByUser: {
-          select: {
-            image: true,
-            name: true,
-          },
-        },
-        filters: true,
-        columnOrder: true,
-        columnVisibility: true,
-        searchQuery: true,
-        orderBy: true,
+    const rows = await prisma.query.tableViewPresets.findMany({
+      where: and(
+        inArray(preset.tableName, getReadCompatibleTableNames(tableName)),
+        eq(preset.projectId, projectId),
+      ),
+      with: {
+        user_createdBy: true,
       },
     });
+
+    const records = rows.map(({ user_createdBy, ...row }) => ({
+      ...row,
+      ...parsePresetJsonColumns(row),
+      createdByUser: user_createdBy
+        ? { image: user_createdBy.image, name: user_createdBy.name }
+        : null,
+    }));
 
     const systemPresets = getSystemTableViewPresets(tableName).map((preset) => ({
       id: preset.id,
@@ -295,20 +335,28 @@ export class TableViewService {
       };
     }
 
-    const tableViewPresets = await prisma.tableViewPreset.findUnique({
-      where: {
-        id,
-        projectId,
-      },
-    });
+    const foundPreset = await prisma
+      .select()
+      .from(preset)
+      .where(
+        and(
+          eq(preset.id, id),
+          eq(preset.projectId, projectId),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0]);
 
-    if (!tableViewPresets) {
+    if (!foundPreset) {
       throw new LangfuseNotFoundError(
         `Saved table view preset not found for id ${id} in project ${projectId}`,
       );
     }
 
-    return tableViewPresets as unknown as TableViewPresetDomain;
+    return {
+      ...foundPreset,
+      ...parsePresetJsonColumns(foundPreset),
+    } as unknown as TableViewPresetDomain;
   }
 
   /**
