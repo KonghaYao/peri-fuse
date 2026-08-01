@@ -1,19 +1,21 @@
 /**
- * Admin API — Request logs and error logs queries.
+ * Admin API — Request logs and error logs queries (project-scoped).
  */
 import { Hono } from "hono";
 import { and, count, desc, eq, gte, lte, type SQL } from "drizzle-orm";
+import type { GatewayEnv } from "../../app.js";
 import { getDb } from "../../db.js";
 import { errorLog, spendLog } from "../../db/schema.js";
 
-const logs = new Hono();
+const logs = new Hono<GatewayEnv>();
 
 // Query spend logs (request logs)
 logs.get("/requests", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const { apiKey, model, provider, status, startDate, endDate, limit, offset, sessionId } = c.req.query();
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(spendLog.projectId, projectId)];
   if (apiKey) conditions.push(eq(spendLog.apiKey, apiKey));
   if (model) conditions.push(eq(spendLog.model, model));
   if (provider) conditions.push(eq(spendLog.provider, provider));
@@ -21,7 +23,7 @@ logs.get("/requests", async (c) => {
   if (sessionId) conditions.push(eq(spendLog.sessionId, sessionId));
   if (startDate) conditions.push(gte(spendLog.startTime, new Date(startDate).toISOString()));
   if (endDate) conditions.push(lte(spendLog.startTime, new Date(endDate).toISOString()));
-  const where = conditions.length ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const limitNum = limit ? parseInt(limit, 10) : 50;
   const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -54,7 +56,10 @@ logs.get("/requests", async (c) => {
 // Get single spend log
 logs.get("/requests/:id", async (c) => {
   const db = getDb();
-  const log = await db.query.spendLog.findFirst({ where: eq(spendLog.id, c.req.param("id")) });
+  const projectId = c.get("projectId");
+  const log = await db.query.spendLog.findFirst({
+    where: and(eq(spendLog.id, c.req.param("id")), eq(spendLog.projectId, projectId)),
+  });
 
   if (!log) {
     return c.json({ error: { message: "Log not found" } }, 404);
@@ -72,14 +77,15 @@ logs.get("/requests/:id", async (c) => {
 // Query error logs
 logs.get("/errors", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const { modelGroup, exceptionType, startDate, endDate, limit, offset } = c.req.query();
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(errorLog.projectId, projectId)];
   if (modelGroup) conditions.push(eq(errorLog.modelGroup, modelGroup));
   if (exceptionType) conditions.push(eq(errorLog.exceptionType, exceptionType));
   if (startDate) conditions.push(gte(errorLog.startTime, new Date(startDate).toISOString()));
   if (endDate) conditions.push(lte(errorLog.startTime, new Date(endDate).toISOString()));
-  const where = conditions.length ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const limitNum = limit ? parseInt(limit, 10) : 50;
   const offsetNum = offset ? parseInt(offset, 10) : 0;

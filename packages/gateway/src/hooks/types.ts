@@ -16,6 +16,7 @@ export interface ApiKeyRecord {
 }
 
 export interface HookContext {
+  projectId: string;
   apiKey: ApiKeyRecord;
   model: string;
   protocol: "openai" | "anthropic";

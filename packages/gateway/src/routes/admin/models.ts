@@ -1,18 +1,21 @@
 /**
- * Admin API — Model Deployment CRUD.
+ * Admin API — Model Deployment CRUD (project-scoped).
  */
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import type { GatewayEnv } from "../../app.js";
 import { getDb } from "../../db.js";
 import { auditLog, modelDeployment, provider } from "../../db/schema.js";
 import { generateId } from "../../utils/id.js";
 
-const models = new Hono();
+const models = new Hono<GatewayEnv>();
 
-// List all model deployments
+// List all model deployments for the current project
 models.get("/", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const items = await db.query.modelDeployment.findMany({
+    where: eq(modelDeployment.projectId, projectId),
     orderBy: [desc(modelDeployment.createdAt)],
     with: {
       provider: {
@@ -30,13 +33,14 @@ models.get("/", async (c) => {
   return c.json({ data: safe });
 });
 
-// List unique model names (aliases)
+// List unique model names (aliases) for the current project
 models.get("/aliases", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const results = await db
     .select({ modelName: modelDeployment.modelName, value: count() })
     .from(modelDeployment)
-    .where(eq(modelDeployment.isEnabled, true))
+    .where(and(eq(modelDeployment.isEnabled, true), eq(modelDeployment.projectId, projectId)))
     .groupBy(modelDeployment.modelName);
 
   return c.json({
@@ -47,8 +51,9 @@ models.get("/aliases", async (c) => {
 // Get single deployment
 models.get("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const deployment = await db.query.modelDeployment.findFirst({
-    where: eq(modelDeployment.id, c.req.param("id")),
+    where: and(eq(modelDeployment.id, c.req.param("id")), eq(modelDeployment.projectId, projectId)),
     with: { provider: true },
   });
 
@@ -66,14 +71,17 @@ models.get("/:id", async (c) => {
 // Create deployment
 models.post("/", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const body = await c.req.json();
 
   if (!body.modelName || !body.providerId || !body.providerModel) {
     return c.json({ error: { message: "modelName, providerId, and providerModel are required" } }, 400);
   }
 
-  // Verify provider exists
-  const prov = await db.query.provider.findFirst({ where: eq(provider.id, body.providerId) });
+  // Verify provider exists within the same project
+  const prov = await db.query.provider.findFirst({
+    where: and(eq(provider.id, body.providerId), eq(provider.projectId, projectId)),
+  });
   if (!prov) {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
@@ -82,6 +90,7 @@ models.post("/", async (c) => {
     .insert(modelDeployment)
     .values({
       id: generateId(),
+      projectId,
       modelName: body.modelName,
       providerId: body.providerId,
       providerModel: body.providerModel,
@@ -93,6 +102,7 @@ models.post("/", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "create",
     tableName: "ModelDeployment",
     objectId: deployment.id,
@@ -106,10 +116,13 @@ models.post("/", async (c) => {
 // Update deployment
 models.put("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.query.modelDeployment.findFirst({ where: eq(modelDeployment.id, id) });
+  const existing = await db.query.modelDeployment.findFirst({
+    where: and(eq(modelDeployment.id, id), eq(modelDeployment.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "Deployment not found" } }, 404);
   }
@@ -130,6 +143,7 @@ models.put("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "update",
     tableName: "ModelDeployment",
     objectId: id,
@@ -144,9 +158,12 @@ models.put("/:id", async (c) => {
 // Delete deployment
 models.delete("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
 
-  const existing = await db.query.modelDeployment.findFirst({ where: eq(modelDeployment.id, id) });
+  const existing = await db.query.modelDeployment.findFirst({
+    where: and(eq(modelDeployment.id, id), eq(modelDeployment.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "Deployment not found" } }, 404);
   }
@@ -155,6 +172,7 @@ models.delete("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "delete",
     tableName: "ModelDeployment",
     objectId: id,

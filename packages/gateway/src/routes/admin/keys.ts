@@ -1,20 +1,23 @@
 /**
- * Admin API — API Key config CRUD.
+ * Admin API — API Key config CRUD (project-scoped).
  * Keys are created in the shared DB (server); here we manage gateway-side
- * config (rate limits, budget) keyed by publicKey.
+ * config (rate limits, budget) keyed by publicKey within a project.
  */
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import type { GatewayEnv } from "../../app.js";
 import { getDb } from "../../db.js";
 import { apiKey, auditLog } from "../../db/schema.js";
 import { generateId } from "../../utils/id.js";
 
-const keys = new Hono();
+const keys = new Hono<GatewayEnv>();
 
-// List all key configs
+// List all key configs for the current project
 keys.get("/", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const items = await db.query.apiKey.findMany({
+    where: eq(apiKey.projectId, projectId),
     orderBy: [desc(apiKey.createdAt)],
     with: { budget: true },
   });
@@ -31,8 +34,9 @@ keys.get("/", async (c) => {
 // Get single key config
 keys.get("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const key = await db.query.apiKey.findFirst({
-    where: eq(apiKey.id, c.req.param("id")),
+    where: and(eq(apiKey.id, c.req.param("id")), eq(apiKey.projectId, projectId)),
     with: { budget: true },
   });
 
@@ -46,6 +50,7 @@ keys.get("/:id", async (c) => {
 // Create key config — attach gateway limits to an existing publicKey
 keys.post("/", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const body = await c.req.json();
 
   if (!body.publicKey || typeof body.publicKey !== "string") {
@@ -62,6 +67,7 @@ keys.post("/", async (c) => {
     .insert(apiKey)
     .values({
       id: generateId(),
+      projectId,
       publicKey: body.publicKey,
       keyName: body.keyName ?? null,
       models: JSON.stringify(body.models ?? []),
@@ -77,6 +83,7 @@ keys.post("/", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "create",
     tableName: "ApiKey",
     objectId: key.id,
@@ -94,10 +101,13 @@ keys.post("/", async (c) => {
 // Update key config
 keys.put("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.query.apiKey.findFirst({ where: eq(apiKey.id, id) });
+  const existing = await db.query.apiKey.findFirst({
+    where: and(eq(apiKey.id, id), eq(apiKey.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "API key config not found" } }, 404);
   }
@@ -117,6 +127,7 @@ keys.put("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "update",
     tableName: "ApiKey",
     objectId: id,
@@ -131,9 +142,12 @@ keys.put("/:id", async (c) => {
 // Delete key config
 keys.delete("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
 
-  const existing = await db.query.apiKey.findFirst({ where: eq(apiKey.id, id) });
+  const existing = await db.query.apiKey.findFirst({
+    where: and(eq(apiKey.id, id), eq(apiKey.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "API key config not found" } }, 404);
   }
@@ -142,6 +156,7 @@ keys.delete("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "delete",
     tableName: "ApiKey",
     objectId: id,

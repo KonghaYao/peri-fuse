@@ -49,22 +49,22 @@ export function closeDb(): void {
 let _schemaReady = false;
 
 /**
- * Locate the committed migration SQL (drizzle/0000_init.sql). Works both in dev
+ * Locate a committed migration SQL file by name. Works both in dev
  * (src/db/db.ts) and in the compiled output (dist/db.js), since both are one
  * level below the package root that contains the drizzle/ folder.
  */
-function findMigrationSql(): string {
+function findMigrationSql(filename: string): string {
   const candidates = [
     // Bundled CLI context: __dirname = dist/, SQL copied to dist/drizzle/
-    path.resolve(__dirname, "drizzle/0000_init.sql"),
-    path.resolve(__dirname, "../../drizzle/0000_init.sql"),
-    path.resolve(__dirname, "../drizzle/0000_init.sql"),
+    path.resolve(__dirname, `drizzle/${filename}`),
+    path.resolve(__dirname, `../../drizzle/${filename}`),
+    path.resolve(__dirname, `../drizzle/${filename}`),
   ];
   for (const file of candidates) {
     if (fs.existsSync(file)) return fs.readFileSync(file, "utf8");
   }
   throw new Error(
-    `Gateway migration SQL not found. Looked in: ${candidates.join(", ")}`,
+    `Gateway migration SQL not found (${filename}). Looked in: ${candidates.join(", ")}`,
   );
 }
 
@@ -85,21 +85,43 @@ function schemaAlreadyApplied(sqlite: Database.Database): boolean {
 }
 
 /**
- * Create all gateway tables if they do not exist. Executes the committed
- * drizzle migration SQL. Idempotent: skips entirely when the tables already
- * exist (restart with existing DB).
+ * Check if the project scoping migration (0001) has been applied by detecting
+ * the projectId column on the Provider table.
  */
-export function ensureSchema(): void {
-  if (_schemaReady) return;
-  const sqlite = getSqlite();
-  if (schemaAlreadyApplied(sqlite)) {
-    _schemaReady = true;
-    return;
+function projectScopingApplied(sqlite: Database.Database): boolean {
+  try {
+    const cols = sqlite.prepare("PRAGMA table_info('Provider')").all() as any[];
+    return cols.some((c) => c.name === "projectId");
+  } catch {
+    return false;
   }
-  const sql = findMigrationSql();
+}
+
+function runMigrationFile(sqlite: Database.Database, filename: string): void {
+  const sql = findMigrationSql(filename);
   for (const raw of sql.split("--> statement-breakpoint")) {
     const stmt = raw.trim();
     if (stmt) sqlite.exec(stmt);
   }
+}
+
+/**
+ * Create all gateway tables if they do not exist, then apply incremental
+ * migrations. Idempotent: skips steps already applied.
+ */
+export function ensureSchema(): void {
+  if (_schemaReady) return;
+  const sqlite = getSqlite();
+
+  // Step 1: base schema (0000_init.sql)
+  if (!schemaAlreadyApplied(sqlite)) {
+    runMigrationFile(sqlite, "0000_init.sql");
+  }
+
+  // Step 2: project scoping migration (0001)
+  if (!projectScopingApplied(sqlite)) {
+    runMigrationFile(sqlite, "0001_add_project_scoping.sql");
+  }
+
   _schemaReady = true;
 }

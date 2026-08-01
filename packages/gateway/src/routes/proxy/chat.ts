@@ -17,6 +17,7 @@ const chat = new Hono<GatewayEnv>();
 chat.post("/v1/chat/completions", async (c) => {
   const startTime = new Date();
   const body = await c.req.json();
+  const projectId = c.get("projectId");
 
   // Build PeriRequest
   const req: PeriRequest = {
@@ -37,6 +38,7 @@ chat.post("/v1/chat/completions", async (c) => {
   // Build hook context
   const keyRecord = c.get("apiKeyRecord");
   const hookCtx: HookContext = {
+    projectId,
     apiKey: {
       id: keyRecord?.id ?? c.get("apiKeyId") ?? "",
       publicKey: keyRecord?.publicKey ?? c.get("apiKeyPrefix") ?? "",
@@ -70,7 +72,7 @@ chat.post("/v1/chat/completions", async (c) => {
 
   // Route the request
   try {
-    const result = await routeRequest(req);
+    const result = await routeRequest(req, projectId);
     const endTime = new Date();
     const latencyMs = endTime.getTime() - startTime.getTime();
 
@@ -123,6 +125,7 @@ chat.post("/v1/chat/completions", async (c) => {
         );
 
         spendFlusher.enqueue({
+          projectId,
           callType: "chat",
           apiKey: hookCtx.apiKey.publicKey,
           spend,
@@ -189,6 +192,7 @@ chat.post("/v1/chat/completions", async (c) => {
 
     // Track spend
     spendFlusher.enqueue({
+      projectId,
       callType: "chat",
       apiKey: hookCtx.apiKey.publicKey,
       spend,

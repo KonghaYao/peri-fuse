@@ -1,19 +1,22 @@
 /**
- * Admin API — Provider CRUD.
+ * Admin API — Provider CRUD (project-scoped).
  */
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import type { GatewayEnv } from "../../app.js";
 import { getDb } from "../../db.js";
 import { auditLog, modelDeployment, provider } from "../../db/schema.js";
 import { generateId } from "../../utils/id.js";
 import { encrypt } from "../../utils/crypto.js";
 
-const providers = new Hono();
+const providers = new Hono<GatewayEnv>();
 
-// List all providers
+// List all providers for the current project
 providers.get("/", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const items = await db.query.provider.findMany({
+    where: eq(provider.projectId, projectId),
     orderBy: [desc(provider.createdAt)],
     with: {
       deployments: { where: eq(modelDeployment.isEnabled, true) },
@@ -34,8 +37,9 @@ providers.get("/", async (c) => {
 // Get single provider
 providers.get("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const found = await db.query.provider.findFirst({
-    where: eq(provider.id, c.req.param("id")),
+    where: and(eq(provider.id, c.req.param("id")), eq(provider.projectId, projectId)),
     with: { deployments: true },
   });
 
@@ -52,10 +56,12 @@ providers.get("/:id", async (c) => {
 // Create provider
 providers.post("/", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const body = await c.req.json();
 
   const data: any = {
     id: generateId(),
+    projectId,
     name: body.name,
     type: body.type,
     baseUrl: body.baseUrl,
@@ -79,6 +85,7 @@ providers.post("/", async (c) => {
   // Audit log
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "create",
     tableName: "Provider",
     objectId: created.id,
@@ -92,10 +99,13 @@ providers.post("/", async (c) => {
 // Update provider
 providers.put("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.query.provider.findFirst({ where: eq(provider.id, id) });
+  const existing = await db.query.provider.findFirst({
+    where: and(eq(provider.id, id), eq(provider.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
@@ -120,6 +130,7 @@ providers.put("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "update",
     tableName: "Provider",
     objectId: id,
@@ -134,9 +145,12 @@ providers.put("/:id", async (c) => {
 // Delete provider
 providers.delete("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
 
-  const existing = await db.query.provider.findFirst({ where: eq(provider.id, id) });
+  const existing = await db.query.provider.findFirst({
+    where: and(eq(provider.id, id), eq(provider.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
@@ -147,6 +161,7 @@ providers.delete("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "delete",
     tableName: "Provider",
     objectId: id,

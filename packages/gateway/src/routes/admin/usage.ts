@@ -1,25 +1,27 @@
 /**
- * Admin API — Usage statistics queries.
+ * Admin API — Usage statistics queries (project-scoped).
  */
 import { Hono } from "hono";
 import { and, desc, eq, gte, lte, sum, type SQL } from "drizzle-orm";
+import type { GatewayEnv } from "../../app.js";
 import { getDb } from "../../db.js";
 import { dailySpend } from "../../db/schema.js";
 
-const usage = new Hono();
+const usage = new Hono<GatewayEnv>();
 
 // Get daily spend summary with optional filters
 usage.get("/daily", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const { startDate, endDate, apiKey, model, provider, limit } = c.req.query();
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
   if (startDate) conditions.push(gte(dailySpend.date, startDate));
   if (endDate) conditions.push(lte(dailySpend.date, endDate));
   if (apiKey) conditions.push(eq(dailySpend.apiKey, apiKey));
   if (model) conditions.push(eq(dailySpend.model, model));
   if (provider) conditions.push(eq(dailySpend.provider, provider));
-  const where = conditions.length ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const items = await db
     .select()
@@ -34,13 +36,14 @@ usage.get("/daily", async (c) => {
 // Get aggregated totals
 usage.get("/summary", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const { startDate, endDate, apiKey } = c.req.query();
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
   if (startDate) conditions.push(gte(dailySpend.date, startDate));
   if (endDate) conditions.push(lte(dailySpend.date, endDate));
   if (apiKey) conditions.push(eq(dailySpend.apiKey, apiKey));
-  const where = conditions.length ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const [result] = await db
     .select({
@@ -67,12 +70,13 @@ usage.get("/summary", async (c) => {
 // Get per-model breakdown
 usage.get("/by-model", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const { startDate, endDate } = c.req.query();
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
   if (startDate) conditions.push(gte(dailySpend.date, startDate));
   if (endDate) conditions.push(lte(dailySpend.date, endDate));
-  const where = conditions.length ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const results = await db
     .select({
@@ -102,12 +106,13 @@ usage.get("/by-model", async (c) => {
 // Get per-provider breakdown
 usage.get("/by-provider", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const { startDate, endDate } = c.req.query();
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
   if (startDate) conditions.push(gte(dailySpend.date, startDate));
   if (endDate) conditions.push(lte(dailySpend.date, endDate));
-  const where = conditions.length ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const results = await db
     .select({
@@ -135,12 +140,13 @@ usage.get("/by-provider", async (c) => {
 // Get per-key breakdown
 usage.get("/by-key", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const { startDate, endDate } = c.req.query();
 
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
   if (startDate) conditions.push(gte(dailySpend.date, startDate));
   if (endDate) conditions.push(lte(dailySpend.date, endDate));
-  const where = conditions.length ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const results = await db
     .select({

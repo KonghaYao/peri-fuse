@@ -28,7 +28,7 @@ async function main() {
       `[peri-gateway] Listening on http://localhost:${info.port}`,
     );
     console.log(`[peri-gateway] Database: ${gatewayEnv.dbUrl}`);
-    console.log(`[peri-gateway] Admin key: ${gatewayEnv.adminKey.slice(0, 8)}...`);
+    console.log(`[peri-gateway] Auth: project-scoped API keys (via shared server DB)`);
   });
 }
 

@@ -22,37 +22,54 @@ const nowIso = () => new Date().toISOString();
 // 凭证 & Provider
 // ═══════════════════════════════════════════
 
-export const credential = sqliteTable("Credential", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  values: text("values").notNull(),
-  info: text("info"),
-  createdAt: text("createdAt").notNull().$defaultFn(nowIso),
-  updatedAt: text("updatedAt").notNull().$defaultFn(nowIso).$onUpdateFn(nowIso),
-});
+export const credential = sqliteTable(
+  "Credential",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("projectId").notNull(),
+    name: text("name").notNull(),
+    values: text("values").notNull(),
+    info: text("info"),
+    createdAt: text("createdAt").notNull().$defaultFn(nowIso),
+    updatedAt: text("updatedAt").notNull().$defaultFn(nowIso).$onUpdateFn(nowIso),
+  },
+  (t) => [
+    uniqueIndex("Credential_projectId_name_key").on(t.projectId, t.name),
+    index("Credential_projectId_idx").on(t.projectId),
+  ],
+);
 
-export const provider = sqliteTable("Provider", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull().unique(),
-  type: text("type").notNull(),
-  credentialId: text("credentialId"),
-  baseUrl: text("baseUrl").notNull(),
-  apiKeyEncrypted: text("apiKeyEncrypted"),
-  isEnabled: integer("isEnabled", { mode: "boolean" }).notNull().default(true),
-  budgetLimit: real("budgetLimit"),
-  budgetPeriod: text("budgetPeriod"),
-  budgetSpend: real("budgetSpend").notNull().default(0),
-  budgetResetAt: text("budgetResetAt"),
-  status: text("status").notNull().default("healthy"),
-  cooldownUntil: text("cooldownUntil"),
-  createdAt: text("createdAt").notNull().$defaultFn(nowIso),
-  updatedAt: text("updatedAt").notNull().$defaultFn(nowIso).$onUpdateFn(nowIso),
-});
+export const provider = sqliteTable(
+  "Provider",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("projectId").notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    credentialId: text("credentialId"),
+    baseUrl: text("baseUrl").notNull(),
+    apiKeyEncrypted: text("apiKeyEncrypted"),
+    isEnabled: integer("isEnabled", { mode: "boolean" }).notNull().default(true),
+    budgetLimit: real("budgetLimit"),
+    budgetPeriod: text("budgetPeriod"),
+    budgetSpend: real("budgetSpend").notNull().default(0),
+    budgetResetAt: text("budgetResetAt"),
+    status: text("status").notNull().default("healthy"),
+    cooldownUntil: text("cooldownUntil"),
+    createdAt: text("createdAt").notNull().$defaultFn(nowIso),
+    updatedAt: text("updatedAt").notNull().$defaultFn(nowIso).$onUpdateFn(nowIso),
+  },
+  (t) => [
+    uniqueIndex("Provider_projectId_name_key").on(t.projectId, t.name),
+    index("Provider_projectId_idx").on(t.projectId),
+  ],
+);
 
 export const modelDeployment = sqliteTable(
   "ModelDeployment",
   {
     id: text("id").primaryKey(),
+    projectId: text("projectId").notNull(),
     modelName: text("modelName").notNull(),
     providerId: text("providerId")
       .notNull()
@@ -64,26 +81,34 @@ export const modelDeployment = sqliteTable(
     createdAt: text("createdAt").notNull().$defaultFn(nowIso),
     updatedAt: text("updatedAt").notNull().$defaultFn(nowIso).$onUpdateFn(nowIso),
   },
-  (t) => [index("ModelDeployment_modelName_isEnabled_idx").on(t.modelName, t.isEnabled)],
+  (t) => [
+    index("ModelDeployment_modelName_isEnabled_idx").on(t.modelName, t.isEnabled),
+    index("ModelDeployment_projectId_idx").on(t.projectId),
+  ],
 );
 
 // ═══════════════════════════════════════════
 // 预算
 // ═══════════════════════════════════════════
 
-export const budget = sqliteTable("Budget", {
-  id: text("id").primaryKey(),
-  maxBudget: real("maxBudget"),
-  softBudget: real("softBudget"),
-  maxParallel: integer("maxParallel"),
-  tpmLimit: integer("tpmLimit"),
-  rpmLimit: integer("rpmLimit"),
-  duration: text("duration"),
-  resetAt: text("resetAt"),
-  modelMaxBudget: text("modelMaxBudget"),
-  createdAt: text("createdAt").notNull().$defaultFn(nowIso),
-  updatedAt: text("updatedAt").notNull().$defaultFn(nowIso).$onUpdateFn(nowIso),
-});
+export const budget = sqliteTable(
+  "Budget",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("projectId").notNull(),
+    maxBudget: real("maxBudget"),
+    softBudget: real("softBudget"),
+    maxParallel: integer("maxParallel"),
+    tpmLimit: integer("tpmLimit"),
+    rpmLimit: integer("rpmLimit"),
+    duration: text("duration"),
+    resetAt: text("resetAt"),
+    modelMaxBudget: text("modelMaxBudget"),
+    createdAt: text("createdAt").notNull().$defaultFn(nowIso),
+    updatedAt: text("updatedAt").notNull().$defaultFn(nowIso).$onUpdateFn(nowIso),
+  },
+  (t) => [index("Budget_projectId_idx").on(t.projectId)],
+);
 
 // ═══════════════════════════════════════════
 // API Key 配置
@@ -93,6 +118,7 @@ export const apiKey = sqliteTable(
   "ApiKey",
   {
     id: text("id").primaryKey(),
+    projectId: text("projectId").notNull(),
     publicKey: text("publicKey").notNull().unique(),
     keyName: text("keyName"),
     spend: real("spend").notNull().default(0),
@@ -108,7 +134,10 @@ export const apiKey = sqliteTable(
     createdAt: text("createdAt").notNull().$defaultFn(nowIso),
     updatedAt: text("updatedAt").notNull().$defaultFn(nowIso).$onUpdateFn(nowIso),
   },
-  (t) => [index("ApiKey_publicKey_idx").on(t.publicKey)],
+  (t) => [
+    index("ApiKey_publicKey_idx").on(t.publicKey),
+    index("ApiKey_projectId_idx").on(t.projectId),
+  ],
 );
 
 // ═══════════════════════════════════════════
@@ -119,6 +148,7 @@ export const spendLog = sqliteTable(
   "SpendLog",
   {
     id: text("id").primaryKey(),
+    projectId: text("projectId").notNull().default(""),
     callType: text("callType").notNull(),
     apiKey: text("apiKey").notNull().default(""),
     spend: real("spend").notNull().default(0),
@@ -150,6 +180,7 @@ export const spendLog = sqliteTable(
     index("SpendLog_apiKey_startTime_idx").on(t.apiKey, t.startTime),
     index("SpendLog_model_startTime_idx").on(t.model, t.startTime),
     index("SpendLog_sessionId_idx").on(t.sessionId),
+    index("SpendLog_projectId_idx").on(t.projectId),
   ],
 );
 
@@ -157,6 +188,7 @@ export const errorLog = sqliteTable(
   "ErrorLog",
   {
     id: text("id").primaryKey(),
+    projectId: text("projectId").notNull().default(""),
     startTime: text("startTime").notNull(),
     endTime: text("endTime").notNull(),
     apiBase: text("apiBase").notNull().default(""),
@@ -168,7 +200,10 @@ export const errorLog = sqliteTable(
     exceptionString: text("exceptionString").notNull().default(""),
     statusCode: text("statusCode").notNull().default(""),
   },
-  (t) => [index("ErrorLog_startTime_idx").on(t.startTime)],
+  (t) => [
+    index("ErrorLog_startTime_idx").on(t.startTime),
+    index("ErrorLog_projectId_idx").on(t.projectId),
+  ],
 );
 
 // ═══════════════════════════════════════════
@@ -179,6 +214,7 @@ export const dailySpend = sqliteTable(
   "DailySpend",
   {
     id: text("id").primaryKey(),
+    projectId: text("projectId").notNull().default(""),
     apiKey: text("apiKey").notNull(),
     date: text("date").notNull(),
     model: text("model"),
@@ -203,6 +239,7 @@ export const dailySpend = sqliteTable(
     index("DailySpend_date_idx").on(t.date),
     index("DailySpend_apiKey_date_idx").on(t.apiKey, t.date),
     index("DailySpend_model_idx").on(t.model),
+    index("DailySpend_projectId_idx").on(t.projectId),
   ],
 );
 
@@ -214,6 +251,7 @@ export const auditLog = sqliteTable(
   "AuditLog",
   {
     id: text("id").primaryKey(),
+    projectId: text("projectId").notNull().default(""),
     action: text("action").notNull(),
     tableName: text("tableName").notNull(),
     objectId: text("objectId").notNull(),
@@ -225,6 +263,7 @@ export const auditLog = sqliteTable(
   (t) => [
     index("AuditLog_tableName_objectId_idx").on(t.tableName, t.objectId),
     index("AuditLog_createdAt_idx").on(t.createdAt),
+    index("AuditLog_projectId_idx").on(t.projectId),
   ],
 );
 

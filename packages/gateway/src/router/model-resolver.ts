@@ -22,10 +22,10 @@ export interface ResolvedDeployment {
 }
 
 /**
- * Resolve a model name to a list of available deployments.
+ * Resolve a model name to a list of available deployments within a project.
  * Filters out disabled providers and those in cooldown.
  */
-export async function resolveModel(modelName: string): Promise<ResolvedDeployment[]> {
+export async function resolveModel(modelName: string, projectId: string): Promise<ResolvedDeployment[]> {
   const db = getDb();
 
   const rows = await db
@@ -39,7 +39,9 @@ export async function resolveModel(modelName: string): Promise<ResolvedDeploymen
       and(
         eq(modelDeployment.modelName, modelName),
         eq(modelDeployment.isEnabled, true),
+        eq(modelDeployment.projectId, projectId),
         eq(provider.isEnabled, true),
+        eq(provider.projectId, projectId),
         ne(provider.status, "disabled"),
       ),
     );
@@ -90,14 +92,21 @@ export async function resolveModel(modelName: string): Promise<ResolvedDeploymen
 }
 
 /**
- * Get all unique model names (for /v1/models endpoint).
+ * Get all unique model names within a project (for /v1/models endpoint).
  */
-export async function listModels(): Promise<string[]> {
+export async function listModels(projectId: string): Promise<string[]> {
   const db = getDb();
   const results = await db
     .selectDistinct({ modelName: modelDeployment.modelName })
     .from(modelDeployment)
     .innerJoin(provider, eq(modelDeployment.providerId, provider.id))
-    .where(and(eq(modelDeployment.isEnabled, true), eq(provider.isEnabled, true)));
+    .where(
+      and(
+        eq(modelDeployment.isEnabled, true),
+        eq(modelDeployment.projectId, projectId),
+        eq(provider.isEnabled, true),
+        eq(provider.projectId, projectId),
+      ),
+    );
   return results.map((r) => r.modelName);
 }

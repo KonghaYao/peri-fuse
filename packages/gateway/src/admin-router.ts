@@ -1,6 +1,6 @@
 /**
  * Gateway admin router — exported for direct mounting in the server.
- * No adminAuth middleware here; the caller decides how to protect it.
+ * Auth is handled by the caller (unifiedAuth middleware in app.ts).
  */
 import { Hono } from "hono";
 import adminProviders from "./routes/admin/providers.js";

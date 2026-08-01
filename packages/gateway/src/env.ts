@@ -43,7 +43,6 @@ if (!process.env.GATEWAY_ENCRYPTION_KEY) {
 export const gatewayEnv = {
   port: process.env.GATEWAY_PORT ? parseInt(process.env.GATEWAY_PORT, 10) : 4100,
   dbUrl: process.env.GATEWAY_DB_URL!,
-  adminKey: process.env.GATEWAY_ADMIN_KEY ?? "peri-admin-dev",
   encryptionKey: process.env.GATEWAY_ENCRYPTION_KEY!,
   logRequests: process.env.GATEWAY_LOG_REQUESTS !== "false",
   logMaxBodySize: process.env.GATEWAY_LOG_MAX_BODY_SIZE

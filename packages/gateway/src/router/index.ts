@@ -39,9 +39,10 @@ export interface RouteResult extends ProviderCallResult {
  */
 export async function routeRequest(
   req: PeriRequest,
+  projectId: string,
   strategyName = "weighted-shuffle",
 ): Promise<RouteResult> {
-  const deployments = await resolveModel(req.model);
+  const deployments = await resolveModel(req.model, projectId);
 
   if (deployments.length === 0) {
     throw new RouterError(`No available deployments for model "${req.model}"`, 404);

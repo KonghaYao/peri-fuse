@@ -17,6 +17,7 @@ const messages = new Hono<GatewayEnv>();
 messages.post("/v1/messages", async (c) => {
   const startTime = new Date();
   const body = await c.req.json();
+  const projectId = c.get("projectId");
 
   // Convert Anthropic format to PeriRequest
   const periMessages: PeriMessage[] = [];
@@ -84,6 +85,7 @@ messages.post("/v1/messages", async (c) => {
 
   const keyRecord = c.get("apiKeyRecord");
   const hookCtx: HookContext = {
+    projectId,
     apiKey: {
       id: keyRecord?.id ?? c.get("apiKeyId") ?? "",
       publicKey: keyRecord?.publicKey ?? c.get("apiKeyPrefix") ?? "",
@@ -114,7 +116,7 @@ messages.post("/v1/messages", async (c) => {
   }
 
   try {
-    const result = await routeRequest(req);
+    const result = await routeRequest(req, projectId);
     const endTime = new Date();
     const latencyMs = endTime.getTime() - startTime.getTime();
 
@@ -165,6 +167,7 @@ messages.post("/v1/messages", async (c) => {
         // Track spend
         const spend = calculateCost(result.usage.promptTokens, result.usage.completionTokens, result.deployment.modelInfo);
         spendFlusher.enqueue({
+          projectId,
           callType: "messages", apiKey: hookCtx.apiKey.publicKey, spend,
           promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens,
           totalTokens: result.usage.totalTokens, startTime, endTime: new Date(),
@@ -208,6 +211,7 @@ messages.post("/v1/messages", async (c) => {
     };
 
     spendFlusher.enqueue({
+      projectId,
       callType: "messages", apiKey: hookCtx.apiKey.publicKey, spend,
       promptTokens: response.usage.promptTokens, completionTokens: response.usage.completionTokens,
       totalTokens: response.usage.totalTokens, startTime, endTime,

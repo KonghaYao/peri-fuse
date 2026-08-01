@@ -25,6 +25,7 @@ export const periFuseLoggerHook: GatewayHook = {
           name: `gw:${ctx.model}`,
           userId: ctx.apiKey.publicKey,
           metadata: {
+            projectId: ctx.projectId,
             protocol: ctx.protocol,
             callType: ctx.callType,
             stream: ctx.stream,
@@ -88,6 +89,7 @@ export const periFuseLoggerHook: GatewayHook = {
           name: `gw:${ctx.model}`,
           userId: ctx.apiKey.publicKey,
           metadata: {
+            projectId: ctx.projectId,
             protocol: ctx.protocol,
             callType: ctx.callType,
             error: error.message,

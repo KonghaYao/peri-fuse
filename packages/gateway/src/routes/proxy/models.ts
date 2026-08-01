@@ -8,7 +8,8 @@ import { listModels } from "../../router/model-resolver.js";
 const models = new Hono<GatewayEnv>();
 
 models.get("/v1/models", async (c) => {
-  const modelNames = await listModels();
+  const projectId = c.get("projectId");
+  const modelNames = await listModels(projectId);
 
   return c.json({
     object: "list",

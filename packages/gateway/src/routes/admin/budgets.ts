@@ -1,18 +1,21 @@
 /**
- * Admin API — Budget CRUD.
+ * Admin API — Budget CRUD (project-scoped).
  */
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import type { GatewayEnv } from "../../app.js";
 import { getDb } from "../../db.js";
 import { apiKey, auditLog, budget } from "../../db/schema.js";
 import { generateId } from "../../utils/id.js";
 
-const budgets = new Hono();
+const budgets = new Hono<GatewayEnv>();
 
-// List all budgets
+// List all budgets for the current project
 budgets.get("/", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const items = await db.query.budget.findMany({
+    where: eq(budget.projectId, projectId),
     orderBy: [desc(budget.createdAt)],
   });
 
@@ -36,8 +39,9 @@ budgets.get("/", async (c) => {
 // Get single budget
 budgets.get("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const found = await db.query.budget.findFirst({
-    where: eq(budget.id, c.req.param("id")),
+    where: and(eq(budget.id, c.req.param("id")), eq(budget.projectId, projectId)),
     with: {
       keys: { columns: { id: true, keyName: true, publicKey: true, spend: true } },
     },
@@ -56,12 +60,14 @@ budgets.get("/:id", async (c) => {
 // Create budget
 budgets.post("/", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const body = await c.req.json();
 
   const [created] = await db
     .insert(budget)
     .values({
       id: generateId(),
+      projectId,
       maxBudget: body.maxBudget ?? null,
       softBudget: body.softBudget ?? null,
       maxParallel: body.maxParallel ?? null,
@@ -75,6 +81,7 @@ budgets.post("/", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "create",
     tableName: "Budget",
     objectId: created.id,
@@ -88,10 +95,13 @@ budgets.post("/", async (c) => {
 // Update budget
 budgets.put("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.query.budget.findFirst({ where: eq(budget.id, id) });
+  const existing = await db.query.budget.findFirst({
+    where: and(eq(budget.id, id), eq(budget.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "Budget not found" } }, 404);
   }
@@ -114,6 +124,7 @@ budgets.put("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "update",
     tableName: "Budget",
     objectId: id,
@@ -128,9 +139,12 @@ budgets.put("/:id", async (c) => {
 // Delete budget
 budgets.delete("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
 
-  const existing = await db.query.budget.findFirst({ where: eq(budget.id, id) });
+  const existing = await db.query.budget.findFirst({
+    where: and(eq(budget.id, id), eq(budget.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "Budget not found" } }, 404);
   }
@@ -141,6 +155,7 @@ budgets.delete("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "delete",
     tableName: "Budget",
     objectId: id,

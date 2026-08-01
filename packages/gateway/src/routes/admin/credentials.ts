@@ -1,19 +1,24 @@
 /**
- * Admin API — Credential CRUD.
+ * Admin API — Credential CRUD (project-scoped).
  */
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
+import type { GatewayEnv } from "../../app.js";
 import { getDb } from "../../db.js";
 import { auditLog, credential, provider } from "../../db/schema.js";
 import { generateId } from "../../utils/id.js";
 import { encrypt } from "../../utils/crypto.js";
 
-const credentials = new Hono();
+const credentials = new Hono<GatewayEnv>();
 
 // List all credentials (never expose values)
 credentials.get("/", async (c) => {
   const db = getDb();
-  const items = await db.query.credential.findMany({ orderBy: [desc(credential.createdAt)] });
+  const projectId = c.get("projectId");
+  const items = await db.query.credential.findMany({
+    where: eq(credential.projectId, projectId),
+    orderBy: [desc(credential.createdAt)],
+  });
 
   const safe = items.map((cr) => ({
     id: cr.id,
@@ -29,6 +34,7 @@ credentials.get("/", async (c) => {
 // Create credential
 credentials.post("/", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const body = await c.req.json();
 
   if (!body.name || !body.values) {
@@ -39,6 +45,7 @@ credentials.post("/", async (c) => {
     .insert(credential)
     .values({
       id: generateId(),
+      projectId,
       name: body.name,
       values: encrypt(JSON.stringify(body.values)),
       info: body.info ? JSON.stringify(body.info) : null,
@@ -47,6 +54,7 @@ credentials.post("/", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "create",
     tableName: "Credential",
     objectId: created.id,
@@ -60,10 +68,13 @@ credentials.post("/", async (c) => {
 // Update credential
 credentials.put("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
   const body = await c.req.json();
 
-  const existing = await db.query.credential.findFirst({ where: eq(credential.id, id) });
+  const existing = await db.query.credential.findFirst({
+    where: and(eq(credential.id, id), eq(credential.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "Credential not found" } }, 404);
   }
@@ -77,6 +88,7 @@ credentials.put("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "update",
     tableName: "Credential",
     objectId: id,
@@ -91,9 +103,12 @@ credentials.put("/:id", async (c) => {
 // Delete credential
 credentials.delete("/:id", async (c) => {
   const db = getDb();
+  const projectId = c.get("projectId");
   const id = c.req.param("id");
 
-  const existing = await db.query.credential.findFirst({ where: eq(credential.id, id) });
+  const existing = await db.query.credential.findFirst({
+    where: and(eq(credential.id, id), eq(credential.projectId, projectId)),
+  });
   if (!existing) {
     return c.json({ error: { message: "Credential not found" } }, 404);
   }
@@ -102,7 +117,7 @@ credentials.delete("/:id", async (c) => {
   const [refRow] = await db
     .select({ value: count() })
     .from(provider)
-    .where(eq(provider.credentialId, id));
+    .where(and(eq(provider.credentialId, id), eq(provider.projectId, projectId)));
   const refs = refRow?.value ?? 0;
   if (refs > 0) {
     return c.json({ error: { message: `Credential is referenced by ${refs} provider(s)` } }, 409);
@@ -112,6 +127,7 @@ credentials.delete("/:id", async (c) => {
 
   await db.insert(auditLog).values({
     id: generateId(),
+    projectId,
     action: "delete",
     tableName: "Credential",
     objectId: id,

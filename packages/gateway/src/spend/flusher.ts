@@ -9,6 +9,7 @@ import { gatewayEnv } from "../env.js";
 import { generateId } from "../utils/id.js";
 
 export interface SpendEvent {
+  projectId: string;
   callType: string;
   apiKey: string;
   spend: number;
@@ -37,6 +38,7 @@ export interface SpendEvent {
 }
 
 interface DailySpendIncrement {
+  projectId: string;
   apiKey: string;
   date: string;
   model: string;
@@ -83,6 +85,7 @@ class SpendFlusher {
     // Also queue daily aggregation
     const date = event.startTime.toISOString().slice(0, 10);
     this.dailySpendQueue.push({
+      projectId: event.projectId,
       apiKey: event.apiKey,
       date,
       model: event.model || "",
@@ -114,6 +117,7 @@ class SpendFlusher {
       await db.insert(spendLog).values(
         batch.map((e) => ({
           id: generateId(),
+          projectId: e.projectId,
           callType: e.callType,
           apiKey: e.apiKey,
           spend: e.spend,
@@ -163,7 +167,7 @@ class SpendFlusher {
     // Aggregate by unique key
     const aggregated = new Map<string, DailySpendIncrement>();
     for (const item of batch) {
-      const key = `${item.apiKey}|${item.date}|${item.model}|${item.provider}`;
+      const key = `${item.projectId}|${item.apiKey}|${item.date}|${item.model}|${item.provider}`;
       const existing = aggregated.get(key);
       if (existing) {
         existing.promptTokens += item.promptTokens;
@@ -204,6 +208,7 @@ class SpendFlusher {
         } else {
           await db.insert(dailySpend).values({
             id: generateId(),
+            projectId: item.projectId,
             apiKey: item.apiKey,
             date: item.date,
             model: item.model,
