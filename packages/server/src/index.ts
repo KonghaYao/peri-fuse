@@ -11,10 +11,14 @@ import { logger } from "@peri-fuse/shared/src/server";
 import { createApp } from "./app";
 import { ensureBootstrap } from "./bootstrap";
 import { ensurePrismaSchema } from "./db-init";
+import { ensureGatewaySchema } from "./gateway-init";
 import { liteEnv } from "./env";
 
 // Auto-create Prisma tables on first boot (no manual db:push needed)
 ensurePrismaSchema();
+
+// Auto-create gateway tables on first boot (no manual db:push needed)
+ensureGatewaySchema();
 
 const app = createApp();
 

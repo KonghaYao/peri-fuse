@@ -20,6 +20,10 @@
     "./db": {
       "types": "./src/db.ts",
       "default": "./dist/db.js"
+    },
+    "./env": {
+      "types": "./src/env.ts",
+      "default": "./dist/env.js"
     }
   },
   "scripts": {
