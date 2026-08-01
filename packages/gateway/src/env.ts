@@ -3,21 +3,14 @@
  * Resolves DB path and provides typed env access.
  */
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
-function findProjectRoot(): string {
-  let dir = __dirname;
-  while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-      return dir;
-    }
-    dir = path.dirname(dir);
-  }
-  return process.cwd();
-}
-
-const projectRoot = findProjectRoot();
-const dataDir = path.join(projectRoot, ".peri");
+/**
+ * Global data directory shared with the server (SQLite databases, keys).
+ * Override with PERIFUSE_HOME. Defaults to ~/.peri-fuse.
+ */
+const dataDir = process.env.PERIFUSE_HOME || path.join(os.homedir(), ".peri-fuse");
 
 // Ensure data directory exists
 if (!fs.existsSync(dataDir)) {
@@ -30,7 +23,7 @@ if (!process.env.GATEWAY_DB_URL) {
 } else if (process.env.GATEWAY_DB_URL.startsWith("file:")) {
   const rawPath = process.env.GATEWAY_DB_URL.slice("file:".length);
   if (!path.isAbsolute(rawPath)) {
-    process.env.GATEWAY_DB_URL = `file:${path.resolve(projectRoot, rawPath)}`;
+    process.env.GATEWAY_DB_URL = `file:${path.resolve(process.cwd(), rawPath)}`;
   }
 }
 

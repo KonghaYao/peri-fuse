@@ -7,6 +7,7 @@
  * so data directories resolve identically.
  */
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 export interface RuntimeState {
@@ -35,17 +36,21 @@ export function findProjectRoot(): string {
   return cachedRoot;
 }
 
-/** Runtime directory: <root>/.peri-fuse */
+/**
+ * Global data/runtime directory. Shared with the server and gateway so the
+ * PID/state file, logs, databases and salt all live in one place, independent
+ * of the repo location. Override with PERIFUSE_HOME. Defaults to ~/.peri-fuse.
+ */
 export function runtimeDir(): string {
-  return path.join(findProjectRoot(), ".peri-fuse");
+  return process.env.PERIFUSE_HOME || path.join(os.homedir(), ".peri-fuse");
 }
 
-/** State file: <root>/.peri-fuse/server.json */
+/** State file: ~/.peri-fuse/server.json */
 export function stateFile(): string {
   return path.join(runtimeDir(), "server.json");
 }
 
-/** Log file: <root>/.peri-fuse/server.log */
+/** Log file: ~/.peri-fuse/server.log */
 export function logFile(): string {
   return path.join(runtimeDir(), "server.log");
 }

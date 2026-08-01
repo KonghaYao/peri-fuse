@@ -91,7 +91,8 @@ export function ensurePrismaSchema(): void {
   logger.info("[db-init] Prisma database not initialized — pushing schema…");
 
   const projectRoot = findProjectRoot();
-  const schemaPath = path.join(projectRoot, "packages", "shared", "prisma", "schema.sqlite.prisma");
+  const sharedDir = path.join(projectRoot, "packages", "shared");
+  const schemaPath = path.join(sharedDir, "prisma", "schema.sqlite.prisma");
 
   // Ensure the directory for the DB file exists
   const dbDir = path.dirname(absDbPath);
@@ -104,7 +105,8 @@ export function ensurePrismaSchema(): void {
       "pnpm",
       ["exec", "prisma", "db", "push", `--schema=${schemaPath}`, "--accept-data-loss"],
       {
-        cwd: projectRoot,
+        // Run from the shared package so `pnpm exec` resolves its prisma dep.
+        cwd: sharedDir,
         env: { ...process.env, DATABASE_URL: `file:${absDbPath}` },
         stdio: "pipe",
         timeout: 30_000,
