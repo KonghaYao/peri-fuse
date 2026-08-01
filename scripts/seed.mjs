@@ -1,11 +1,11 @@
 /**
  * Seed script — injects realistic sample traces/observations/scores into the
- * running lite server (http://localhost:23332) so the UI can be exercised.
+ * running lite server (http://localhost:23432) so the UI can be exercised.
  * Run: node scripts/seed.mjs
  */
 import { randomUUID } from "node:crypto";
 
-const BASE = "http://localhost:23332";
+const BASE = process.env.BASE ?? "http://localhost:23432";
 
 async function manage(path, init) {
   const res = await fetch(`${BASE}${path}`, {

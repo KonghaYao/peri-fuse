@@ -55,6 +55,8 @@ let _schemaReady = false;
  */
 function findMigrationSql(): string {
   const candidates = [
+    // Bundled CLI context: __dirname = dist/, SQL copied to dist/drizzle/
+    path.resolve(__dirname, "drizzle/0000_init.sql"),
     path.resolve(__dirname, "../../drizzle/0000_init.sql"),
     path.resolve(__dirname, "../drizzle/0000_init.sql"),
   ];

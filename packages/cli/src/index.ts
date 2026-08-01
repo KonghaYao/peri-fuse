@@ -6,18 +6,24 @@
  * Commands: start / stop / restart / status / logs.
  */
 import { Command } from "commander";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { logsCommand } from "./commands/logs";
 import { restartCommand } from "./commands/restart";
 import { startCommand } from "./commands/start";
 import { statusCommand } from "./commands/status";
 import { stopCommand } from "./commands/stop";
 
+const pkg = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"),
+) as { version: string };
+
 const program = new Command();
 
 program
   .name("peri-fuse")
   .description("Manage the Peri-Fuse background observability server")
-  .version("0.1.0");
+  .version(pkg.version);
 
 program
   .command("start")

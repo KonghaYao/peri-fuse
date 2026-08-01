@@ -55,8 +55,15 @@ export function logFile(): string {
   return path.join(runtimeDir(), "server.log");
 }
 
-/** Server entry point: <root>/packages/server/dist/index.js */
+/**
+ * Server entry point.
+ * - Published package: bundled dist/server.cjs (self-contained).
+ * - Monorepo dev: falls back to <root>/packages/server/dist/index.js.
+ */
 export function serverEntry(): string {
+  // __dirname = dist/lib/ (compiled), server.cjs lives in dist/
+  const bundled = path.join(__dirname, "..", "server.cjs");
+  if (fs.existsSync(bundled)) return bundled;
   return path.join(findProjectRoot(), "packages", "server", "dist", "index.js");
 }
 

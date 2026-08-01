@@ -50,3 +50,6 @@ packages/gateway/src/generated/
 
 # CLI runtime (pid/log/state)
 .peri-fuse/
+
+# CLI build artifacts (copied at build time for publishing)
+packages/cli/drizzle/

@@ -1,9 +1,8 @@
 {
-  "name": "@peri-fuse/cli",
-  "version": "0.1.0",
+  "name": "peri-fuse",
+  "version": "0.1.2",
   "description": "Peri-Fuse command-line tool — manage the background observability server",
   "license": "MIT",
-  "private": true,
   "type": "commonjs",
   "engines": {
     "node": ">=22"
@@ -12,23 +11,28 @@
     "peri-fuse": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "drizzle"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "node build.mjs",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "dev": "tsx src/index.ts",
     "lint": "biome check .",
-    "lint:fix": "biome check --write ."
+    "lint:fix": "biome check --write .",
+    "prepublishOnly": "node build.mjs"
   },
   "dependencies": {
-    "@peri-fuse/server": "workspace:*",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
+    "better-sqlite3": "^11.0.0",
     "commander": "^14.0.1",
     "dotenv": "^16.4.5",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
+    "esbuild": "^0.25.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
   }

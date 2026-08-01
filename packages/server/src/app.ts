@@ -75,13 +75,19 @@ export function createApp(): Hono<LiteServerEnv> {
   app.route("/", dashboardRoutes);
   app.route("/", gatewayProxyRoutes);
 
-  // Serve the web SPA build (packages/web/dist) when present. In
-  // development the frontend runs on its own Vite dev server, so the dist
-  // folder may not exist — in that case we skip static serving entirely.
-  // `webDist` is resolved from __dirname so it is correct regardless of the
-  // process CWD (serveStatic resolves relative roots against CWD).
-  const webDist = path.resolve(__dirname, "../../web/dist");
-  if (fs.existsSync(path.join(webDist, "index.html"))) {
+  // Serve the web SPA build when present. In development the frontend runs
+  // on its own Vite dev server, so the dist folder may not exist — in that
+  // case we skip static serving entirely.
+  // Bundled CLI context: __dirname/web/ (copied at build time).
+  // Monorepo context: __dirname/../../web/dist (packages/web/dist).
+  const webDistCandidates = [
+    path.resolve(__dirname, "web"),
+    path.resolve(__dirname, "../../web/dist"),
+  ];
+  const webDist = webDistCandidates.find((d) =>
+    fs.existsSync(path.join(d, "index.html")),
+  );
+  if (webDist) {
     // Static assets (JS/CSS/images). Also serves `/` via directory-index
     // resolution (webDist/index.html). Unmatched paths fall through (next()).
     app.use("/*", serveStatic({ root: webDist }));

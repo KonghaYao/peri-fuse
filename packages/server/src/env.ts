@@ -10,6 +10,23 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as dotenv from "dotenv";
+
+// Load .env from project root (dev convenience; the CLI daemon passes env
+// explicitly so this is a no-op in production). Walk up to find it.
+{
+  let dir = process.cwd();
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.join(dir, ".env");
+    if (fs.existsSync(candidate)) {
+      dotenv.config({ path: candidate });
+      break;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+}
 
 /**
  * Global data directory. All persistent state (SQLite databases, salt) lives
