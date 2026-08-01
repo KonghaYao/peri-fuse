@@ -3,7 +3,7 @@
  * No HTTP proxy, no separate port. The gateway admin router is imported
  * and mounted at /api/gateway/* (same trust model as /api/manage/*).
  */
-import { createGatewayAdminRouter } from "@peri/gateway/src/admin-router";
+import { createGatewayAdminRouter } from "@peri/gateway/admin-router";
 import { Hono } from "hono";
 
 const gatewayAdmin = new Hono();

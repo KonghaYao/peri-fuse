@@ -9,11 +9,16 @@
   },
   "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "build": "pnpm --filter @peri-fuse/shared run build && pnpm --filter @peri-fuse/server run build && pnpm --filter @peri-fuse/web run build",
+    "build": "pnpm --filter @peri-fuse/shared run build && pnpm --filter @peri/gateway run build && pnpm --filter @peri-fuse/server run build && pnpm --filter @peri-fuse/cli run build && pnpm --filter @peri-fuse/web run build",
     "dev": "concurrently \"pnpm --filter @peri-fuse/server run dev\" \"pnpm --filter @peri-fuse/web run dev\"",
     "dev:server": "pnpm --filter @peri-fuse/server run dev",
     "dev:web": "pnpm --filter @peri-fuse/web run dev",
     "start": "pnpm --filter @peri-fuse/server run start",
+    "svc": "pnpm --filter @peri-fuse/cli exec peri-fuse",
+    "svc:start": "pnpm --filter @peri-fuse/cli exec peri-fuse start",
+    "svc:stop": "pnpm --filter @peri-fuse/cli exec peri-fuse stop",
+    "svc:status": "pnpm --filter @peri-fuse/cli exec peri-fuse status",
+    "svc:logs": "pnpm --filter @peri-fuse/cli exec peri-fuse logs",
     "typecheck": "pnpm -r run typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -33,6 +38,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.0",
+    "@peri-fuse/cli": "workspace:*",
     "concurrently": "^9.1.0"
   }
 }

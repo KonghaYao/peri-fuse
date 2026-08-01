@@ -47,3 +47,6 @@ packages/shared/prisma/*.db-journal
 packages/gateway/src/generated/
 
 .peri
+
+# CLI runtime (pid/log/state)
+.peri-fuse/

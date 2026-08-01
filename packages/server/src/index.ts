@@ -42,8 +42,7 @@ async function shutdown() {
     await prisma.$disconnect();
   } catch { /* ignore */ }
   try {
-    // @ts-expect-error -- runtime import, TS can't resolve gateway internal path
-    const { getDb } = await import("@peri/gateway/src/db");
+    const { getDb } = await import("@peri/gateway/db");
     await getDb().$disconnect();
   } catch { /* ignore */ }
   process.exit(0);

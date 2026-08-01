@@ -7,9 +7,24 @@
   "engines": {
     "node": ">=22"
   },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./admin-router": {
+      "types": "./src/admin-router.ts",
+      "default": "./dist/admin-router.js"
+    },
+    "./db": {
+      "types": "./src/db.ts",
+      "default": "./dist/db.js"
+    }
+  },
   "scripts": {
     "start": "node dist/index.js",
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').cpSync('src/generated','dist/generated',{recursive:true})\"",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "dev": "tsx watch --clear-screen=false src/index.ts",
     "db:generate": "prisma generate",
