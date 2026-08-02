@@ -1,18 +1,32 @@
 /**
  * Typed REST client for the PeriGateway Admin API.
  *
- * All requests go through the server proxy at `/api/gateway/*` which
- * forwards to the gateway admin API with the admin key injected server-side.
- * No client-side auth configuration needed.
+ * All requests go through the server proxy at `/api/gateway/*`, which applies
+ * the gateway's unifiedAuth and resolves the project-scoped projectId. The
+ * active project's publicKey:secretKey is sent via HTTP Basic auth so the
+ * gateway data stays isolated per project.
  */
 
+import { getProjectContext } from "@/shared/store/project";
 import { ApiError } from "./api";
 
+function basicAuthHeader(publicKey: string, secretKey: string): string {
+  const raw = `${publicKey}:${secretKey}`;
+  const bytes = new TextEncoder().encode(raw);
+  return `Basic ${btoa(String.fromCharCode(...bytes))}`;
+}
+
 async function gatewayRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const ctx = getProjectContext();
+  if (!ctx) throw new ApiError(0, "No active project");
+
   let res: Response;
   try {
     res = await fetch(`/api/gateway${path}`, {
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: basicAuthHeader(ctx.publicKey, ctx.secretKey),
+      },
       ...init,
     });
   } catch (err) {

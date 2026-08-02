@@ -24,6 +24,14 @@
     "./env": {
       "types": "./src/env.ts",
       "default": "./dist/env.js"
+    },
+    "./proxy-router": {
+      "types": "./src/proxy-router.ts",
+      "default": "./dist/proxy-router.js"
+    },
+    "./services": {
+      "types": "./src/services.ts",
+      "default": "./dist/services.js"
     }
   },
   "scripts": {

@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { createGatewayProxyRouter } from "@peri/gateway/proxy-router";
 import { BaseError, LangfuseNotFoundError } from "@peri-fuse/shared";
 import { logger } from "@peri-fuse/shared/src/server";
 import { Hono } from "hono";
@@ -27,25 +28,24 @@ export function createApp(): Hono<LiteServerEnv> {
 
   // Mirror web's permissive CORS (origin: true, credentials: false) so SDKs
   // and browser-based clients can call the public API cross-origin.
-  app.use(
-    "/api/public/*",
-    cors({
-      origin: (origin) => origin || "*",
-      allowHeaders: [
-        "Content-Type",
-        "Authorization",
-        "x-langfuse-sdk-name",
-        "x-langfuse-sdk-version",
-        "x-langfuse-sdk-integration",
-        "x-langfuse-ingestion-version",
-        "x-langfuse-public-key",
-        "x-langfuse-secret-key",
-        "x-langfuse-session-id",
-      ],
-      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      credentials: false,
-    }),
-  );
+  const corsConfig = cors({
+    origin: (origin) => origin || "*",
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-langfuse-sdk-name",
+      "x-langfuse-sdk-version",
+      "x-langfuse-sdk-integration",
+      "x-langfuse-ingestion-version",
+      "x-langfuse-public-key",
+      "x-langfuse-secret-key",
+      "x-langfuse-session-id",
+    ],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: false,
+  });
+  app.use("/api/public/*", corsConfig);
+  app.use("/v1/*", corsConfig);
 
   // Global error handler: map BaseError subclasses (incl. 404) to their
   // HTTP codes; everything else becomes a 500.
@@ -75,6 +75,10 @@ export function createApp(): Hono<LiteServerEnv> {
   app.route("/", dashboardRoutes);
   app.route("/", gatewayProxyRoutes);
 
+  // Gateway proxy routes (data plane): /v1/chat/completions, /v1/messages, /v1/models
+  // Auth is handled internally by unifiedAuth middleware.
+  app.route("/", createGatewayProxyRouter() as unknown as Hono<LiteServerEnv>);
+
   // Serve the web SPA build when present. In development the frontend runs
   // on its own Vite dev server, so the dist folder may not exist — in that
   // case we skip static serving entirely.
@@ -84,9 +88,7 @@ export function createApp(): Hono<LiteServerEnv> {
     path.resolve(__dirname, "web"),
     path.resolve(__dirname, "../../web/dist"),
   ];
-  const webDist = webDistCandidates.find((d) =>
-    fs.existsSync(path.join(d, "index.html")),
-  );
+  const webDist = webDistCandidates.find((d) => fs.existsSync(path.join(d, "index.html")));
   if (webDist) {
     // Static assets (JS/CSS/images). Also serves `/` via directory-index
     // resolution (webDist/index.html). Unmatched paths fall through (next()).

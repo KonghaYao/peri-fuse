@@ -1,19 +1,24 @@
 /**
- * Gateway admin router — exported for direct mounting in the server.
- * Auth is handled by the caller (unifiedAuth middleware in app.ts).
+ * Gateway admin router — exported for direct mounting in the main server.
+ * Includes unifiedAuth middleware so the resolved projectId is available to
+ * the project-scoped admin handlers (the caller does not need to apply auth).
  */
 import { Hono } from "hono";
-import adminProviders from "./routes/admin/providers.js";
+import type { GatewayEnv } from "./app.js";
+import { unifiedAuth } from "./middleware/auth.js";
+import adminAudit from "./routes/admin/audit.js";
+import adminBudgets from "./routes/admin/budgets.js";
 import adminCredentials from "./routes/admin/credentials.js";
 import adminKeys from "./routes/admin/keys.js";
-import adminModels from "./routes/admin/models.js";
-import adminBudgets from "./routes/admin/budgets.js";
-import adminUsage from "./routes/admin/usage.js";
 import adminLogs from "./routes/admin/logs.js";
-import adminAudit from "./routes/admin/audit.js";
+import adminModels from "./routes/admin/models.js";
+import adminProviders from "./routes/admin/providers.js";
+import adminUsage from "./routes/admin/usage.js";
 
-export function createGatewayAdminRouter(): Hono {
-  const router = new Hono();
+export function createGatewayAdminRouter(): Hono<GatewayEnv> {
+  const router = new Hono<GatewayEnv>();
+
+  router.use("/*", unifiedAuth);
 
   router.route("/providers", adminProviders);
   router.route("/credentials", adminCredentials);

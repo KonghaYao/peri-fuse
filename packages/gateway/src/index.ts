@@ -1,5 +1,10 @@
 /**
- * PeriGateway entrypoint.
+ * PeriGateway standalone entrypoint (dev-only).
+ *
+ * In production the gateway routes and services are embedded in the main
+ * server (@peri-fuse/server) — see packages/server/src/app.ts and index.ts.
+ * This file remains for local development / debugging of the gateway in
+ * isolation (pnpm --filter @peri/gateway dev).
  */
 import "./env.js";
 
@@ -7,9 +12,7 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { closeDb, ensureSchema } from "./db.js";
 import { gatewayEnv } from "./env.js";
-import { spendFlusher } from "./spend/flusher.js";
-import { startBudgetReset, stopBudgetReset } from "./spend/budget-reset.js";
-import { startCooldownRecovery, stopCooldownRecovery } from "./router/cooldown.js";
+import { startGatewayServices, stopGatewayServices } from "./services.js";
 
 const app = createApp();
 
@@ -19,14 +22,10 @@ async function main() {
   ensureSchema();
 
   // Start background services
-  spendFlusher.start();
-  startBudgetReset();
-  startCooldownRecovery();
+  startGatewayServices();
 
   serve({ fetch: app.fetch, port: gatewayEnv.port }, (info) => {
-    console.log(
-      `[peri-gateway] Listening on http://localhost:${info.port}`,
-    );
+    console.log(`[peri-gateway] Listening on http://localhost:${info.port}`);
     console.log(`[peri-gateway] Database: ${gatewayEnv.dbUrl}`);
     console.log(`[peri-gateway] Auth: project-scoped API keys (via shared server DB)`);
   });
@@ -36,14 +35,9 @@ async function main() {
 async function shutdown() {
   console.log("[peri-gateway] Shutting down...");
 
-  // Stop background services
-  spendFlusher.stop();
-  stopBudgetReset();
-  stopCooldownRecovery();
-
-  // Flush remaining spend data
+  // Stop background services and flush remaining spend data
   try {
-    await spendFlusher.flushAll();
+    await stopGatewayServices();
     console.log("[peri-gateway] Spend data flushed.");
   } catch (err) {
     console.error("[peri-gateway] Flush error on shutdown:", err);

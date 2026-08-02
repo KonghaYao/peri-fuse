@@ -7,18 +7,22 @@
 import "./env";
 
 import { serve } from "@hono/node-server";
+import { startGatewayServices, stopGatewayServices } from "@peri/gateway/services";
 import { logger } from "@peri-fuse/shared/src/server";
 import { createApp } from "./app";
 import { ensureBootstrap } from "./bootstrap";
 import { ensurePrismaSchema } from "./db-init";
-import { ensureGatewaySchema } from "./gateway-init";
 import { liteEnv } from "./env";
+import { ensureGatewaySchema, migrateOrphanedGatewayData } from "./gateway-init";
 
 // Auto-create metadata tables on first boot (no manual migration needed)
 ensurePrismaSchema();
 
 // Auto-create gateway tables on first boot (no manual migration needed)
 ensureGatewaySchema();
+
+// Start gateway background services (spend flusher, budget reset, cooldown recovery)
+startGatewayServices();
 
 const app = createApp();
 
@@ -31,6 +35,8 @@ const server = serve({ fetch: app.fetch, port: liteEnv.port }, (info) => {
 async function main() {
   // Create default org/project/API key if database is empty
   await ensureBootstrap();
+  // Assign pre-project-scoping gateway rows (empty projectId) to the oldest project
+  await migrateOrphanedGatewayData();
 }
 
 main().catch((err) => {
@@ -42,13 +48,22 @@ main().catch((err) => {
 async function shutdown() {
   server.close();
   try {
+    await stopGatewayServices();
+  } catch {
+    /* ignore */
+  }
+  try {
     const { closeDb } = await import("@peri-fuse/shared/src/db");
     closeDb();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   try {
     const { closeDb } = await import("@peri/gateway/db");
     closeDb();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   process.exit(0);
 }
 process.on("SIGTERM", shutdown);
