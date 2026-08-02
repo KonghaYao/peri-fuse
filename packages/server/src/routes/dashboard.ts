@@ -60,14 +60,12 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
         }),
         db.query<{
           total: number | null;
-          input: number | null;
           cached: number | null;
-          creation: number | null;
+          gross: number | null;
         }>({
           query: `SELECT COALESCE(SUM(total_tokens), 0) as total,
-                         COALESCE(SUM(input_tokens), 0) as input,
                          COALESCE(SUM(cached_tokens), 0) as cached,
-                         COALESCE(SUM(cache_creation_tokens), 0) as creation
+                         COALESCE(SUM(gross_input_tokens), 0) as gross
                   FROM trace_metrics WHERE project_id = @projectId`,
           params: { projectId },
         }),
@@ -169,12 +167,12 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
       count: Number(r.count),
     }));
 
-    // Cache hit rate = cached read tokens / gross input (net input + cached
-    // read + cache creation). `input_tokens` is the net (cache-deducted) value.
-    const totalInputTokens = Number(tokenRows[0]?.input ?? 0);
+    // Cache hit rate = cached read tokens / gross input tokens. The materialized
+    // `gross_input_tokens` already resolves the per-provider `input` convention
+    // (gross for Anthropic, net+cache for OpenAI/OTLP), so it is the correct
+    // denominator — adding cached onto `input` again would double-count.
     const totalCachedTokens = Number(tokenRows[0]?.cached ?? 0);
-    const totalCacheCreationTokens = Number(tokenRows[0]?.creation ?? 0);
-    const grossInput = totalInputTokens + totalCachedTokens + totalCacheCreationTokens;
+    const grossInput = Number(tokenRows[0]?.gross ?? 0);
     const cacheHitRate = grossInput > 0 ? totalCachedTokens / grossInput : 0;
 
     return c.json({

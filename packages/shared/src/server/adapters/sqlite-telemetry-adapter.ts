@@ -19,20 +19,58 @@ import type { TelemetryDBAdapter, TelemetryInsertOpts, TelemetryQueryOpts } from
 const DEFAULT_DB_PATH = ".langfuse/telemetry.db";
 
 /**
- * SQL aggregation fragments (json_extract over `o.usage_details`) computing the
- * cache token columns of the materialized `trace_metrics` table. Shared by the
- * ingestion-time maintenance (processEventBatchLite) and the one-time backfill
- * migration below. Both queries alias `observations` as `o`.
+ * SQL fragments (json_extract over `o.usage_details`) computing the cache token
+ * columns of the materialized `trace_metrics` table. Shared by the ingestion-
+ * time maintenance (processEventBatchLite) and the one-time backfill migration
+ * below. Both queries alias `observations` as `o`.
+ *
+ * Cache key naming varies by ingestion path: the OTLP processor normalizes to
+ * `input_cached_tokens` / `input_cache_creation*`, while the plain SDK path
+ * stores the provider's raw keys — Anthropic's `cache_read_input_tokens` /
+ * `cache_creation_input_tokens` and OpenAI's `cached_tokens`. A single
+ * usage_details object only ever carries ONE naming scheme, so summing across
+ * all known keys never double-counts.
+ *
+ * Each metric has a per-row expression (`*_ROW_SQL`, no aggregate) and an
+ * aggregated expression (`SUM(...)`). The per-row forms are needed to build the
+ * gross-input CASE below without nesting aggregates.
  */
-export const TRACE_METRICS_CACHED_TOKENS_SQL = `COALESCE(SUM(
+const CACHED_TOKENS_ROW_SQL = `(
              COALESCE(json_extract(o.usage_details, '$.input_cached_tokens'), 0) +
-             COALESCE(json_extract(o.usage_details, '$.input_cache_read'), 0)), 0)`;
+             COALESCE(json_extract(o.usage_details, '$.input_cache_read'), 0) +
+             COALESCE(json_extract(o.usage_details, '$.cache_read_input_tokens'), 0) +
+             COALESCE(json_extract(o.usage_details, '$.cached_tokens'), 0))`;
 
-export const TRACE_METRICS_CACHE_CREATION_TOKENS_SQL = `COALESCE(SUM(
+const CACHE_CREATION_TOKENS_ROW_SQL = `(
              COALESCE(json_extract(o.usage_details, '$.input_cache_creation'), 0) +
              COALESCE(json_extract(o.usage_details, '$.input_cache_write'), 0) +
              COALESCE(json_extract(o.usage_details, '$.input_cache_creation_5m'), 0) +
-             COALESCE(json_extract(o.usage_details, '$.input_cache_creation_1h'), 0)), 0)`;
+             COALESCE(json_extract(o.usage_details, '$.input_cache_creation_1h'), 0) +
+             COALESCE(json_extract(o.usage_details, '$.cache_creation_input_tokens'), 0))`;
+
+export const TRACE_METRICS_CACHED_TOKENS_SQL = `COALESCE(SUM(${CACHED_TOKENS_ROW_SQL}), 0)`;
+
+export const TRACE_METRICS_CACHE_CREATION_TOKENS_SQL = `COALESCE(SUM(${CACHE_CREATION_TOKENS_ROW_SQL}), 0)`;
+
+/**
+ * Per-observation GROSS input tokens (the full prompt/context size, cache
+ * included) — the correct denominator for cache-hit-rate.
+ *
+ * Providers disagree on what `usage_details.input` means:
+ *  - Anthropic (and gateways forwarding it verbatim) report `input` as GROSS,
+ *    already including cache reads (`input` = net + cache_read + creation);
+ *  - OpenAI / the OTLP-normalized path report `input` as NET (cache excluded).
+ * Heuristic: if `input` already covers the cache tokens (input >= cache read +
+ * creation) it is gross, use it as-is; otherwise it is net, so add the cache
+ * tokens back. When there is no cache the two agree, so this is always safe.
+ */
+export const TRACE_METRICS_GROSS_INPUT_TOKENS_SQL = `COALESCE(SUM(
+             CASE WHEN COALESCE(json_extract(o.usage_details, '$.input'), 0) >=
+                       (${CACHED_TOKENS_ROW_SQL} + ${CACHE_CREATION_TOKENS_ROW_SQL})
+                  THEN COALESCE(json_extract(o.usage_details, '$.input'), 0)
+                  ELSE COALESCE(json_extract(o.usage_details, '$.input'), 0) +
+                       ${CACHED_TOKENS_ROW_SQL} + ${CACHE_CREATION_TOKENS_ROW_SQL}
+             END), 0)`;
 
 /** Find the monorepo root by traversing up from CWD looking for pnpm-workspace.yaml */
 function findMonorepoRoot(): string {
@@ -233,6 +271,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   private migrateSchema(): void {
     this.ensureColumn("trace_metrics", "cached_tokens", "INTEGER DEFAULT 0");
     this.ensureColumn("trace_metrics", "cache_creation_tokens", "INTEGER DEFAULT 0");
+    this.ensureColumn("trace_metrics", "gross_input_tokens", "INTEGER DEFAULT 0");
 
     // One-time backfill of cache token columns for existing rows (guarded by
     // PRAGMA user_version so it only runs once per database file).
@@ -240,6 +279,22 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     if (version < 1) {
       this.backfillTraceMetricsCache();
       this.db.pragma("user_version = 1");
+    }
+    // v2: the cache SQL originally only matched the OTLP-normalized keys
+    // (input_cached_tokens / input_cache_creation*), missing the raw provider
+    // keys written by the plain SDK path (cache_read_input_tokens etc.), so
+    // existing rows were backfilled with 0. Re-run the backfill with the
+    // corrected SQL to fix them.
+    if (version < 2) {
+      this.backfillTraceMetricsCache();
+      this.db.pragma("user_version = 2");
+    }
+    // v3: add gross_input_tokens and fix the cache-hit-rate denominator. The
+    // old formula (input + cached + creation) double-counted cache for
+    // providers that report `input` as gross (Anthropic), halving the hit rate.
+    if (version < 3) {
+      this.backfillTraceMetricsCache();
+      this.db.pragma("user_version = 3");
     }
   }
 
@@ -260,7 +315,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
    */
   private backfillTraceMetricsCache(): void {
     this.db.exec(`
-      INSERT OR REPLACE INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count, total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens, cached_tokens, cache_creation_tokens)
+      INSERT OR REPLACE INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count, total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens, cached_tokens, cache_creation_tokens, gross_input_tokens)
       SELECT o.project_id, o.trace_id, t.user_id, t.session_id,
              COUNT(*),
              COALESCE(SUM(o.total_cost), 0),
@@ -272,7 +327,8 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
                  COALESCE(json_extract(o.usage_details, '$.input'), 0) +
                  COALESCE(json_extract(o.usage_details, '$.output'), 0))), 0),
              ${TRACE_METRICS_CACHED_TOKENS_SQL},
-             ${TRACE_METRICS_CACHE_CREATION_TOKENS_SQL}
+             ${TRACE_METRICS_CACHE_CREATION_TOKENS_SQL},
+             ${TRACE_METRICS_GROSS_INPUT_TOKENS_SQL}
       FROM observations o
       LEFT JOIN traces t ON t.project_id = o.project_id AND t.id = o.trace_id
       WHERE o.is_deleted = 0

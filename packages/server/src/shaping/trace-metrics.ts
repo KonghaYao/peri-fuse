@@ -36,13 +36,26 @@ export type TraceMetricsRow = {
  * Cache-related usage_details keys. `usage_details.input` is the NET input
  * (cache already subtracted), so the gross input for hit-rate computation is
  * net input + cache read + cache creation.
+ *
+ * Key naming varies by ingestion path: the OTLP processor normalizes to
+ * `input_cached_tokens` / `input_cache_creation*`, while the plain SDK path
+ * stores the provider's raw keys — Anthropic's `cache_read_input_tokens` /
+ * `cache_creation_input_tokens` and OpenAI's `cached_tokens`. A single
+ * usage_details object only carries one scheme, so this never double-counts.
+ * Keep in sync with TRACE_METRICS_*_SQL in sqlite-telemetry-adapter.ts.
  */
-const CACHE_READ_KEYS = ["input_cached_tokens", "input_cache_read"];
+const CACHE_READ_KEYS = [
+  "input_cached_tokens",
+  "input_cache_read",
+  "cache_read_input_tokens",
+  "cached_tokens",
+];
 const CACHE_CREATION_KEYS = [
   "input_cache_creation",
   "input_cache_write",
   "input_cache_creation_5m",
   "input_cache_creation_1h",
+  "cache_creation_input_tokens",
 ];
 
 /** Sum of cache-read (hit) tokens from a parsed usage map. */
@@ -107,7 +120,7 @@ export function aggregateTraceMetrics(
   let completionTokens = 0;
   let totalTokens = 0;
   let cachedTokens = 0;
-  let cacheCreationTokens = 0;
+  let grossInputTokens = 0;
   let inputCost = 0;
   let outputCost = 0;
   let totalCost = 0;
@@ -128,8 +141,19 @@ export function aggregateTraceMetrics(
     promptTokens += usage.input ?? 0;
     completionTokens += usage.output ?? 0;
     totalTokens += usage.total ?? (usage.input ?? 0) + (usage.output ?? 0);
-    cachedTokens += sumCacheReadTokens(usage);
-    cacheCreationTokens += sumCacheCreationTokens(usage);
+    const obsCacheRead = sumCacheReadTokens(usage);
+    const obsCacheCreation = sumCacheCreationTokens(usage);
+    cachedTokens += obsCacheRead;
+    // Gross input (cache included) is the hit-rate denominator. `input` is
+    // GROSS for Anthropic-style providers (already covers the cache) but NET
+    // for OpenAI/OTLP (cache excluded). If `input` already covers the cache
+    // tokens treat it as gross; otherwise add them back. With no cache the two
+    // agree. Mirrors TRACE_METRICS_GROSS_INPUT_TOKENS_SQL.
+    const obsInput = usage.input ?? 0;
+    grossInputTokens +=
+      obsInput >= obsCacheRead + obsCacheCreation
+        ? obsInput
+        : obsInput + obsCacheRead + obsCacheCreation;
     for (const [k, v] of Object.entries(usage)) {
       usageDetails[k] = (usageDetails[k] ?? 0) + v;
     }
@@ -174,8 +198,7 @@ export function aggregateTraceMetrics(
           : "DEFAULT";
 
   const fallbackTotal = inputCost + outputCost;
-  const grossInput = promptTokens + cachedTokens + cacheCreationTokens;
-  const cacheHitRate = grossInput > 0 ? cachedTokens / grossInput : 0;
+  const cacheHitRate = grossInputTokens > 0 ? cachedTokens / grossInputTokens : 0;
   return {
     id: traceId,
     latency,
