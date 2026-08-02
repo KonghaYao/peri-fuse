@@ -10,7 +10,7 @@ import {
 } from "../../../../domain/scores";
 import { InvalidRequestError } from "../../../../errors";
 import { singleFilter } from "../../../../interfaces/filters";
-import { applyScoreValidation } from "../../../../utils/scores";
+import { applyScoreValidation, withInferredScoreDataType } from "../../../../utils/scores";
 import { stringDateTime } from "../../../../utils/typeChecks";
 import { commaSeparatedEnumArray, publicApiPaginationZod } from "../../../../utils/zod";
 import { PostScoreBodyFoundationSchema } from "../shared";
@@ -76,40 +76,40 @@ export const PostScoresBody = applyScoreValidation(
   PostScoreBodyFoundationSchema.extend({
     source: PublicApiCreateScoreSourceDomain.default(ScoreSourceEnum.API),
   }).and(
-    z.discriminatedUnion("dataType", [
-      z.object({
-        value: z.number(),
-        dataType: z.literal("NUMERIC"),
-        configId: z.string().nullish(),
-      }),
-      z.object({
-        value: z.string(),
-        dataType: z.literal("CATEGORICAL"),
-        configId: z.string().nullish(),
-      }),
-      z.object({
-        value: z.number().refine((value) => value === 0 || value === 1, {
-          message: "Value must be a number equal to either 0 or 1 for data type BOOLEAN",
+    withInferredScoreDataType(
+      z.discriminatedUnion("dataType", [
+        z.object({
+          value: z.number(),
+          dataType: z.literal("NUMERIC"),
+          configId: z.string().nullish(),
         }),
-        dataType: z.literal("BOOLEAN"),
-        configId: z.string().nullish(),
-      }),
-      z.object({
-        value: z.string(), // Corrected output text
-        dataType: z.literal("CORRECTION"),
-        configId: z.undefined().nullish(), // Cannot have config
-      }),
-      z.object({
-        value: z.string().min(1).max(TEXT_SCORE_MAX_LENGTH),
-        dataType: z.literal("TEXT"),
-        configId: z.string().nullish(),
-      }),
-      z.object({
-        value: z.union([z.string(), z.number()]),
-        dataType: z.undefined(),
-        configId: z.string().nullish(),
-      }),
-    ]),
+        z.object({
+          value: z.string(),
+          dataType: z.literal("CATEGORICAL"),
+          configId: z.string().nullish(),
+        }),
+        z.object({
+          value: z.number().refine((value) => value === 0 || value === 1, {
+            message: "Value must be a number equal to either 0 or 1 for data type BOOLEAN",
+          }),
+          dataType: z.literal("BOOLEAN"),
+          configId: z.string().nullish(),
+        }),
+        z.object({
+          value: z.string(), // Corrected output text
+          dataType: z.literal("CORRECTION"),
+          configId: z.undefined().nullish(), // Cannot have config
+        }),
+        z.object({
+          value: z.string().min(1).max(TEXT_SCORE_MAX_LENGTH),
+          dataType: z.literal("TEXT"),
+          configId: z.string().nullish(),
+        }),
+        // Scores without an explicit dataType are normalized by
+        // withInferredScoreDataType (Zod v4 no longer matches a z.undefined()
+        // discriminator branch), so no fallback branch is needed here.
+      ]),
+    ),
   ),
 ).refine((data) => !isAnnotationScoreMissingConfigId(data), {
   message: ANNOTATION_SCORE_REQUIRES_CONFIG_ID_MESSAGE,

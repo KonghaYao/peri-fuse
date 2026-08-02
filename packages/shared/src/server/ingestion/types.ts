@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ModelUsageUnit } from "../../constants";
 import type { ScoreSourceType } from "../../domain";
 import { TEXT_SCORE_MAX_LENGTH } from "../../domain/scores";
-import { applyScoreValidation } from "../../utils/scores";
+import { applyScoreValidation, withInferredScoreDataType } from "../../utils/scores";
 import { jsonSchema, NonEmptyString } from "../../utils/zod";
 
 export const idSchema = z
@@ -498,52 +498,50 @@ const createAllIngestionSchemas = ({ isPublic = true }: { isPublic: boolean }) =
   });
 
   const ScoreBody = applyScoreValidation(
-    z.discriminatedUnion("dataType", [
-      BaseScoreBody.extend(
-        z.object({
-          value: z.number(),
-          dataType: z.literal("NUMERIC"),
-          configId: z.string().nullish(),
-        }).shape,
-      ),
-      BaseScoreBody.extend(
-        z.object({
-          value: z.string(),
-          dataType: z.literal("CATEGORICAL"),
-          configId: z.string().nullish(),
-        }).shape,
-      ),
-      BaseScoreBody.extend(
-        z.object({
-          value: z.number().refine((value) => value === 0 || value === 1, {
-            message: "Value must be a number equal to either 0 or 1 for data type BOOLEAN",
-          }),
-          dataType: z.literal("BOOLEAN"),
-          configId: z.string().nullish(),
-        }).shape,
-      ),
-      BaseScoreBody.extend(
-        z.object({
-          value: z.string(),
-          dataType: z.literal("CORRECTION"),
-          configId: z.undefined().nullish(), // Cannot have config
-        }).shape,
-      ),
-      BaseScoreBody.extend(
-        z.object({
-          value: z.string().min(1).max(TEXT_SCORE_MAX_LENGTH),
-          dataType: z.literal("TEXT"),
-          configId: z.string().nullish(),
-        }).shape,
-      ),
-      BaseScoreBody.extend(
-        z.object({
-          value: z.union([z.string(), z.number()]),
-          dataType: z.undefined(),
-          configId: z.string().nullish(),
-        }).shape,
-      ),
-    ]),
+    withInferredScoreDataType(
+      z.discriminatedUnion("dataType", [
+        BaseScoreBody.extend(
+          z.object({
+            value: z.number(),
+            dataType: z.literal("NUMERIC"),
+            configId: z.string().nullish(),
+          }).shape,
+        ),
+        BaseScoreBody.extend(
+          z.object({
+            value: z.string(),
+            dataType: z.literal("CATEGORICAL"),
+            configId: z.string().nullish(),
+          }).shape,
+        ),
+        BaseScoreBody.extend(
+          z.object({
+            value: z.number().refine((value) => value === 0 || value === 1, {
+              message: "Value must be a number equal to either 0 or 1 for data type BOOLEAN",
+            }),
+            dataType: z.literal("BOOLEAN"),
+            configId: z.string().nullish(),
+          }).shape,
+        ),
+        BaseScoreBody.extend(
+          z.object({
+            value: z.string(),
+            dataType: z.literal("CORRECTION"),
+            configId: z.undefined().nullish(), // Cannot have config
+          }).shape,
+        ),
+        BaseScoreBody.extend(
+          z.object({
+            value: z.string().min(1).max(TEXT_SCORE_MAX_LENGTH),
+            dataType: z.literal("TEXT"),
+            configId: z.string().nullish(),
+          }).shape,
+        ),
+        // Note: scores without an explicit dataType are normalized by
+        // withInferredScoreDataType (Zod v4 no longer matches a z.undefined()
+        // discriminator branch), so no fallback branch is needed here.
+      ]),
+    ),
   );
 
   const DatasetRunItemBody = z.object({
