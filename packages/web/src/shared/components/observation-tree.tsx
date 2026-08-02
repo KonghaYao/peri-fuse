@@ -6,11 +6,7 @@
 
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
-import {
-  LevelBadge,
-  ObservationTypeBadge,
-  ObservationTypeIcon,
-} from "@/shared/components/observation-badges";
+import { LevelBadge, ObservationTypeIcon } from "@/shared/components/observation-badges";
 import { formatDuration } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
@@ -108,7 +104,6 @@ export function ObservationNode({
         <span className="truncate font-medium">
           {o.name ?? <span className="text-fg-tertiary">(unnamed)</span>}
         </span>
-        <ObservationTypeBadge type={o.type} />
         {o.level && o.level !== "DEFAULT" && <LevelBadge level={o.level} />}
         <span className="tnum ml-auto shrink-0 pl-2 font-mono text-[11px] text-fg-tertiary">
           {formatDuration(o.startTime, o.endTime)}
