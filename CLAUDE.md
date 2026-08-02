@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+> AI Agent 快速指引见 [AGENTS.md](./AGENTS.md)；各包细节见 `packages/*/AGENTS.md`。
+
 ## 核心工程原则
 
 1. **架构与领域优先**：计划阶段应以理想架构为目标，明确业务目标、领域边界、模块职责、依赖方向和数据流，形成符合领域规律、面向长期维护且可持续演进的设计后再进入编码；不得以短期实现便利牺牲整体设计。
@@ -17,9 +19,9 @@
 
 Langfuse Lite（包名 `peri-fuse`）是 Langfuse 的轻量级自包含版本，专为本地开发、小团队和边缘部署设计。纯 SQLite 后端，零外部依赖。
 
-- 主要能力：LLM 可观测性（traces/spans/generations/scores）、OpenTelemetry (OTLP) 数据接入、兼容 Langfuse SDK 的 REST API、轻量 Web 仪表盘。
+- 主要能力：LLM 可观测性（traces/spans/generations/scores）、OpenTelemetry (OTLP) 数据接入、兼容 Langfuse SDK 的 REST API、轻量 Web 仪表盘、LLM 代理网关（PeriGateway）。
 - pnpm monorepo + Turbo 构建编排，Node.js >= 22。
-- `packages/` 包含 3 个内部包：`shared`、`server`、`web`；跨包能力应通过包导出的稳定接口复用，不得依赖包内实现细节。
+- `packages/` 包含 5 个内部包：`shared`、`server`、`web`、`gateway`、`cli`；跨包能力应通过包导出的稳定接口复用，不得依赖包内实现细节。
 
 ### 后端地图（packages/server）
 
@@ -31,6 +33,30 @@ Langfuse Lite（包名 `peri-fuse`）是 Langfuse 的轻量级自包含版本，
 - `src/schemas/`：请求/响应 Zod schema。
 - `src/shaping/`：数据整形层（将存储数据转换为 API 响应格式）。
 - `src/__tests__/`：后端集成测试（Vitest）。
+
+### 网关地图（packages/gateway）
+
+PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流、预算控制和请求可观测性。
+
+- `src/index.ts`：服务入口（默认端口 4100），启动后台服务（SpendFlusher、BudgetReset、CooldownRecovery）。
+- `src/env.ts`：环境配置解析，数据目录默认 `~/.peri-fuse`。**必须最先导入**。
+- `src/app.ts`：Hono 应用装配层，定义 `GatewayEnv` 类型（Context Variables）。
+- `src/middleware/auth.ts`：统一鉴权中间件 `unifiedAuth`（Bearer + Basic），验证 project-scoped API key。
+- `src/db.ts`：Drizzle ORM 连接管理 + 增量迁移逻辑。
+- `src/db/schema.ts`：Drizzle schema 定义（9 张表，全部含 `projectId` 列）。
+- `src/router/`：模型解析（model-resolver）、路由策略（weighted-shuffle / priority / lowest-latency）、cooldown 恢复。
+- `src/provider/`：Provider 适配器（openai / anthropic），统一请求/响应协议。
+- `src/routes/proxy/`：数据平面路由（chat completions、messages、models）。
+- `src/routes/admin/`：控制平面路由（providers、credentials、models、keys、budgets、usage、logs、audit）。
+- `src/hooks/`：Hook 系统（parallel-limiter、rate-limiter、budget-limiter、peri-fuse-logger）。
+- `src/spend/`：花费计算、批量刷写（SpendFlusher）、预算重置。
+- `drizzle/`：SQL 迁移文件（0000_init.sql、0001_add_project_scoping.sql）。
+- `test/integration.test.ts`：集成测试（31 个用例，覆盖多项目隔离）。
+
+### CLI 地图（packages/cli）
+
+- 包名 `peri-fuse`，提供 `peri-fuse` 命令行工具，管理后台服务的启停、状态和日志。
+- 使用 Commander.js，esbuild 单文件打包。
 
 ### 共享层地图（packages/shared）
 
@@ -75,20 +101,32 @@ Langfuse Lite（包名 `peri-fuse`）是 Langfuse 的轻量级自包含版本，
 pnpm run dev                  # 同时启动后端（tsx watch）和前端（Vite）
 pnpm run dev:server           # 仅后端开发（port 23332）
 pnpm run dev:web              # 仅前端开发（Vite port 5173，代理 /api → 23332）
-pnpm run build                # 全量构建（shared → server → web）
+pnpm run build                # 全量构建（shared → gateway → server → cli → web）
 pnpm run typecheck            # 全包 TypeScript 类型检查
 pnpm run lint                 # Biome lint + format 检查
 pnpm run lint:fix             # Biome 自动修复
 pnpm run test                 # 全包 Vitest 测试
 pnpm run db:generate          # Prisma generate（schema → client）
 pnpm run db:push              # Prisma db push（schema → SQLite，开发用）
+
+# Gateway 单独操作
+pnpm --filter @peri/gateway run dev        # Gateway 开发模式（port 4100）
+pnpm --filter @peri/gateway run test       # Gateway 集成测试
+pnpm --filter @peri/gateway run typecheck  # Gateway 类型检查
+
+# CLI 服务管理
+pnpm run svc:start            # 启动后台服务
+pnpm run svc:stop             # 停止后台服务
+pnpm run svc:status           # 查看服务状态
+pnpm run svc:logs             # 查看服务日志
 ```
 
 ### 按变更类型验证
 
 - 后端改动：运行 `pnpm --filter @peri-fuse/server run test`，完成后运行 `pnpm run typecheck && pnpm run lint`。
 - 共享层改动：运行 `pnpm --filter @peri-fuse/shared run test`，再运行依赖它的包的测试。
-- 前端改动：运行 `pnpm --filter @langfuse-lite/web run build`（生产构建不可省略，因为后端从 `packages/web/dist/` 挂载静态资源）。
+- 前端改动：运行 `pnpm --filter @peri-fuse/web run build`（生产构建不可省略，因为后端从 `packages/web/dist/` 挂载静态资源）。
+- Gateway 改动：运行 `pnpm --filter @peri/gateway run test`（31 个集成测试），再运行 `pnpm --filter @peri/gateway run typecheck`。
 - 数据库改动：修改 `packages/shared/prisma/schema.sqlite.prisma` → `pnpm run db:generate` → `pnpm run db:push` → 运行相关测试。
 - 全量检查：`pnpm run typecheck && pnpm run lint && pnpm run test`。
 
@@ -96,14 +134,15 @@ pnpm run db:push              # Prisma db push（schema → SQLite，开发用�
 
 ### 依赖方向
 
-`server → shared`，`web`（独立，通过 HTTP API 与 server 通信）。
+`server → shared`，`gateway`（独立，通过共享 DB 与 server 协同），`web`（独立，通过 HTTP API 与 server 通信），`cli`（独立，管理服务进程）。
 
 - server 只负责协议接入（Hono 路由）、认证、参数校验和响应映射。
 - shared 承载领域逻辑、数据访问、摄入管线和 OTLP 处理。
+- gateway 是独立的 LLM 代理网关，通过读取 server 的共享 DB（api_keys 表）完成鉴权，自身数据存储在独立的 gateway.db。
 - web 是纯前端 SPA，通过 `/api/public/*` REST API 与 server 交互，不直接依赖 shared。
 - 禁止 server 反向依赖 web，禁止 web 直接导入 shared 内部实现。
 
-### API 边界
+### API 边界（Server）
 
 - 所有公开 API 挂载在 `/api/public/*`，兼容 Langfuse SDK 协议。
 - OTLP 入口：`/api/public/otel/v1/traces`（protobuf + JSON）。
@@ -111,6 +150,27 @@ pnpm run db:push              # Prisma db push（schema → SQLite，开发用�
 - 认证方式：HTTP Basic（`publicKey:secretKey`），由 `authMiddleware` 统一处理。
 - 响应格式遵循 Langfuse API 约定（分页使用 `meta: { page, limit, totalItems, totalPages }`）。
 - 新增接口必须保持与 Langfuse SDK 的向后兼容性。
+
+### Gateway 统一鉴权与项目隔离（核心规范）
+
+**所有 Gateway 路由（proxy + admin）统一使用 project-scoped API key 鉴权，无全局 admin key。**
+
+鉴权格式：
+- `Authorization: Bearer <secretKey>`（proxy 客户端常用）
+- `Authorization: Basic <base64(publicKey:secretKey)>`（server 兼容格式）
+
+隔离规则：
+- Gateway 所有资源（Provider、Credential、ModelDeployment、ApiKey、Budget、SpendLog、DailySpend、ErrorLog、AuditLog）全部按 `projectId` 隔离。
+- 鉴权中间件从 server 共享 DB（`api_keys` 表）验证 key，解析出 `projectId` 和 `orgId`，注入 Hono Context Variables。
+- 仅接受 `scope = 'PROJECT'` 的 key；`ORGANIZATION` 级别 key 返回 403。
+- 所有 admin CRUD 查询必须带 `where(eq(table.projectId, projectId))` 过滤。
+- Provider 和 Credential 的唯一约束为联合索引 `(projectId, name)`，不同项目允许同名资源。
+
+新增 Gateway 资源表或路由时必须：
+1. 表定义包含 `projectId: text("projectId").notNull()` + 索引。
+2. 路由处理函数从 `c.get("projectId")` 获取项目 ID。
+3. 所有查询/写入带 projectId 过滤/赋值。
+4. 在 `test/integration.test.ts` 中补充跨项目隔离测试。
 
 ### 前端边界与体验
 
@@ -124,26 +184,38 @@ pnpm run db:push              # Prisma db push（schema → SQLite，开发用�
 
 ### 存储层
 
-- 双 SQLite 数据库架构：
-  - `langfuse.db`（Prisma）：认证、项目、组织、API Key 等元数据。
+- 三 SQLite 数据库架构：
+  - `langfuse.db`（Prisma）：认证、项目、组织、API Key 等元数据。Server 和 Gateway 共享读取。
   - `telemetry.db`（better-sqlite3）：traces、observations、scores 等遥测数据。
+  - `gateway.db`（Drizzle ORM + better-sqlite3）：Gateway 自有数据（Provider、ModelDeployment、ApiKey config、Budget、日志）。
 - 存储适配器通过 `packages/shared/src/server/adapters/factory.ts` 按 `LANGFUSE_MODE` 选择。
 - Lite 模式使用 `sqlite-telemetry-adapter`、`in-memory-cache-adapter`、`in-memory-queue-adapter`、`local-storage-adapter`。
 - 不得在 lite 路径中引入对 Redis/S3/ClickHouse/BullMQ 的运行时依赖。
 
 ## 数据库与迁移
 
+### Server / Shared（Prisma）
+
 - Prisma schema 真相来源：`packages/shared/prisma/schema.sqlite.prisma`。
 - 标准流程：修改 schema → `pnpm run db:generate` → `pnpm run db:push`（开发）→ 运行相关测试。
 - 遥测数据库（telemetry.db）的表结构由 `sqlite-telemetry-adapter.ts` 中的 DDL 管理。
-- 迁移设计必须考虑已有数据兼容性和幂等性。
+
+### Gateway（Drizzle ORM）
+
+- Schema 定义：`packages/gateway/src/db/schema.ts`。
+- 迁移文件：`packages/gateway/drizzle/*.sql`（手动编写，幂等执行）。
+- 迁移逻辑：`packages/gateway/src/db.ts` 中的 `ensureSchema()` 在启动时检测并执行未应用的迁移。
+- 迁移设计必须考虑已有数据兼容性和幂等性（使用 `PRAGMA table_info` 检测列是否存在）。
+- 新增表/列时：编写增量 SQL 迁移文件 → 更新 `ensureSchema()` 检测逻辑 → 更新 schema.ts 定义。
 
 ## 质量、测试与长期维护
 
 ### 测试
 
 - 后端测试位于 `packages/server/src/__tests__/`，共享层测试与源码同目录（`*.test.ts`）。
+- Gateway 测试位于 `packages/gateway/test/integration.test.ts`（Vitest，31 个用例）。
 - 测试框架为 Vitest；后端集成测试使用 `packages/server/src/__tests__/global-setup.ts` 初始化临时数据库。
+- Gateway 测试使用 mock LLM server + 临时 SQLite DB，覆盖：鉴权（Bearer/Basic/scope 拒绝）、代理（流式/非流式/Anthropic）、多项目隔离、限流、预算、完整生命周期。
 - 前端当前无测试；如新增，放在 `packages/web/src/__tests__/`。
 - 测试应覆盖摄入往返（ingestion roundtrip）、OTLP 解析、认证和查询过滤等关键路径。
 
@@ -169,10 +241,24 @@ pnpm run db:push              # Prisma db push（schema → SQLite，开发用�
 
 ## 环境变量
 
-环境变量以 `.env.example` 为参考，运行时由 `packages/server/src/env.ts` 和 `packages/shared/src/env.ts` 解析。关键变量：
+环境变量以 `.env.example` 为参考，运行时由各包的 env 模块解析。
 
-- `LITE_SERVER_PORT`：服务端口（默认 23332）。
+### 全局 / Server
+
+- `LITE_SERVER_PORT`：Server 端口（默认 23332）。
 - `LANGFUSE_MODE`：运行模式（固定 `lite`，server 启动时自动设置）。
-- `DATABASE_URL`：Prisma SQLite 路径（默认 `file:.langfuse/langfuse.db`，相对路径从项目根解析）。
-- `LANGFUSE_SQLITE_DB_PATH`：遥测 SQLite 路径（默认 `.langfuse/telemetry.db`）。
-- `SALT`：API Key 哈希盐值（生产环境必须设置为随机字符串）。
+- `PERIFUSE_HOME`：全局数据目录（默认 `~/.peri-fuse`），所有 SQLite 数据库、salt、encryption key 存放于此。
+- `DATABASE_URL`：Prisma SQLite 路径（默认 `<PERIFUSE_HOME>/langfuse.db`）。
+- `LANGFUSE_SQLITE_DB_PATH`：遥测 SQLite 路径（默认 `<PERIFUSE_HOME>/telemetry.db`）。
+- `SALT`：API Key 哈希盐值（自动生成并持久化到 `<PERIFUSE_HOME>/.salt`，生产环境建议手动设置）。
+
+### Gateway
+
+- `GATEWAY_PORT`：Gateway 端口（默认 4100）。
+- `GATEWAY_DB_URL`：Gateway SQLite 路径（默认 `<PERIFUSE_HOME>/gateway.db`）。
+- `GATEWAY_ENCRYPTION_KEY`：Provider API Key 加密密钥（64 字符 hex，自动生成并持久化到 `<PERIFUSE_HOME>/.encryption-key`）。
+- `GATEWAY_LOG_REQUESTS`：是否记录请求日志（默认 true）。
+- `GATEWAY_FLUSH_INTERVAL_MS`：SpendFlusher 刷写间隔（默认 30000）。
+- `GATEWAY_DAILY_FLUSH_INTERVAL_MS`：DailySpend 刷写间隔（默认 60000）。
+- `PERIFUSE_ENDPOINT`：PeriFuse 可观测性上报端点（可选）。
+- `PERIFUSE_PUBLIC_KEY` / `PERIFUSE_SECRET_KEY`：上报鉴权（可选）。
