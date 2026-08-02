@@ -20,6 +20,9 @@ dist/
 .test/
 coverage/
 
+# Stress test credentials (contains a live secret key)
+scripts/stress/.stress-creds.json
+
 # Logs
 *.log
 npm-debug.log*
