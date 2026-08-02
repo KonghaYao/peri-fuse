@@ -1,17 +1,17 @@
 /**
  * Observation detail panel — shared by the trace-detail page and the
  * session-detail page. Renders the full shape of a single observation
- * (type/level badges, timing/cost/model/token stats, IO tabs, and any scores
+ * (type/level badges, timing/model/token stats, IO tabs, and any scores
  * attributed to it).
  */
-import { Clock, Coins, Cpu, Layers, Star } from "lucide-react";
+import { Clock, Cpu, Layers, Star } from "lucide-react";
 import { IoViewer } from "@/shared/components/io-viewer";
 import { JsonViewer } from "@/shared/components/json-viewer";
 import { LevelBadge, ObservationTypeBadge } from "@/shared/components/observation-badges";
 import { Badge } from "@/shared/components/ui/badge";
 import { Separator } from "@/shared/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
-import { formatCost, formatDateTime, formatDuration, formatTokens } from "@/shared/lib/format";
+import { formatDateTime, formatDuration, formatTokens } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 
 /**
@@ -117,7 +117,6 @@ export function ObservationDetail({
 
       <div className="grid grid-cols-2 gap-2">
         <StatChip icon={Clock} label="Duration" value={formatDuration(o.startTime, o.endTime)} />
-        <StatChip icon={Coins} label="Cost" value={formatCost(o.calculatedTotalCost ?? null)} />
         <StatChip icon={Cpu} label="Model" value={o.model ?? "—"} />
         <StatChip
           icon={Layers}

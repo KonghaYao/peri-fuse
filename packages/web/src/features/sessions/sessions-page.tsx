@@ -20,7 +20,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { useSessionsQuery } from "@/shared/hooks/queries";
 import { useTableState } from "@/shared/hooks/use-table-state";
-import { formatIntervalSeconds, numberFormatter, usdFormatter } from "@/shared/lib/format";
+import { formatIntervalSeconds, numberFormatter } from "@/shared/lib/format";
 import type { SessionRow } from "@/shared/lib/types";
 
 const PAGE_SIZE = 50;
@@ -33,9 +33,6 @@ type SessionsTableRow = {
   userIds: string[];
   traceTags: string[];
   environment: string;
-  inputCost: number | null;
-  outputCost: number | null;
-  totalCost: number | null;
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
@@ -51,9 +48,6 @@ function toRow(s: SessionRow): SessionsTableRow {
     userIds: s.userIds,
     traceTags: s.traceTags,
     environment: s.environment,
-    inputCost: s.inputCost,
-    outputCost: s.outputCost,
-    totalCost: s.totalCost,
     inputTokens: s.promptTokens,
     outputTokens: s.completionTokens,
     totalTokens: s.totalTokens,
@@ -138,35 +132,6 @@ const columns: ColumnDef<SessionsTableRow, unknown>[] = [
     cell: ({ row }) => {
       const value = row.original.countTraces;
       return value ? <span>{numberFormatter(value, 0)}</span> : undefined;
-    },
-  },
-  {
-    accessorKey: "inputCost",
-    id: "inputCost",
-    header: "Input Cost",
-    meta: { defaultHidden: true },
-    cell: ({ row }) => {
-      const value = row.original.inputCost;
-      return value ? <span>{usdFormatter(value)}</span> : undefined;
-    },
-  },
-  {
-    accessorKey: "outputCost",
-    id: "outputCost",
-    header: "Output Cost",
-    meta: { defaultHidden: true },
-    cell: ({ row }) => {
-      const value = row.original.outputCost;
-      return value ? <span>{usdFormatter(value)}</span> : undefined;
-    },
-  },
-  {
-    accessorKey: "totalCost",
-    id: "totalCost",
-    header: "Total Cost",
-    cell: ({ row }) => {
-      const value = row.original.totalCost;
-      return value ? <span>{usdFormatter(value)}</span> : undefined;
     },
   },
   {

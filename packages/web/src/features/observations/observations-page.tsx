@@ -23,7 +23,7 @@ import {
 } from "@/shared/components/ui/table";
 import { useObservationsQuery } from "@/shared/hooks/queries";
 import { useTableState } from "@/shared/hooks/use-table-state";
-import { formatCost, formatDateTime, formatTokens } from "@/shared/lib/format";
+import { formatDateTime, formatTokens } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 
 const PAGE_SIZE = 25;
@@ -118,7 +118,6 @@ export function ObservationsPage() {
                   <TableHead>Start time</TableHead>
                   <TableHead>Model</TableHead>
                   <TableHead className="text-right">Tokens</TableHead>
-                  <TableHead className="text-right">Cost</TableHead>
                   <TableHead>Trace</TableHead>
                 </TableRow>
               </TableHeader>
@@ -142,9 +141,6 @@ export function ObservationsPage() {
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground">
                       {o.totalTokens > 0 ? formatTokens(o.totalTokens) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
-                      {formatCost(o.calculatedTotalCost ?? null)}
                     </TableCell>
                     <TableCell className="max-w-[120px]">
                       {o.traceId ? (

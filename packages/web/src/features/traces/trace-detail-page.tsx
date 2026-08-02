@@ -6,7 +6,7 @@
  * the left driving the detail panel on the right. Reached from the trace peek
  * view's "Open full view" action or a direct URL.
  */
-import { ArrowLeft, Clock, Coins, Copy, Cpu, Layers, ListTree, Star } from "lucide-react";
+import { ArrowLeft, Clock, Copy, Cpu, Layers, ListTree, Star } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { LocalIsoDate } from "@/shared/components/local-iso-date";
@@ -26,7 +26,7 @@ import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Separator } from "@/shared/components/ui/separator";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { useTraceQuery } from "@/shared/hooks/queries";
-import { formatCost, formatLatency, formatTokens } from "@/shared/lib/format";
+import { formatLatency, formatTokens } from "@/shared/lib/format";
 import type { TraceWithDetails } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
 
@@ -156,7 +156,6 @@ export function TraceDetailPage() {
 
         <div className="mt-3 flex flex-wrap gap-2">
           <StatChip icon={Clock} label="Latency" value={formatLatency(trace.latency)} />
-          <StatChip icon={Coins} label="Cost" value={formatCost(trace.totalCost)} />
           <StatChip icon={Layers} label="Observations" value={String(trace.observations.length)} />
           <StatChip icon={Cpu} label="Tokens" value={formatTokens(totalTokens)} />
           <StatChip icon={Star} label="Scores" value={String(trace.scores.length)} />

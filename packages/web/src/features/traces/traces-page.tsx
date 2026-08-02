@@ -3,7 +3,7 @@
  *
  * Data flow: a "core" list query provides the row identities, then a per-page
  * metrics query (GET /api/public/traces/metrics) supplies IO/latency/tokens/
- * cost/levels which are joined client-side by id (joinTableCoreAndMetrics).
+ * levels which are joined client-side by id (joinTableCoreAndMetrics).
  * Metrics cells render skeletons until the metrics query resolves.
  *
  * State is URL-synced via useTableState (page, sort, filters in searchParams).
@@ -34,12 +34,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { useTracesMetricsQuery, useTracesQuery } from "@/shared/hooks/queries";
 import { useTableState } from "@/shared/hooks/use-table-state";
-import {
-  formatIntervalSeconds,
-  formatPercent,
-  numberFormatter,
-  usdFormatter,
-} from "@/shared/lib/format";
+import { formatIntervalSeconds, formatPercent, numberFormatter } from "@/shared/lib/format";
 import type { Trace, TraceMetrics } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
 
@@ -75,9 +70,6 @@ type TracesTableRow = {
   totalTokens: number | null;
   cachedTokens: number | null;
   cacheHitRate: number | null;
-  inputCost: number | null;
-  outputCost: number | null;
-  totalCost: number | null;
 };
 
 /** Client-side join of core trace rows and per-trace metrics (by id). */
@@ -117,9 +109,6 @@ function joinCoreAndMetrics(
       totalTokens: m?.totalTokens ?? null,
       cachedTokens: m?.cachedTokens ?? null,
       cacheHitRate: m?.cacheHitRate ?? null,
-      inputCost: m?.calculatedInputCost ?? null,
-      outputCost: m?.calculatedOutputCost ?? null,
-      totalCost: m?.calculatedTotalCost ?? null,
     };
   });
 }
@@ -212,22 +201,6 @@ const columns: ColumnDef<TracesTableRow, unknown>[] = [
           totalUsage={totalTokens ?? 0}
           inline
         />
-      );
-    },
-  },
-  {
-    accessorKey: "totalCost",
-    id: "totalCost",
-    header: "Total Cost",
-    enableSorting: false,
-    cell: ({ row }) => {
-      const cost = row.original.totalCost;
-      if (row.original.levelCounts === null && cost === null)
-        return <Skeleton className="h-4 w-14" />;
-      return cost != null && cost > 0 ? (
-        <span className="tnum font-mono text-[12.5px]">{usdFormatter(cost)}</span>
-      ) : (
-        <span>-</span>
       );
     },
   },
@@ -365,40 +338,6 @@ const columns: ColumnDef<TracesTableRow, unknown>[] = [
     id: "traceId",
     meta: { defaultHidden: true },
     cell: ({ row }) => <TableIdOrName value={row.original.id} />,
-  },
-  {
-    id: "cost",
-    header: "Cost",
-    meta: { defaultHidden: true },
-    enableSorting: false,
-    columns: [
-      {
-        accessorKey: "inputCost",
-        id: "inputCost",
-        header: "Input Cost",
-        meta: { defaultHidden: true },
-        enableSorting: false,
-        cell: ({ row }) => {
-          const cost = row.original.inputCost;
-          if (row.original.levelCounts === null && cost === null)
-            return <Skeleton className="h-4 w-12" />;
-          return cost ? <span>{usdFormatter(cost)}</span> : <span>-</span>;
-        },
-      },
-      {
-        accessorKey: "outputCost",
-        id: "outputCost",
-        header: "Output Cost",
-        meta: { defaultHidden: true },
-        enableSorting: false,
-        cell: ({ row }) => {
-          const cost = row.original.outputCost;
-          if (row.original.levelCounts === null && cost === null)
-            return <Skeleton className="h-4 w-12" />;
-          return cost ? <span>{usdFormatter(cost)}</span> : <span>-</span>;
-        },
-      },
-    ],
   },
   {
     id: "usage",

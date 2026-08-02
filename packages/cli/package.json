@@ -1,6 +1,6 @@
 {
   "name": "peri-fuse",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Peri-Fuse command-line tool — manage the background observability server",
   "license": "MIT",
   "type": "commonjs",

@@ -1,57 +1,52 @@
-import { Activity, Coins, DollarSign, Gauge, ListTree, Zap } from "lucide-react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ComposedChart,
-  Legend,
-  Line,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+  Activity,
+  AlertTriangle,
+  Coins,
+  Gauge,
+  ListTree,
+  Sparkles,
+  Timer,
+  Zap,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
 import { ErrorState, PageHeader } from "@/shared/components/state";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/shared/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { useDashboardQuery } from "@/shared/hooks/queries";
-import { formatCost, formatNumber, formatPercent, formatTokens } from "@/shared/lib/format";
+import { formatMs, formatNumber, formatPercent, formatTokens } from "@/shared/lib/format";
+import type { DashboardQueryParams } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
+import { LatencyByModelChart, LevelsDonut, TokensByModelChart } from "./components/model-charts";
+import {
+  CacheTrendChart,
+  RecentErrorsPanel,
+  ScoreTrendChart,
+  TopUsersChart,
+} from "./components/side-panels";
+import { ActivityChart, ErrorsChart, LatencyTrendChart } from "./components/trend-charts";
 
-/** Spectra semantic colors for observation levels (donut chart). */
-const LEVEL_COLORS: Record<string, string> = {
-  ERROR: "var(--danger)",
-  WARNING: "var(--warning)",
-  DEBUG: "var(--info)",
-  DEFAULT: "var(--fg-tertiary)",
-};
+/** Quick time-range presets for the dashboard. `hours === null` means all time. */
+const RANGE_PRESETS = [
+  { key: "24h", label: "24h", hours: 24 },
+  { key: "7d", label: "7d", hours: 24 * 7 },
+  { key: "30d", label: "30d", hours: 24 * 30 },
+  { key: "all", label: "All", hours: null },
+] as const;
 
-const TOOLTIP_STYLE = {
-  background: "var(--popover)",
-  border: "1px solid var(--line-strong)",
-  borderRadius: 8,
-  fontSize: 12,
-} as const;
+type RangeKey = (typeof RANGE_PRESETS)[number]["key"];
 
-/** Spectra §6.7 — label → mono value, 3px category color bar. */
-function SummaryCard({
+/** Spectra §6.7 — label → mono value, 3px category color bar, optional subtext. */
+function KpiCard({
   title,
   value,
+  sub,
   icon: Icon,
   accent,
 }: {
   title: string;
   value: string;
+  sub?: string;
   icon: typeof ListTree;
   accent: string;
 }) {
@@ -68,14 +63,22 @@ function SummaryCard({
         <div className="tnum font-mono text-2xl font-semibold tracking-tight text-fg-primary">
           {value}
         </div>
+        {sub ? <p className="mt-0.5 text-xs text-fg-tertiary">{sub}</p> : null}
       </CardContent>
     </Card>
   );
 }
 
 export function DashboardPage() {
-  const query = useDashboardQuery();
+  const [range, setRange] = useState<RangeKey>("30d");
 
+  const params = useMemo<DashboardQueryParams>(() => {
+    const preset = RANGE_PRESETS.find((p) => p.key === range);
+    if (!preset?.hours) return {};
+    return { from: new Date(Date.now() - preset.hours * 3600_000).toISOString() };
+  }, [range]);
+
+  const query = useDashboardQuery(params);
   const dashboard = query.data;
 
   return (
@@ -83,14 +86,35 @@ export function DashboardPage() {
       <PageHeader
         title="Dashboard"
         description="Overview of the telemetry stored in this lite project."
-        actions={<AutoRefreshControl />}
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="flex items-center rounded-md border border-border p-0.5">
+              {RANGE_PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => setRange(p.key)}
+                  className={cn(
+                    "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                    range === p.key
+                      ? "bg-accent text-fg-primary"
+                      : "text-fg-tertiary hover:text-fg-secondary",
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <AutoRefreshControl />
+          </div>
+        }
       />
 
       <div className="flex-1 overflow-y-auto p-6">
         {query.isLoading ? (
           <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {Array.from({ length: 6 }).map((_, i) => (
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, i) => (
                 <Skeleton key={i} className="h-28" />
               ))}
             </div>
@@ -100,215 +124,86 @@ export function DashboardPage() {
           <ErrorState error={query.error} />
         ) : dashboard ? (
           <div className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <SummaryCard
-                title="Total traces"
+            {/* KPI cards */}
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+              <KpiCard
+                title="Traces"
                 value={formatNumber(dashboard.summary.totalTraces)}
                 icon={ListTree}
                 accent="bg-chart-1"
               />
-              <SummaryCard
-                title="Total observations"
+              <KpiCard
+                title="Observations"
                 value={formatNumber(dashboard.summary.totalObservations)}
                 icon={Activity}
                 accent="bg-chart-2"
               />
-              <SummaryCard
-                title="Total tokens"
+              <KpiCard
+                title="Tokens"
                 value={formatTokens(dashboard.summary.totalTokens)}
+                sub={`${formatTokens(dashboard.summary.inputTokens)} in · ${formatTokens(dashboard.summary.outputTokens)} out`}
                 icon={Coins}
                 accent="bg-chart-5"
               />
-              <SummaryCard
-                title="Total cost"
-                value={formatCost(dashboard.summary.totalCost)}
-                icon={DollarSign}
+              <KpiCard
+                title="Generations"
+                value={formatNumber(dashboard.summary.totalGenerations)}
+                icon={Sparkles}
                 accent="bg-chart-3"
               />
-              <SummaryCard
-                title="Cached tokens"
-                value={formatTokens(dashboard.summary.totalCachedTokens)}
+              <KpiCard
+                title="Avg latency"
+                value={formatMs(dashboard.summary.avgLatencyMs)}
+                icon={Timer}
+                accent="bg-chart-2"
+              />
+              <KpiCard
+                title="p95 latency"
+                value={formatMs(dashboard.summary.p95LatencyMs)}
+                icon={Gauge}
+                accent="bg-chart-3"
+              />
+              <KpiCard
+                title="Error rate"
+                value={formatPercent(dashboard.summary.errorRate)}
+                sub={`${formatNumber(dashboard.summary.errorCount)} errors`}
+                icon={AlertTriangle}
+                accent="bg-[var(--danger)]"
+              />
+              <KpiCard
+                title="Cache hit rate"
+                value={formatPercent(dashboard.summary.cacheHitRate)}
+                sub={`${formatTokens(dashboard.summary.totalCachedTokens)} cached`}
                 icon={Zap}
                 accent="bg-chart-4"
               />
-              <SummaryCard
-                title="Cache hit rate"
-                value={formatPercent(dashboard.summary.cacheHitRate)}
-                icon={Gauge}
-                accent="bg-chart-6"
-              />
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Daily activity</CardTitle>
-                <CardDescription>
-                  Traces and observations per day over the last 30 days, with daily cost overlay.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {dashboard.daily.length === 0 ? (
-                  <p className="py-16 text-center text-sm text-muted-foreground">
-                    No telemetry in the last 30 days.
-                  </p>
-                ) : (
-                  <div className="h-80 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={dashboard.daily}>
-                        <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-                        <XAxis
-                          dataKey="date"
-                          tick={{ fontSize: 11 }}
-                          tickFormatter={(d: string) => d.slice(5)}
-                        />
-                        <YAxis yAxisId="counts" tick={{ fontSize: 11 }} allowDecimals={false} />
-                        <YAxis
-                          yAxisId="cost"
-                          orientation="right"
-                          tick={{ fontSize: 11 }}
-                          tickFormatter={(v: number) => `$${v.toPrecision(2)}`}
-                        />
-                        <Tooltip
-                          labelFormatter={(d) => String(d)}
-                          formatter={(value, name) =>
-                            name === "cost"
-                              ? [formatCost(Number(value)), "cost"]
-                              : [formatNumber(Number(value)), name]
-                          }
-                          contentStyle={TOOLTIP_STYLE}
-                          labelStyle={{ color: "var(--fg-primary)" }}
-                        />
-                        <Legend />
-                        <Bar
-                          yAxisId="counts"
-                          dataKey="traces"
-                          name="traces"
-                          fill="var(--chart-1)"
-                          fillOpacity={0.85}
-                          radius={[2, 2, 0, 0]}
-                        />
-                        <Bar
-                          yAxisId="counts"
-                          dataKey="observations"
-                          name="observations"
-                          fill="var(--chart-2)"
-                          fillOpacity={0.6}
-                          radius={[2, 2, 0, 0]}
-                        />
-                        <Line
-                          yAxisId="cost"
-                          type="monotone"
-                          dataKey="cost"
-                          name="cost"
-                          stroke="var(--chart-3)"
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {/* Activity over time */}
+            <ActivityChart data={dashboard.daily} />
 
+            {/* Latency & errors trends */}
+            <div className="grid gap-4 lg:grid-cols-3">
+              <LatencyTrendChart data={dashboard.daily} />
+              <ErrorsChart data={dashboard.daily} />
+              <LevelsDonut data={dashboard.levels} />
+            </div>
+
+            {/* Model breakdown */}
             <div className="grid gap-4 md:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Cost by model</CardTitle>
-                  <CardDescription>Generation cost grouped by model.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {dashboard.byModel.length === 0 ? (
-                    <p className="py-16 text-center text-sm text-muted-foreground">
-                      No generation cost recorded.
-                    </p>
-                  ) : (
-                    <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={dashboard.byModel}
-                          layout="vertical"
-                          margin={{ left: 8, right: 16 }}
-                        >
-                          <CartesianGrid
-                            strokeDasharray="3 3"
-                            strokeOpacity={0.2}
-                            horizontal={false}
-                          />
-                          <XAxis
-                            type="number"
-                            tick={{ fontSize: 11 }}
-                            tickFormatter={(v: number) => `$${v.toPrecision(2)}`}
-                          />
-                          <YAxis
-                            type="category"
-                            dataKey="model"
-                            width={130}
-                            tick={{ fontSize: 11 }}
-                          />
-                          <Tooltip
-                            formatter={(value, name) => [formatCost(Number(value)), String(name)]}
-                            contentStyle={TOOLTIP_STYLE}
-                            labelStyle={{ color: "var(--fg-primary)" }}
-                          />
-                          <Bar
-                            dataKey="cost"
-                            name="cost"
-                            fill="var(--chart-1)"
-                            radius={[0, 3, 3, 0]}
-                            barSize={14}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Observation levels</CardTitle>
-                  <CardDescription>Distribution of observation severity levels.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {dashboard.levels.length === 0 ? (
-                    <p className="py-16 text-center text-sm text-muted-foreground">
-                      No observations recorded.
-                    </p>
-                  ) : (
-                    <div className="h-64 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={dashboard.levels}
-                            dataKey="count"
-                            nameKey="level"
-                            innerRadius="60%"
-                            outerRadius="85%"
-                            paddingAngle={2}
-                            stroke="none"
-                          >
-                            {dashboard.levels.map((l) => (
-                              <Cell
-                                key={l.level}
-                                fill={LEVEL_COLORS[l.level] ?? "var(--chart-4)"}
-                                fillOpacity={l.level === "DEFAULT" ? 0.4 : 0.9}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            formatter={(value, name) => [formatNumber(Number(value)), String(name)]}
-                            contentStyle={TOOLTIP_STYLE}
-                            labelStyle={{ color: "var(--fg-primary)" }}
-                          />
-                          <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <TokensByModelChart data={dashboard.byModel} />
+              <LatencyByModelChart data={dashboard.byModel} />
             </div>
+
+            {/* Cache / score / users */}
+            <div className="grid gap-4 lg:grid-cols-3">
+              <CacheTrendChart data={dashboard.daily} />
+              <ScoreTrendChart data={dashboard.daily} />
+              <TopUsersChart data={dashboard.topUsers} />
+            </div>
+
+            {/* Recent errors */}
+            <RecentErrorsPanel data={dashboard.recentErrors} />
           </div>
         ) : null}
       </div>

@@ -36,7 +36,7 @@ const highlights = [
   {
     icon: Gauge,
     title: "Optimize",
-    body: "Understand latency, tokens and cost per model.",
+    body: "Understand latency, tokens and cache hits per model.",
   },
 ];
 

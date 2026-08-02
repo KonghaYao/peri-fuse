@@ -11,6 +11,7 @@ import { getProjectContext } from "@/shared/store/project";
 import type {
   CreatedKey,
   Dashboard,
+  DashboardQueryParams,
   Observation,
   ObservationListParams,
   Paged,
@@ -120,8 +121,8 @@ export function listScores(params: ScoreListParams = {}): Promise<Paged<Score>> 
   return request<Paged<Score>>(`/api/public/scores${toQueryString({ ...params })}`);
 }
 
-export function getDashboard(): Promise<Dashboard> {
-  return request<Dashboard>(`/api/public/dashboard`);
+export function getDashboard(params: DashboardQueryParams = {}): Promise<Dashboard> {
+  return request<Dashboard>(`/api/public/dashboard${toQueryString({ ...params })}`);
 }
 
 export function getTracesMetrics(traceIds: string[]): Promise<TraceMetrics[]> {

@@ -20,7 +20,7 @@ import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Separator } from "@/shared/components/ui/separator";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { getSession } from "@/shared/lib/api";
-import { formatDateTime, formatIntervalSeconds, usdFormatter } from "@/shared/lib/format";
+import { formatDateTime, formatIntervalSeconds, formatTokens } from "@/shared/lib/format";
 import type { SessionTrace } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
 
@@ -154,8 +154,8 @@ export function SessionDetailPage() {
             <Stat label="Duration" value={formatIntervalSeconds(session.sessionDuration)} />
             <Stat label="Traces" value={session.countTraces} />
             <Stat
-              label="Total Cost"
-              value={session.totalCost > 0 ? usdFormatter(session.totalCost) : "—"}
+              label="Total Tokens"
+              value={formatTokens(session.traces.reduce((acc, t) => acc + (t.totalTokens || 0), 0))}
             />
             <Stat
               label="Users"

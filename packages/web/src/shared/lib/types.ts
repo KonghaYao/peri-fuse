@@ -165,26 +165,41 @@ export type ScoreListParams = {
 export type DashboardSummary = {
   totalTraces: number;
   totalObservations: number;
+  totalGenerations: number;
   totalScores: number;
   totalCost: number;
   totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
   totalCachedTokens: number;
   cacheHitRate: number; // 0-1 fraction
   totalUsers: number;
+  avgLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  errorCount: number;
+  errorRate: number; // 0-1 fraction
 };
 
 export type DashboardDaily = {
   date: string;
   traces: number;
   observations: number;
-  cost: number;
+  tokens: number;
+  avgLatencyMs: number;
+  p95LatencyMs: number;
+  errors: number;
+  cacheHitRate: number; // 0-1 fraction
+  avgScore: number | null;
 };
 
 export type DashboardModelBucket = {
   model: string;
   observations: number;
   tokens: number;
-  cost: number;
+  avgLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
 };
 
 export type DashboardLevelBucket = {
@@ -192,11 +207,34 @@ export type DashboardLevelBucket = {
   count: number;
 };
 
+export type DashboardUserBucket = {
+  userId: string;
+  traces: number;
+  tokens: number;
+};
+
+export type DashboardRecentError = {
+  id: string;
+  name: string | null;
+  type: string | null;
+  startTime: string | null;
+  statusMessage: string | null;
+  traceId: string | null;
+  model: string | null;
+};
+
 export type Dashboard = {
   summary: DashboardSummary;
   daily: DashboardDaily[];
   byModel: DashboardModelBucket[];
   levels: DashboardLevelBucket[];
+  topUsers: DashboardUserBucket[];
+  recentErrors: DashboardRecentError[];
+};
+
+export type DashboardQueryParams = {
+  from?: string; // ISO instant; omit for unbounded
+  to?: string; // ISO instant; omit for unbounded
 };
 
 // ---------------------------------------------------------------------------

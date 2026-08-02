@@ -23,7 +23,7 @@ import {
 } from "@/shared/components/ui/table";
 import { useUsersQuery } from "@/shared/hooks/queries";
 import { useTableState } from "@/shared/hooks/use-table-state";
-import { costFormatter, formatDateTime, formatNumber, formatTokens } from "@/shared/lib/format";
+import { formatDateTime, formatNumber, formatTokens } from "@/shared/lib/format";
 import type { UserRow } from "@/shared/lib/types";
 
 const PAGE_SIZE = 25;
@@ -96,7 +96,6 @@ export function UsersPage() {
                   <TableHead className="text-right">Traces</TableHead>
                   <TableHead className="text-right">Observations</TableHead>
                   <TableHead className="text-right">Tokens</TableHead>
-                  <TableHead className="text-right">Cost</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -122,7 +121,6 @@ export function UsersPage() {
                       {formatNumber(u.countObservations)}
                     </TableCell>
                     <TableCell className="tnum text-right">{formatTokens(u.totalTokens)}</TableCell>
-                    <TableCell className="tnum text-right">{costFormatter(u.totalCost)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

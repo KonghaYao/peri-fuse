@@ -8,7 +8,7 @@
  * right (trace-level IO + scores when the root is selected). "Open full view"
  * navigates to the dedicated trace-detail page.
  */
-import { ArrowUpRight, Clock, Coins, Copy, Cpu, Layers, ListTree, Star, X } from "lucide-react";
+import { ArrowUpRight, Clock, Copy, Cpu, Layers, ListTree, Star, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -27,7 +27,7 @@ import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Separator } from "@/shared/components/ui/separator";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { useTraceQuery } from "@/shared/hooks/queries";
-import { formatCost, formatLatency, formatTokens } from "@/shared/lib/format";
+import { formatLatency, formatTokens } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 
 export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: () => void }) {
@@ -118,9 +118,8 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <StatChip icon={Clock} label="Latency" value={formatLatency(trace.latency)} />
-              <StatChip icon={Coins} label="Cost" value={formatCost(trace.totalCost)} />
               <StatChip
                 icon={Layers}
                 label="Observations"

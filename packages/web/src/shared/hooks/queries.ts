@@ -26,6 +26,7 @@ import {
   listUsers,
 } from "@/shared/lib/api";
 import type {
+  DashboardQueryParams,
   ObservationListParams,
   ScoreListParams,
   SessionListParams,
@@ -47,7 +48,7 @@ export const queryKeys = {
   users: (params: UserListParams) => ["users", params] as const,
   observations: (params: ObservationListParams) => ["observations", params] as const,
   scores: (params: ScoreListParams) => ["scores", params] as const,
-  dashboard: ["dashboard"] as const,
+  dashboard: (params?: DashboardQueryParams) => ["dashboard", params ?? {}] as const,
   projects: ["projects"] as const,
   projectKeys: (projectId: string) => ["project-keys", projectId] as const,
 };
@@ -134,11 +135,11 @@ export function useScoresQuery(params: ScoreListParams) {
   });
 }
 
-export function useDashboardQuery() {
+export function useDashboardQuery(params?: DashboardQueryParams) {
   const refetchInterval = useRefreshInterval();
   return useQuery({
-    queryKey: queryKeys.dashboard,
-    queryFn: getDashboard,
+    queryKey: queryKeys.dashboard(params),
+    queryFn: () => getDashboard(params),
     refetchInterval: refetchInterval || false,
   });
 }

@@ -21,6 +21,16 @@ export function formatLatency(seconds: number | null | undefined): string {
   return `${seconds.toFixed(2)} s`;
 }
 
+/** Milliseconds -> "812 ms" / "2.0 s" / "1m 5s". */
+export function formatMs(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || Number.isNaN(ms) || ms < 0) return "—";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)} s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s % 60)}s`;
+}
+
 /** USD cost -> "$0.002134" (6 significant-ish digits for tiny costs). */
 export function formatCost(cost: number | null | undefined): string {
   if (cost === null || cost === undefined || cost < 0) return "—";
