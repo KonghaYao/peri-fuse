@@ -39,6 +39,7 @@ type SessionsTableRow = {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  cachedTokens: number;
 };
 
 function toRow(s: SessionRow): SessionsTableRow {
@@ -56,6 +57,7 @@ function toRow(s: SessionRow): SessionsTableRow {
     inputTokens: s.promptTokens,
     outputTokens: s.completionTokens,
     totalTokens: s.totalTokens,
+    cachedTokens: s.cachedTokens,
   };
 }
 
@@ -194,6 +196,16 @@ const columns: ColumnDef<SessionsTableRow, unknown>[] = [
     meta: { defaultHidden: true },
     cell: ({ row }) => {
       const value = row.original.totalTokens;
+      return value ? <span>{numberFormatter(value, 0)}</span> : undefined;
+    },
+  },
+  {
+    accessorKey: "cachedTokens",
+    id: "cachedTokens",
+    header: "Cached Tokens",
+    meta: { defaultHidden: true },
+    cell: ({ row }) => {
+      const value = row.original.cachedTokens;
       return value ? <span>{numberFormatter(value, 0)}</span> : undefined;
     },
   },

@@ -8,6 +8,10 @@
 import type { z } from "zod";
 import { UnauthorizedError } from "../../errors";
 import { getTelemetryDB } from "../adapters";
+import {
+  TRACE_METRICS_CACHE_CREATION_TOKENS_SQL,
+  TRACE_METRICS_CACHED_TOKENS_SQL,
+} from "../adapters/sqlite-telemetry-adapter";
 import type { AuthHeaderValidVerificationResultIngestion } from "../auth/types";
 import { getClickhouseEntityType } from "../clickhouse/schemaUtils";
 import { logger } from "../logger";
@@ -343,7 +347,7 @@ export const processEventBatchLite = async (
         });
         await db.command({
           query: `
-            INSERT OR REPLACE INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count, total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens)
+            INSERT OR REPLACE INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count, total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens, cached_tokens, cache_creation_tokens)
             SELECT o.project_id, o.trace_id, t.user_id, t.session_id,
                    COUNT(*),
                    COALESCE(SUM(o.total_cost), 0),
@@ -353,7 +357,9 @@ export const processEventBatchLite = async (
                    COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.output'), 0)), 0),
                    COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.total'),
                        COALESCE(json_extract(o.usage_details, '$.input'), 0) +
-                       COALESCE(json_extract(o.usage_details, '$.output'), 0))), 0)
+                       COALESCE(json_extract(o.usage_details, '$.output'), 0))), 0),
+                   ${TRACE_METRICS_CACHED_TOKENS_SQL},
+                   ${TRACE_METRICS_CACHE_CREATION_TOKENS_SQL}
             FROM observations o
             LEFT JOIN traces t ON t.project_id = o.project_id AND t.id = o.trace_id
             WHERE o.project_id = @projectId AND o.trace_id IN (${placeholders}) AND o.is_deleted = 0

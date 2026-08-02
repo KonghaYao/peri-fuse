@@ -18,6 +18,22 @@ import type { TelemetryDBAdapter, TelemetryInsertOpts, TelemetryQueryOpts } from
 
 const DEFAULT_DB_PATH = ".langfuse/telemetry.db";
 
+/**
+ * SQL aggregation fragments (json_extract over `o.usage_details`) computing the
+ * cache token columns of the materialized `trace_metrics` table. Shared by the
+ * ingestion-time maintenance (processEventBatchLite) and the one-time backfill
+ * migration below. Both queries alias `observations` as `o`.
+ */
+export const TRACE_METRICS_CACHED_TOKENS_SQL = `COALESCE(SUM(
+             COALESCE(json_extract(o.usage_details, '$.input_cached_tokens'), 0) +
+             COALESCE(json_extract(o.usage_details, '$.input_cache_read'), 0)), 0)`;
+
+export const TRACE_METRICS_CACHE_CREATION_TOKENS_SQL = `COALESCE(SUM(
+             COALESCE(json_extract(o.usage_details, '$.input_cache_creation'), 0) +
+             COALESCE(json_extract(o.usage_details, '$.input_cache_write'), 0) +
+             COALESCE(json_extract(o.usage_details, '$.input_cache_creation_5m'), 0) +
+             COALESCE(json_extract(o.usage_details, '$.input_cache_creation_1h'), 0)), 0)`;
+
 /** Find the monorepo root by traversing up from CWD looking for pnpm-workspace.yaml */
 function findMonorepoRoot(): string {
   let dir = process.cwd();
@@ -58,6 +74,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
 
     // Initialize schema
     this.initializeSchema();
+    this.migrateSchema();
 
     logger.info(`[SQLiteTelemetryAdapter] Database opened at ${resolvedPath}`);
   }
@@ -135,6 +152,8 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         input_tokens INTEGER DEFAULT 0,
         output_tokens INTEGER DEFAULT 0,
         total_tokens INTEGER DEFAULT 0,
+        cached_tokens INTEGER DEFAULT 0,
+        cache_creation_tokens INTEGER DEFAULT 0,
         PRIMARY KEY (project_id, trace_id)
       );
       CREATE INDEX IF NOT EXISTS idx_trace_metrics_session
@@ -205,6 +224,61 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       CREATE INDEX IF NOT EXISTS idx_traces_deleted_user
         ON traces(project_id, is_deleted, user_id, timestamp, environment);
     `);
+  }
+
+  /**
+   * Idempotent schema migrations for databases created before a column was
+   * added. Uses PRAGMA table_info to check existence before ALTER TABLE.
+   */
+  private migrateSchema(): void {
+    this.ensureColumn("trace_metrics", "cached_tokens", "INTEGER DEFAULT 0");
+    this.ensureColumn("trace_metrics", "cache_creation_tokens", "INTEGER DEFAULT 0");
+
+    // One-time backfill of cache token columns for existing rows (guarded by
+    // PRAGMA user_version so it only runs once per database file).
+    const version = Number(this.db.pragma("user_version", { simple: true }) ?? 0);
+    if (version < 1) {
+      this.backfillTraceMetricsCache();
+      this.db.pragma("user_version = 1");
+    }
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+      name: string;
+    }>;
+    if (!cols.some((c) => c.name === column)) {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      logger.info(`[SQLiteTelemetryAdapter] Added column ${table}.${column}`);
+    }
+  }
+
+  /**
+   * Recompute all trace_metrics rows (same SQL as ingestion-time maintenance,
+   * without the trace_id filter) so pre-existing databases get cache columns
+   * populated. Runs once, guarded by user_version.
+   */
+  private backfillTraceMetricsCache(): void {
+    this.db.exec(`
+      INSERT OR REPLACE INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count, total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens, cached_tokens, cache_creation_tokens)
+      SELECT o.project_id, o.trace_id, t.user_id, t.session_id,
+             COUNT(*),
+             COALESCE(SUM(o.total_cost), 0),
+             COALESCE(SUM(COALESCE(json_extract(o.cost_details, '$.input'), 0)), 0),
+             COALESCE(SUM(COALESCE(json_extract(o.cost_details, '$.output'), 0)), 0),
+             COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.input'), 0)), 0),
+             COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.output'), 0)), 0),
+             COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.total'),
+                 COALESCE(json_extract(o.usage_details, '$.input'), 0) +
+                 COALESCE(json_extract(o.usage_details, '$.output'), 0))), 0),
+             ${TRACE_METRICS_CACHED_TOKENS_SQL},
+             ${TRACE_METRICS_CACHE_CREATION_TOKENS_SQL}
+      FROM observations o
+      LEFT JOIN traces t ON t.project_id = o.project_id AND t.id = o.trace_id
+      WHERE o.is_deleted = 0
+      GROUP BY o.project_id, o.trace_id
+    `);
+    logger.info("[SQLiteTelemetryAdapter] Backfilled trace_metrics cache columns");
   }
 
   async query<T = Record<string, unknown>>(opts: TelemetryQueryOpts): Promise<T[]> {

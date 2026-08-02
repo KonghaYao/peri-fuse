@@ -44,6 +44,12 @@ export function formatNumber(n: number | null | undefined): string {
   return Intl.NumberFormat(undefined).format(n);
 }
 
+/** Fraction (0-1) -> "12.3%" style percentage display. */
+export function formatPercent(fraction: number | null | undefined): string {
+  if (fraction === null || fraction === undefined) return "—";
+  return `${(fraction * 100).toFixed(1)}%`;
+}
+
 /** Observation start/end -> duration "812 ms". */
 export function formatDuration(
   startTime: string | null | undefined,

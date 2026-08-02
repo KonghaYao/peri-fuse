@@ -122,6 +122,7 @@ type SessionListRow = {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  cached_tokens: number;
 };
 
 app.get("/api/public/sessions", authMiddleware, async (c) => {
@@ -173,6 +174,7 @@ app.get("/api/public/sessions", authMiddleware, async (c) => {
         SELECT ps.*,
                m.input_cost, m.output_cost, m.total_cost,
                m.input_tokens, m.output_tokens, m.total_tokens,
+               m.cached_tokens,
                u.users_concat
         FROM page_sessions ps
         LEFT JOIN (
@@ -182,7 +184,8 @@ app.get("/api/public/sessions", authMiddleware, async (c) => {
                  SUM(total_cost) AS total_cost,
                  COALESCE(SUM(input_tokens), 0) AS input_tokens,
                  COALESCE(SUM(output_tokens), 0) AS output_tokens,
-                 COALESCE(SUM(total_tokens), 0) AS total_tokens
+                 COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                 COALESCE(SUM(cached_tokens), 0) AS cached_tokens
           FROM trace_metrics
           WHERE project_id = @projectId
             AND session_id IN (SELECT id FROM page_sessions)
@@ -233,6 +236,7 @@ app.get("/api/public/sessions", authMiddleware, async (c) => {
         promptTokens: Number(row.input_tokens),
         completionTokens: Number(row.output_tokens),
         totalTokens: Number(row.total_tokens),
+        cachedTokens: Number(row.cached_tokens),
       })),
       meta: {
         page,
@@ -393,6 +397,8 @@ app.get("/api/public/sessions/:sessionId", authMiddleware, async (c) => {
       promptTokens: metrics.promptTokens,
       completionTokens: metrics.completionTokens,
       totalTokens: metrics.totalTokens,
+      cachedTokens: metrics.cachedTokens,
+      cacheHitRate: metrics.cacheHitRate,
       scores: (scoresByTrace.get(String(t.id)) ?? []).map((s) => ({
         id: s.id,
         observationId: s.observation_id,

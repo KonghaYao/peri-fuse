@@ -20,6 +20,8 @@ export type TraceMetricsRow = {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedTokens: number;
+  cacheHitRate: number;
   calculatedInputCost: number | null;
   calculatedOutputCost: number | null;
   calculatedTotalCost: number | null;
@@ -29,6 +31,29 @@ export type TraceMetricsRow = {
   output: unknown;
   metadata: unknown;
 };
+
+/**
+ * Cache-related usage_details keys. `usage_details.input` is the NET input
+ * (cache already subtracted), so the gross input for hit-rate computation is
+ * net input + cache read + cache creation.
+ */
+const CACHE_READ_KEYS = ["input_cached_tokens", "input_cache_read"];
+const CACHE_CREATION_KEYS = [
+  "input_cache_creation",
+  "input_cache_write",
+  "input_cache_creation_5m",
+  "input_cache_creation_1h",
+];
+
+/** Sum of cache-read (hit) tokens from a parsed usage map. */
+export function sumCacheReadTokens(usage: Record<string, number>): number {
+  return CACHE_READ_KEYS.reduce((acc, k) => acc + (usage[k] ?? 0), 0);
+}
+
+/** Sum of cache-creation/write tokens from a parsed usage map. */
+export function sumCacheCreationTokens(usage: Record<string, number>): number {
+  return CACHE_CREATION_KEYS.reduce((acc, k) => acc + (usage[k] ?? 0), 0);
+}
 
 /** Parse a JSON-object column (usage_details / cost_details) into numbers. */
 export function parseJsonRecord(value: unknown): Record<string, number> {
@@ -81,6 +106,8 @@ export function aggregateTraceMetrics(
   let promptTokens = 0;
   let completionTokens = 0;
   let totalTokens = 0;
+  let cachedTokens = 0;
+  let cacheCreationTokens = 0;
   let inputCost = 0;
   let outputCost = 0;
   let totalCost = 0;
@@ -101,6 +128,8 @@ export function aggregateTraceMetrics(
     promptTokens += usage.input ?? 0;
     completionTokens += usage.output ?? 0;
     totalTokens += usage.total ?? (usage.input ?? 0) + (usage.output ?? 0);
+    cachedTokens += sumCacheReadTokens(usage);
+    cacheCreationTokens += sumCacheCreationTokens(usage);
     for (const [k, v] of Object.entries(usage)) {
       usageDetails[k] = (usageDetails[k] ?? 0) + v;
     }
@@ -145,6 +174,8 @@ export function aggregateTraceMetrics(
           : "DEFAULT";
 
   const fallbackTotal = inputCost + outputCost;
+  const grossInput = promptTokens + cachedTokens + cacheCreationTokens;
+  const cacheHitRate = grossInput > 0 ? cachedTokens / grossInput : 0;
   return {
     id: traceId,
     latency,
@@ -157,6 +188,8 @@ export function aggregateTraceMetrics(
     promptTokens,
     completionTokens,
     totalTokens,
+    cachedTokens,
+    cacheHitRate,
     calculatedInputCost: inputCost > 0 ? inputCost : null,
     calculatedOutputCost: outputCost > 0 ? outputCost : null,
     calculatedTotalCost: totalCost > 0 ? totalCost : fallbackTotal > 0 ? fallbackTotal : null,

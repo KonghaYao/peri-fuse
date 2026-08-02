@@ -168,6 +168,8 @@ export type DashboardSummary = {
   totalScores: number;
   totalCost: number;
   totalTokens: number;
+  totalCachedTokens: number;
+  cacheHitRate: number; // 0-1 fraction
   totalUsers: number;
 };
 
@@ -213,6 +215,8 @@ export type TraceMetrics = {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedTokens: number;
+  cacheHitRate: number; // 0-1 fraction
   calculatedInputCost: number | null;
   calculatedOutputCost: number | null;
   calculatedTotalCost: number | null;
@@ -241,6 +245,7 @@ export type SessionRow = {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedTokens: number;
 };
 
 export type SessionListParams = {
@@ -274,6 +279,8 @@ export type SessionTrace = {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cachedTokens: number;
+  cacheHitRate: number; // 0-1 fraction
   scores: SessionScore[];
   observations: Observation[];
 };

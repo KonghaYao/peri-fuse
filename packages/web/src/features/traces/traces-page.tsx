@@ -34,7 +34,12 @@ import { Button } from "@/shared/components/ui/button";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { useTracesMetricsQuery, useTracesQuery } from "@/shared/hooks/queries";
 import { useTableState } from "@/shared/hooks/use-table-state";
-import { formatIntervalSeconds, numberFormatter, usdFormatter } from "@/shared/lib/format";
+import {
+  formatIntervalSeconds,
+  formatPercent,
+  numberFormatter,
+  usdFormatter,
+} from "@/shared/lib/format";
 import type { Trace, TraceMetrics } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
 
@@ -68,6 +73,8 @@ type TracesTableRow = {
   promptTokens: number | null;
   completionTokens: number | null;
   totalTokens: number | null;
+  cachedTokens: number | null;
+  cacheHitRate: number | null;
   inputCost: number | null;
   outputCost: number | null;
   totalCost: number | null;
@@ -108,6 +115,8 @@ function joinCoreAndMetrics(
       promptTokens: m?.promptTokens ?? null,
       completionTokens: m?.completionTokens ?? null,
       totalTokens: m?.totalTokens ?? null,
+      cachedTokens: m?.cachedTokens ?? null,
+      cacheHitRate: m?.cacheHitRate ?? null,
       inputCost: m?.calculatedInputCost ?? null,
       outputCost: m?.calculatedOutputCost ?? null,
       totalCost: m?.calculatedTotalCost ?? null,
@@ -434,6 +443,30 @@ const columns: ColumnDef<TracesTableRow, unknown>[] = [
           const value = row.original.totalTokens;
           if (value === null) return <Skeleton className="h-4 w-10" />;
           return <span>{numberFormatter(value, 0)}</span>;
+        },
+      },
+      {
+        accessorKey: "cachedTokens",
+        id: "cachedTokens",
+        header: "Cached Tokens",
+        accessorFn: (row) => row.cachedTokens,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const value = row.original.cachedTokens;
+          if (value === null) return <Skeleton className="h-4 w-10" />;
+          return <span>{numberFormatter(value, 0)}</span>;
+        },
+      },
+      {
+        accessorKey: "cacheHitRate",
+        id: "cacheHitRate",
+        header: "Cache Hit Rate",
+        accessorFn: (row) => row.cacheHitRate,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const value = row.original.cacheHitRate;
+          if (value === null) return <Skeleton className="h-4 w-10" />;
+          return <span>{formatPercent(value)}</span>;
         },
       },
     ],

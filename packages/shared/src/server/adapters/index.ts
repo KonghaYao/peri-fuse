@@ -23,7 +23,11 @@ export { InMemoryCacheAdapter } from "./in-memory-cache-adapter";
 export { InMemoryQueueAdapter } from "./in-memory-queue-adapter";
 export { LocalStorageAdapter } from "./local-storage-adapter";
 // Concrete implementations (lite-mode only)
-export { SQLiteTelemetryAdapter } from "./sqlite-telemetry-adapter";
+export {
+  SQLiteTelemetryAdapter,
+  TRACE_METRICS_CACHE_CREATION_TOKENS_SQL,
+  TRACE_METRICS_CACHED_TOKENS_SQL,
+} from "./sqlite-telemetry-adapter";
 // Types
 export type {
   CacheAdapter,

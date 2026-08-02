@@ -58,8 +58,17 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
           query: `SELECT COALESCE(SUM(total_cost), 0) as total FROM trace_metrics WHERE project_id = @projectId`,
           params: { projectId },
         }),
-        db.query<{ total: number | null }>({
-          query: `SELECT COALESCE(SUM(total_tokens), 0) as total FROM trace_metrics WHERE project_id = @projectId`,
+        db.query<{
+          total: number | null;
+          input: number | null;
+          cached: number | null;
+          creation: number | null;
+        }>({
+          query: `SELECT COALESCE(SUM(total_tokens), 0) as total,
+                         COALESCE(SUM(input_tokens), 0) as input,
+                         COALESCE(SUM(cached_tokens), 0) as cached,
+                         COALESCE(SUM(cache_creation_tokens), 0) as creation
+                  FROM trace_metrics WHERE project_id = @projectId`,
           params: { projectId },
         }),
         db.query<{ count: number }>({
@@ -160,6 +169,14 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
       count: Number(r.count),
     }));
 
+    // Cache hit rate = cached read tokens / gross input (net input + cached
+    // read + cache creation). `input_tokens` is the net (cache-deducted) value.
+    const totalInputTokens = Number(tokenRows[0]?.input ?? 0);
+    const totalCachedTokens = Number(tokenRows[0]?.cached ?? 0);
+    const totalCacheCreationTokens = Number(tokenRows[0]?.creation ?? 0);
+    const grossInput = totalInputTokens + totalCachedTokens + totalCacheCreationTokens;
+    const cacheHitRate = grossInput > 0 ? totalCachedTokens / grossInput : 0;
+
     return c.json({
       summary: {
         totalTraces: Number(traceCount[0]?.count ?? 0),
@@ -167,6 +184,8 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
         totalScores: Number(scoreCount[0]?.count ?? 0),
         totalCost: Number(costRows[0]?.total ?? 0),
         totalTokens: Number(tokenRows[0]?.total ?? 0),
+        totalCachedTokens,
+        cacheHitRate,
         totalUsers: Number(userRows[0]?.count ?? 0),
       },
       daily,
@@ -183,6 +202,8 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
           totalScores: 0,
           totalCost: 0,
           totalTokens: 0,
+          totalCachedTokens: 0,
+          cacheHitRate: 0,
           totalUsers: 0,
         },
         daily: [],

@@ -1,4 +1,4 @@
-import { Activity, Coins, DollarSign, ListTree } from "lucide-react";
+import { Activity, Coins, DollarSign, Gauge, ListTree, Zap } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -25,7 +25,7 @@ import {
 } from "@/shared/components/ui/card";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { useDashboardQuery } from "@/shared/hooks/queries";
-import { formatCost, formatNumber, formatTokens } from "@/shared/lib/format";
+import { formatCost, formatNumber, formatPercent, formatTokens } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 
 /** Spectra semantic colors for observation levels (donut chart). */
@@ -90,7 +90,7 @@ export function DashboardPage() {
         {query.isLoading ? (
           <div className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, i) => (
+              {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-28" />
               ))}
             </div>
@@ -124,6 +124,18 @@ export function DashboardPage() {
                 value={formatCost(dashboard.summary.totalCost)}
                 icon={DollarSign}
                 accent="bg-chart-3"
+              />
+              <SummaryCard
+                title="Cached tokens"
+                value={formatTokens(dashboard.summary.totalCachedTokens)}
+                icon={Zap}
+                accent="bg-chart-4"
+              />
+              <SummaryCard
+                title="Cache hit rate"
+                value={formatPercent(dashboard.summary.cacheHitRate)}
+                icon={Gauge}
+                accent="bg-chart-6"
               />
             </div>
 
