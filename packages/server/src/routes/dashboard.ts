@@ -83,6 +83,33 @@ function toSqliteTime(value: string): string | null {
   return d.toISOString().replace("T", " ").replace("Z", "");
 }
 
+// Short-lived response cache. The dashboard is a battery of heavy full-scan
+// aggregates over observations/trace_metrics; because the telemetry adapter is
+// a synchronous better-sqlite3 handle, every one of them blocks the single
+// event loop. Reusing a response for a few seconds absorbs UI refreshes and
+// concurrent viewers without making the numbers feel stale.
+const CACHE_TTL_MS = 5_000;
+const CACHE_MAX_ENTRIES = 256;
+const dashboardCache = new Map<string, { expiresAt: number; body: unknown }>();
+
+function getCached(key: string): unknown | null {
+  const hit = dashboardCache.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    dashboardCache.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
+function setCached(key: string, body: unknown): void {
+  if (dashboardCache.size >= CACHE_MAX_ENTRIES) {
+    const oldest = dashboardCache.keys().next().value;
+    if (oldest !== undefined) dashboardCache.delete(oldest);
+  }
+  dashboardCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, body });
+}
+
 app.get("/api/public/dashboard", authMiddleware, async (c) => {
   const auth = c.get("auth");
   const projectId = auth.scope.projectId;
@@ -91,6 +118,9 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
   // Optional time range (ISO instants). When omitted, stats cover all time.
   const from = toSqliteTime(c.req.query("from") ?? "");
   const to = toSqliteTime(c.req.query("to") ?? "");
+
+  const cached = getCached(`${auth.scope.projectId}|${from ?? ""}|${to ?? ""}`);
+  if (cached) return c.json(cached);
 
   // Builds a bounded time-window filter on a timestamp column plus the matching
   // bind params. `alias` prefixes the column when the query joins other tables.
@@ -118,114 +148,109 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
     const metricTime = timeFilter("timestamp", "t");
     const scoreTime = timeFilter("timestamp");
 
-    const [
-      traceCount,
-      observationCount,
-      generationCount,
-      scoreCount,
-      costRows,
-      tokenRows,
-      userRows,
-      latencySummary,
-      errorCount,
-    ] = await Promise.all([
-      db.query<{ count: number }>({
-        query: `SELECT COUNT(*) as count FROM traces WHERE project_id = @projectId AND is_deleted = 0${traceTime.sql}`,
-        params: { projectId, ...traceTime.params },
-      }),
-      db.query<{ count: number }>({
-        query: `SELECT COALESCE(SUM(tm.obs_count), 0) as count
-                FROM trace_metrics tm
-                JOIN traces t ON t.project_id = tm.project_id AND t.id = tm.trace_id
-                WHERE tm.project_id = @projectId AND t.is_deleted = 0${metricTime.sql}`,
-        params: { projectId, ...metricTime.params },
-      }),
-      db.query<{ count: number }>({
-        query: `SELECT COUNT(*) as count FROM observations WHERE project_id = @projectId AND is_deleted = 0 AND type = 'GENERATION'${obsTime.sql}`,
-        params: { projectId, ...obsTime.params },
-      }),
-      db.query<{ count: number }>({
-        query: `SELECT COUNT(*) as count FROM scores WHERE project_id = @projectId AND is_deleted = 0${scoreTime.sql}`,
-        params: { projectId, ...scoreTime.params },
-      }),
-      db.query<{ total: number | null }>({
-        query: `SELECT COALESCE(SUM(tm.total_cost), 0) as total
-                FROM trace_metrics tm
-                JOIN traces t ON t.project_id = tm.project_id AND t.id = tm.trace_id
-                WHERE tm.project_id = @projectId AND t.is_deleted = 0${metricTime.sql}`,
-        params: { projectId, ...metricTime.params },
-      }),
-      db.query<{
-        total: number | null;
-        input: number | null;
-        output: number | null;
-        cached: number | null;
-        gross: number | null;
-      }>({
-        query: `SELECT COALESCE(SUM(tm.total_tokens), 0) as total,
-                       COALESCE(SUM(tm.input_tokens), 0) as input,
-                       COALESCE(SUM(tm.output_tokens), 0) as output,
-                       COALESCE(SUM(tm.cached_tokens), 0) as cached,
-                       COALESCE(SUM(tm.gross_input_tokens), 0) as gross
-                FROM trace_metrics tm
-                JOIN traces t ON t.project_id = tm.project_id AND t.id = tm.trace_id
-                WHERE tm.project_id = @projectId AND t.is_deleted = 0${metricTime.sql}`,
-        params: { projectId, ...metricTime.params },
-      }),
-      db.query<{ count: number }>({
-        query: `SELECT COUNT(DISTINCT user_id) as count FROM traces WHERE project_id = @projectId AND is_deleted = 0 AND user_id IS NOT NULL${traceTime.sql}`,
-        params: { projectId, ...traceTime.params },
-      }),
-      // Overall generation latency percentiles (p50 / p95 / avg) via window fns.
-      db.query<{ avg: number | null; p50: number | null; p95: number | null }>({
-        query: `
-          WITH d AS (
-            SELECT ${LATENCY_MS_SQL} AS ms,
-                   ROW_NUMBER() OVER (ORDER BY ${LATENCY_MS_SQL}) AS rn,
-                   COUNT(*) OVER () AS cnt
-            FROM observations o
-            WHERE o.project_id = @projectId AND o.is_deleted = 0 AND o.type = 'GENERATION'
-              AND o.end_time IS NOT NULL AND o.start_time IS NOT NULL${obsTimeO.sql}
-          )
-          SELECT AVG(ms) as avg,
-                 ${percentileSql(0.5, "ms")} as p50,
-                 ${percentileSql(0.95, "ms")} as p95
-          FROM d
-        `,
-        params: { projectId, ...obsTimeO.params },
-      }),
-      db.query<{ count: number }>({
-        query: `SELECT COUNT(*) as count FROM observations WHERE project_id = @projectId AND is_deleted = 0 AND level = 'ERROR'${obsTime.sql}`,
-        params: { projectId, ...obsTime.params },
-      }),
-    ]);
+    // Merged summary queries: each Promise.all entry below replaces several
+    // former single-purpose scans, halving the number of full-table passes.
+    const [tracesSummary, metricsSummary, obsLevelSummary, scoreCount, latencySummary] =
+      await Promise.all([
+        // Trace count + distinct users in one pass over traces.
+        db.query<{ traces: number; users: number }>({
+          query: `SELECT COUNT(*) as traces,
+                         COUNT(DISTINCT CASE WHEN user_id IS NOT NULL THEN user_id END) as users
+                  FROM traces WHERE project_id = @projectId AND is_deleted = 0${traceTime.sql}`,
+          params: { projectId, ...traceTime.params },
+        }),
+        // Observation count, cost and all token sums from the materialized
+        // trace_metrics table in a single join (previously three queries).
+        db.query<{
+          obsCount: number | null;
+          totalCost: number | null;
+          totalTokens: number | null;
+          inputTokens: number | null;
+          outputTokens: number | null;
+          cachedTokens: number | null;
+          grossTokens: number | null;
+        }>({
+          query: `SELECT COALESCE(SUM(tm.obs_count), 0) as obsCount,
+                         COALESCE(SUM(tm.total_cost), 0) as totalCost,
+                         COALESCE(SUM(tm.total_tokens), 0) as totalTokens,
+                         COALESCE(SUM(tm.input_tokens), 0) as inputTokens,
+                         COALESCE(SUM(tm.output_tokens), 0) as outputTokens,
+                         COALESCE(SUM(tm.cached_tokens), 0) as cachedTokens,
+                         COALESCE(SUM(tm.gross_input_tokens), 0) as grossTokens
+                  FROM trace_metrics tm
+                  JOIN traces t ON t.project_id = tm.project_id AND t.id = tm.trace_id
+                  WHERE tm.project_id = @projectId AND t.is_deleted = 0${metricTime.sql}`,
+          params: { projectId, ...metricTime.params },
+        }),
+        // Generation count + error count in one pass over observations.
+        db.query<{ generations: number; errors: number }>({
+          query: `SELECT COALESCE(SUM(CASE WHEN type = 'GENERATION' THEN 1 ELSE 0 END), 0) as generations,
+                         COALESCE(SUM(CASE WHEN level = 'ERROR' THEN 1 ELSE 0 END), 0) as errors
+                  FROM observations
+                  WHERE project_id = @projectId AND is_deleted = 0${obsTime.sql}`,
+          params: { projectId, ...obsTime.params },
+        }),
+        db.query<{ count: number }>({
+          query: `SELECT COUNT(*) as count FROM scores WHERE project_id = @projectId AND is_deleted = 0${scoreTime.sql}`,
+          params: { projectId, ...scoreTime.params },
+        }),
+        // Overall generation latency percentiles (p50 / p95 / avg) via window fns.
+        db.query<{ avg: number | null; p50: number | null; p95: number | null }>({
+          query: `
+            WITH d AS (
+              SELECT ${LATENCY_MS_SQL} AS ms,
+                     ROW_NUMBER() OVER (ORDER BY ${LATENCY_MS_SQL}) AS rn,
+                     COUNT(*) OVER () AS cnt
+              FROM observations o
+              WHERE o.project_id = @projectId AND o.is_deleted = 0 AND o.type = 'GENERATION'
+                AND o.end_time IS NOT NULL AND o.start_time IS NOT NULL${obsTimeO.sql}
+            )
+            SELECT AVG(ms) as avg,
+                   ${percentileSql(0.5, "ms")} as p50,
+                   ${percentileSql(0.95, "ms")} as p95
+            FROM d
+          `,
+          params: { projectId, ...obsTimeO.params },
+        }),
+      ]);
 
     // Daily time series over the selected window. Each metric series is merged
     // into one bucket per day. Timestamps are "YYYY-MM-DD HH:MM:SS.sss" TEXT.
-    const [dailyTraces, dailyObs, dailyLatency, dailyErrors, dailyCache, dailyScores] =
-      await Promise.all([
-        db.query<{ day: string; count: number }>({
-          query: `
+    const [dailyTraces, dailyObs, dailyLatency, dailyScores] = await Promise.all([
+      db.query<{ day: string; count: number }>({
+        query: `
             SELECT date(timestamp) as day, COUNT(*) as count
             FROM traces
             WHERE project_id = @projectId AND is_deleted = 0${traceTime.sql}
             GROUP BY day ORDER BY day ASC
           `,
-          params: { projectId, ...traceTime.params },
-        }),
-        db.query<{ day: string; count: number; tokens: number | null }>({
-          query: `
-            SELECT date(start_time) as day, COUNT(*) as count,
-                   COALESCE(SUM(COALESCE(json_extract(usage_details, '$.total'),
-                       json_extract(usage_details, '$.input') + json_extract(usage_details, '$.output'), 0)), 0) as tokens
-            FROM observations
-            WHERE project_id = @projectId AND is_deleted = 0${obsTime.sql}
+        params: { projectId, ...traceTime.params },
+      }),
+      // One pass over observations yields the daily count, token series,
+      // cache token series and the error series (previously three scans).
+      db.query<{
+        day: string;
+        count: number;
+        tokens: number | null;
+        cached: number | null;
+        gross: number | null;
+        errors: number | null;
+      }>({
+        query: `
+            SELECT date(o.start_time) as day, COUNT(*) as count,
+                   COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.total'),
+                       json_extract(o.usage_details, '$.input') + json_extract(o.usage_details, '$.output'), 0)), 0) as tokens,
+                   ${TRACE_METRICS_CACHED_TOKENS_SQL} as cached,
+                   ${TRACE_METRICS_GROSS_INPUT_TOKENS_SQL} as gross,
+                   COALESCE(SUM(CASE WHEN o.level = 'ERROR' THEN 1 ELSE 0 END), 0) as errors
+            FROM observations o
+            WHERE o.project_id = @projectId AND o.is_deleted = 0${obsTimeO.sql}
             GROUP BY day ORDER BY day ASC
           `,
-          params: { projectId, ...obsTime.params },
-        }),
-        db.query<{ day: string; avg: number | null; p95: number | null }>({
-          query: `
+        params: { projectId, ...obsTimeO.params },
+      }),
+      db.query<{ day: string; avg: number | null; p95: number | null }>({
+        query: `
             WITH d AS (
               SELECT date(o.start_time) AS day, ${LATENCY_MS_SQL} AS ms,
                      ROW_NUMBER() OVER (PARTITION BY date(o.start_time) ORDER BY ${LATENCY_MS_SQL}) AS rn,
@@ -237,38 +262,18 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
             SELECT day, AVG(ms) as avg, ${percentileSql(0.95, "ms")} as p95
             FROM d GROUP BY day
           `,
-          params: { projectId, ...obsTimeO.params },
-        }),
-        db.query<{ day: string; count: number }>({
-          query: `
-            SELECT date(start_time) as day, COUNT(*) as count
-            FROM observations
-            WHERE project_id = @projectId AND is_deleted = 0 AND level = 'ERROR'${obsTime.sql}
-            GROUP BY day ORDER BY day ASC
-          `,
-          params: { projectId, ...obsTime.params },
-        }),
-        db.query<{ day: string; cached: number | null; gross: number | null }>({
-          query: `
-            SELECT date(o.start_time) as day,
-                   ${TRACE_METRICS_CACHED_TOKENS_SQL} as cached,
-                   ${TRACE_METRICS_GROSS_INPUT_TOKENS_SQL} as gross
-            FROM observations o
-            WHERE o.project_id = @projectId AND o.is_deleted = 0${obsTimeO.sql}
-            GROUP BY day ORDER BY day ASC
-          `,
-          params: { projectId, ...obsTimeO.params },
-        }),
-        db.query<{ day: string; avg: number | null }>({
-          query: `
+        params: { projectId, ...obsTimeO.params },
+      }),
+      db.query<{ day: string; avg: number | null }>({
+        query: `
             SELECT date(timestamp) as day, AVG(value) as avg
             FROM scores
             WHERE project_id = @projectId AND is_deleted = 0 AND value IS NOT NULL${scoreTime.sql}
             GROUP BY day ORDER BY day ASC
           `,
-          params: { projectId, ...scoreTime.params },
-        }),
-      ]);
+        params: { projectId, ...scoreTime.params },
+      }),
+    ]);
 
     // Merge all daily series into one bucket per day.
     const byDay = new Map<string, DailyBucket>();
@@ -295,17 +300,15 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
       const b = dayBucket(r.day);
       b.observations = Number(r.count);
       b.tokens = Number(r.tokens ?? 0);
+      b.errors = Number(r.errors ?? 0);
+      const cached = Number(r.cached ?? 0);
+      const gross = Number(r.gross ?? 0);
+      b.cacheHitRate = gross > 0 ? cached / gross : 0;
     }
     for (const r of dailyLatency) {
       const b = dayBucket(r.day);
       b.avgLatencyMs = Math.round(Number(r.avg ?? 0));
       b.p95LatencyMs = Math.round(Number(r.p95 ?? 0));
-    }
-    for (const r of dailyErrors) dayBucket(r.day).errors = Number(r.count);
-    for (const r of dailyCache) {
-      const cached = Number(r.cached ?? 0);
-      const gross = Number(r.gross ?? 0);
-      dayBucket(r.day).cacheHitRate = gross > 0 ? cached / gross : 0;
     }
     for (const r of dailyScores) {
       dayBucket(r.day).avgScore = r.avg === null ? null : Number(r.avg);
@@ -425,26 +428,27 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
     // `gross_input_tokens` already resolves the per-provider `input` convention
     // (gross for Anthropic, net+cache for OpenAI/OTLP), so it is the correct
     // denominator — adding cached onto `input` again would double-count.
-    const totalTokens = Number(tokenRows[0]?.total ?? 0);
-    const totalCachedTokens = Number(tokenRows[0]?.cached ?? 0);
-    const grossInput = Number(tokenRows[0]?.gross ?? 0);
+    const metrics = metricsSummary[0];
+    const totalTokens = Number(metrics?.totalTokens ?? 0);
+    const totalCachedTokens = Number(metrics?.cachedTokens ?? 0);
+    const grossInput = Number(metrics?.grossTokens ?? 0);
     const cacheHitRate = grossInput > 0 ? totalCachedTokens / grossInput : 0;
-    const totalObservations = Number(observationCount[0]?.count ?? 0);
-    const totalErrors = Number(errorCount[0]?.count ?? 0);
+    const totalObservations = Number(metrics?.obsCount ?? 0);
+    const totalErrors = Number(obsLevelSummary[0]?.errors ?? 0);
 
-    return c.json({
+    const body = {
       summary: {
-        totalTraces: Number(traceCount[0]?.count ?? 0),
+        totalTraces: Number(tracesSummary[0]?.traces ?? 0),
         totalObservations,
-        totalGenerations: Number(generationCount[0]?.count ?? 0),
+        totalGenerations: Number(obsLevelSummary[0]?.generations ?? 0),
         totalScores: Number(scoreCount[0]?.count ?? 0),
-        totalCost: Number(costRows[0]?.total ?? 0),
+        totalCost: Number(metrics?.totalCost ?? 0),
         totalTokens,
-        inputTokens: Number(tokenRows[0]?.input ?? 0),
-        outputTokens: Number(tokenRows[0]?.output ?? 0),
+        inputTokens: Number(metrics?.inputTokens ?? 0),
+        outputTokens: Number(metrics?.outputTokens ?? 0),
         totalCachedTokens,
         cacheHitRate,
-        totalUsers: Number(userRows[0]?.count ?? 0),
+        totalUsers: Number(tracesSummary[0]?.users ?? 0),
         avgLatencyMs: Math.round(Number(latencySummary[0]?.avg ?? 0)),
         p50LatencyMs: Math.round(Number(latencySummary[0]?.p50 ?? 0)),
         p95LatencyMs: Math.round(Number(latencySummary[0]?.p95 ?? 0)),
@@ -456,7 +460,9 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
       levels,
       topUsers,
       recentErrors,
-    });
+    };
+    setCached(`${projectId}|${from ?? ""}|${to ?? ""}`, body);
+    return c.json(body);
   } catch (error) {
     logger.error("[lite-server] dashboard query failed", error);
     return c.json(
