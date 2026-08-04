@@ -15,6 +15,7 @@ import { getTelemetryDB } from "@peri-fuse/shared/src/server/adapters";
 import { Hono } from "hono";
 import { z } from "zod";
 import { authMiddleware, type LiteServerEnv } from "../auth";
+import { responseCache } from "../response-cache";
 
 const app = new Hono<LiteServerEnv>();
 
@@ -82,7 +83,7 @@ type UserListRow = {
   total_tokens: number;
 };
 
-app.get("/api/public/users", authMiddleware, async (c) => {
+app.get("/api/public/users", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
   const projectId = auth.scope.projectId;
 

@@ -9,9 +9,10 @@
 import { prisma } from "@peri-fuse/shared/src/db";
 import { models as modelsTable } from "@peri-fuse/shared/src/db/schema/index.js";
 import Decimal from "decimal.js";
-import { and, inArray, or, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
+import { responseCache } from "../response-cache";
 import { GetObservationsV1Query } from "../schemas/observations";
 import {
   generateObservationsForPublicApi,
@@ -21,7 +22,7 @@ import {
 
 const app = new Hono<LiteServerEnv>();
 
-app.get("/api/public/observations", authMiddleware, async (c) => {
+app.get("/api/public/observations", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
 
   const parsed = GetObservationsV1Query.safeParse(c.req.query());

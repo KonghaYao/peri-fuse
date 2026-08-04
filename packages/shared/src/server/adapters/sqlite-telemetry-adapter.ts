@@ -14,6 +14,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import Database from "better-sqlite3";
 import { logger } from "../logger";
+import { isReadOnlySql, resolveReadPoolSize, SqliteReadPool } from "./sqlite-read-pool";
 import type { TelemetryDBAdapter, TelemetryInsertOpts, TelemetryQueryOpts } from "./types";
 
 const DEFAULT_DB_PATH = ".langfuse/telemetry.db";
@@ -89,6 +90,9 @@ function findMonorepoRoot(): string {
 
 export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   private db: Database.Database;
+  private readonly dbPath: string;
+  private readPool: SqliteReadPool | null = null;
+  private readPoolInit = false;
 
   constructor(dbPath?: string) {
     const rawPath = dbPath ?? process.env.LANGFUSE_SQLITE_DB_PATH ?? DEFAULT_DB_PATH;
@@ -97,6 +101,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     const resolvedPath = path.isAbsolute(rawPath)
       ? rawPath
       : path.resolve(findMonorepoRoot(), rawPath);
+    this.dbPath = resolvedPath;
 
     // Ensure directory exists
     fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
@@ -337,7 +342,43 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     logger.info("[SQLiteTelemetryAdapter] Backfilled trace_metrics cache columns");
   }
 
+  /**
+   * Lazily start the read-only worker pool (once). PERIFUSE_READ_WORKERS=0
+   * disables it, falling back to synchronous reads on the main connection.
+   */
+  private getReadPool(): SqliteReadPool | null {
+    if (!this.readPoolInit) {
+      this.readPoolInit = true;
+      const size = resolveReadPoolSize();
+      if (size > 0) {
+        try {
+          this.readPool = new SqliteReadPool(this.dbPath, size);
+        } catch (error) {
+          logger.error(
+            "[SQLiteTelemetryAdapter] Read pool failed to start; using sync reads",
+            error,
+          );
+          this.readPool = null;
+        }
+      }
+    }
+    return this.readPool;
+  }
+
   async query<T = Record<string, unknown>>(opts: TelemetryQueryOpts): Promise<T[]> {
+    // Offload pure reads to worker threads so heavy aggregates never block the
+    // event loop; WAL permits these read-only connections alongside writes.
+    if (isReadOnlySql(opts.query)) {
+      const pool = this.getReadPool();
+      if (pool) {
+        try {
+          return await pool.query<T>(opts.query, (opts.params ?? {}) as Record<string, unknown>);
+        } catch (error) {
+          logger.error(`[SQLiteTelemetryAdapter] Query failed: ${opts.query}`, error);
+          throw error;
+        }
+      }
+    }
     try {
       const stmt = this.db.prepare(opts.query);
       const rows = stmt.all(opts.params ?? {}) as T[];
@@ -439,6 +480,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   }
 
   async close(): Promise<void> {
+    this.readPool?.close();
     this.db.close();
   }
 }

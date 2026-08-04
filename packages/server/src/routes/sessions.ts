@@ -19,6 +19,7 @@ import { getTelemetryDB } from "@peri-fuse/shared/src/server/adapters";
 import { Hono } from "hono";
 import { z } from "zod";
 import { authMiddleware, type LiteServerEnv } from "../auth";
+import { responseCache } from "../response-cache";
 import { transformDbToApiObservation } from "../shaping/observations";
 import { aggregateTraceMetrics, parseJsonValue, toMs } from "../shaping/trace-metrics";
 
@@ -125,7 +126,7 @@ type SessionListRow = {
   cached_tokens: number;
 };
 
-app.get("/api/public/sessions", authMiddleware, async (c) => {
+app.get("/api/public/sessions", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
   const projectId = auth.scope.projectId;
 
@@ -276,7 +277,7 @@ type SessionScoreRow = {
   source: string;
 };
 
-app.get("/api/public/sessions/:sessionId", authMiddleware, async (c) => {
+app.get("/api/public/sessions/:sessionId", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
   const projectId = auth.scope.projectId;
   const sessionId = c.req.param("sessionId");

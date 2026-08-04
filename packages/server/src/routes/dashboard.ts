@@ -17,6 +17,7 @@ import {
 } from "@peri-fuse/shared/src/server/adapters";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
+import { responseCache } from "../response-cache";
 
 const app = new Hono<LiteServerEnv>();
 
@@ -83,34 +84,12 @@ function toSqliteTime(value: string): string | null {
   return d.toISOString().replace("T", " ").replace("Z", "");
 }
 
-// Short-lived response cache. The dashboard is a battery of heavy full-scan
-// aggregates over observations/trace_metrics; because the telemetry adapter is
-// a synchronous better-sqlite3 handle, every one of them blocks the single
-// event loop. Reusing a response for a few seconds absorbs UI refreshes and
-// concurrent viewers without making the numbers feel stale.
-const CACHE_TTL_MS = 5_000;
-const CACHE_MAX_ENTRIES = 256;
-const dashboardCache = new Map<string, { expiresAt: number; body: unknown }>();
-
-function getCached(key: string): unknown | null {
-  const hit = dashboardCache.get(key);
-  if (!hit) return null;
-  if (Date.now() > hit.expiresAt) {
-    dashboardCache.delete(key);
-    return null;
-  }
-  return hit.body;
-}
-
-function setCached(key: string, body: unknown): void {
-  if (dashboardCache.size >= CACHE_MAX_ENTRIES) {
-    const oldest = dashboardCache.keys().next().value;
-    if (oldest !== undefined) dashboardCache.delete(oldest);
-  }
-  dashboardCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, body });
-}
-
-app.get("/api/public/dashboard", authMiddleware, async (c) => {
+// The dashboard is a battery of heavy full-scan aggregates over
+// observations/trace_metrics and the telemetry adapter is a synchronous
+// better-sqlite3 handle, so each cold compute blocks the event loop. The
+// shared response cache (with singleflight) absorbs UI refreshes and
+// concurrent viewers for a few seconds without making numbers feel stale.
+app.get("/api/public/dashboard", authMiddleware, responseCache(5_000), async (c) => {
   const auth = c.get("auth");
   const projectId = auth.scope.projectId;
   const db = getTelemetryDB();
@@ -118,9 +97,6 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
   // Optional time range (ISO instants). When omitted, stats cover all time.
   const from = toSqliteTime(c.req.query("from") ?? "");
   const to = toSqliteTime(c.req.query("to") ?? "");
-
-  const cached = getCached(`${auth.scope.projectId}|${from ?? ""}|${to ?? ""}`);
-  if (cached) return c.json(cached);
 
   // Builds a bounded time-window filter on a timestamp column plus the matching
   // bind params. `alias` prefixes the column when the query joins other tables.
@@ -461,7 +437,6 @@ app.get("/api/public/dashboard", authMiddleware, async (c) => {
       topUsers,
       recentErrors,
     };
-    setCached(`${projectId}|${from ?? ""}|${to ?? ""}`, body);
     return c.json(body);
   } catch (error) {
     logger.error("[lite-server] dashboard query failed", error);

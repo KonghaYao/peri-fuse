@@ -8,11 +8,12 @@
 import { filterAndValidateLegacyV1GetScoreList, GetScoresQueryV1 } from "@peri-fuse/shared";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
+import { responseCache } from "../response-cache";
 import { generateScoresForPublicApi, getScoresCountForPublicApi } from "../shaping/scores";
 
 const app = new Hono<LiteServerEnv>();
 
-app.get("/api/public/scores", authMiddleware, async (c) => {
+app.get("/api/public/scores", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
 
   const rawQuery = c.req.query();

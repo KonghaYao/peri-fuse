@@ -19,9 +19,10 @@ import {
 } from "@peri-fuse/shared/src/server";
 import { getTelemetryDB } from "@peri-fuse/shared/src/server/adapters";
 import Decimal from "decimal.js";
-import { and, inArray, or, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
+import { responseCache } from "../response-cache";
 import { GetTracesV1Query, GetTraceV1Query } from "../schemas/traces";
 import { transformDbToApiObservation } from "../shaping/observations";
 import { aggregateTraceMetrics, parseJsonValue } from "../shaping/trace-metrics";
@@ -29,7 +30,7 @@ import { generateTracesForPublicApi, getTracesCountForPublicApi } from "../shapi
 
 const app = new Hono<LiteServerEnv>();
 
-app.get("/api/public/traces", authMiddleware, async (c) => {
+app.get("/api/public/traces", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
 
   const parsed = GetTracesV1Query.safeParse(c.req.query());
@@ -91,7 +92,7 @@ app.get("/api/public/traces", authMiddleware, async (c) => {
 // Registered before the `:traceId` route so "metrics" is not matched as an id.
 // ---------------------------------------------------------------------------
 
-app.get("/api/public/traces/metrics", authMiddleware, async (c) => {
+app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
   const projectId = auth.scope.projectId;
 
@@ -162,7 +163,7 @@ app.get("/api/public/traces/metrics", authMiddleware, async (c) => {
   }
 });
 
-app.get("/api/public/traces/:traceId", authMiddleware, async (c) => {
+app.get("/api/public/traces/:traceId", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
 
   const parsed = GetTraceV1Query.safeParse({
@@ -230,7 +231,9 @@ app.get("/api/public/traces/:traceId", authMiddleware, async (c) => {
   const observationsView = observations.map((o) => {
     const model = models.find((m) => m.id === o.internalModelId);
     const inputPrice = new Decimal(model?.prices.find((p) => p.usageType === "input")?.price ?? 0);
-    const outputPrice = new Decimal(model?.prices.find((p) => p.usageType === "output")?.price ?? 0);
+    const outputPrice = new Decimal(
+      model?.prices.find((p) => p.usageType === "output")?.price ?? 0,
+    );
     const totalPrice = new Decimal(model?.prices.find((p) => p.usageType === "total")?.price ?? 0);
     return {
       ...o,
