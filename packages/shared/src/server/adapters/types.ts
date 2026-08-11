@@ -55,7 +55,7 @@ export interface TelemetryDBAdapter {
   query<T = Record<string, unknown>>(opts: TelemetryQueryOpts): Promise<T[]>;
 
   /** Execute a write command (INSERT, UPDATE, DELETE, DDL). */
-  command(opts: TelemetryQueryOpts): Promise<void>;
+  command(opts: TelemetryQueryOpts): Promise<{ changes: number }>;
 
   /** Insert records into a table. */
   insert<T = Record<string, unknown>>(opts: TelemetryInsertOpts<T>): Promise<void>;

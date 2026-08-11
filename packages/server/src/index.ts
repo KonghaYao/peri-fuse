@@ -9,6 +9,8 @@ import "./env";
 import { serve } from "@hono/node-server";
 import { startGatewayServices, stopGatewayServices } from "@peri/gateway/services";
 import { logger } from "@peri-fuse/shared/src/server";
+import { startDailyStatsMaintenance } from "@peri-fuse/shared/src/server/stats/daily-stats";
+import { startRetentionJob } from "@peri-fuse/shared/src/server/stats/retention";
 import { createApp } from "./app";
 import { ensureBootstrap } from "./bootstrap";
 import { ensurePrismaSchema } from "./db-init";
@@ -23,6 +25,11 @@ ensureGatewaySchema();
 
 // Start gateway background services (spend flusher, budget reset, cooldown recovery)
 startGatewayServices();
+
+// Dashboard rollup maintenance (backfill missing days + refresh recent days)
+const stopStatsMaintenance = startDailyStatsMaintenance();
+// Optional retention purge (PERIFUSE_TELEMETRY_RETENTION_DAYS; off by default)
+const stopRetentionJob = startRetentionJob();
 
 const app = createApp();
 
@@ -47,6 +54,8 @@ main().catch((err) => {
 // Graceful shutdown — close HTTP server and SQLite connections so tsx watch can restart cleanly
 async function shutdown() {
   server.close();
+  stopStatsMaintenance();
+  stopRetentionJob();
   try {
     await stopGatewayServices();
   } catch {

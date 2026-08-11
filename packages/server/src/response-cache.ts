@@ -64,10 +64,14 @@ function cacheKey(projectId: string, reqUrl: string): string {
 }
 
 /**
- * Response-caching middleware. `ttlMs` is the lifetime of a cached response.
- * Must run after authMiddleware (needs `auth.scope.projectId`).
+ * Response-caching middleware. `ttlMs` is the lifetime of a cached response;
+ * pass a function of the request context to vary it (e.g. longer TTLs for
+ * historical windows whose data barely changes). Must run after
+ * authMiddleware (needs `auth.scope.projectId`).
  */
-export function responseCache(ttlMs: number): MiddlewareHandler<LiteServerEnv> {
+export function responseCache(
+  ttlMs: number | ((c: Parameters<MiddlewareHandler<LiteServerEnv>>[0]) => number),
+): MiddlewareHandler<LiteServerEnv> {
   return async (c, next) => {
     if (c.req.method !== "GET") return next();
     const projectId = c.get("auth")?.scope?.projectId;
@@ -126,7 +130,8 @@ export function responseCache(ttlMs: number): MiddlewareHandler<LiteServerEnv> {
       c.header("X-Cache", "MISS");
 
       makeRoom(body.length);
-      cache.set(key, { expiresAt: Date.now() + ttlMs, body, contentType });
+      const ttl = typeof ttlMs === "function" ? ttlMs(c) : ttlMs;
+      cache.set(key, { expiresAt: Date.now() + ttl, body, contentType });
       totalBytes += body.length;
 
       const finish = (

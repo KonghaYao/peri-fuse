@@ -38,6 +38,18 @@
       "import": "./dist/src/server/adapters/index.js",
       "require": "./dist/src/server/adapters/index.js"
     },
+    "./src/server/stats/daily-stats": {
+      "import": "./dist/src/server/stats/daily-stats.js",
+      "require": "./dist/src/server/stats/daily-stats.js"
+    },
+    "./src/server/stats/histogram": {
+      "import": "./dist/src/server/stats/histogram.js",
+      "require": "./dist/src/server/stats/histogram.js"
+    },
+    "./src/server/stats/retention": {
+      "import": "./dist/src/server/stats/retention.js",
+      "require": "./dist/src/server/stats/retention.js"
+    },
     "./src/server/auth/apiKeys": {
       "import": "./dist/src/server/auth/apiKeys.js",
       "require": "./dist/src/server/auth/apiKeys.js"

@@ -197,12 +197,50 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         total_tokens INTEGER DEFAULT 0,
         cached_tokens INTEGER DEFAULT 0,
         cache_creation_tokens INTEGER DEFAULT 0,
+        timestamp TEXT,
         PRIMARY KEY (project_id, trace_id)
       );
       CREATE INDEX IF NOT EXISTS idx_trace_metrics_session
         ON trace_metrics(project_id, session_id);
       CREATE INDEX IF NOT EXISTS idx_trace_metrics_user
         ON trace_metrics(project_id, user_id);
+      -- idx_trace_metrics_ts is created by the v4 migration: on legacy
+      -- databases the timestamp column does not exist yet at this point.
+
+      -- Materialized per-day dashboard rollups (maintained by stats/daily-stats)
+      CREATE TABLE IF NOT EXISTS daily_stats (
+        project_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        traces INTEGER NOT NULL DEFAULT 0,
+        users_json TEXT NOT NULL DEFAULT '[]',
+        observations INTEGER NOT NULL DEFAULT 0,
+        generations INTEGER NOT NULL DEFAULT 0,
+        errors INTEGER NOT NULL DEFAULT 0,
+        warnings INTEGER NOT NULL DEFAULT 0,
+        debugs INTEGER NOT NULL DEFAULT 0,
+        tokens INTEGER NOT NULL DEFAULT 0,
+        cached_tokens INTEGER NOT NULL DEFAULT 0,
+        gross_input_tokens INTEGER NOT NULL DEFAULT 0,
+        scores_count INTEGER NOT NULL DEFAULT 0,
+        scores_val_count INTEGER NOT NULL DEFAULT 0,
+        score_sum REAL NOT NULL DEFAULT 0,
+        lat_count INTEGER NOT NULL DEFAULT 0,
+        lat_sum_ms REAL NOT NULL DEFAULT 0,
+        lat_hist TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (project_id, day)
+      );
+      CREATE TABLE IF NOT EXISTS daily_model_stats (
+        project_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        model TEXT NOT NULL,
+        observations INTEGER NOT NULL DEFAULT 0,
+        tokens INTEGER NOT NULL DEFAULT 0,
+        lat_count INTEGER NOT NULL DEFAULT 0,
+        lat_sum_ms REAL NOT NULL DEFAULT 0,
+        lat_hist TEXT NOT NULL DEFAULT '[]',
+        PRIMARY KEY (project_id, day, model)
+      );
 
       CREATE TABLE IF NOT EXISTS scores (
         id TEXT NOT NULL,
@@ -301,6 +339,56 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       this.backfillTraceMetricsCache();
       this.db.pragma("user_version = 3");
     }
+    // v4: give trace_metrics a timestamp column so time-windowed aggregates
+    // (dashboard summary / top users) no longer need to JOIN traces, and make
+    // sure the daily_stats rollup tables exist. Row backfill of daily_stats
+    // itself happens asynchronously in the stats maintenance job.
+    if (version < 4) {
+      this.ensureColumn("trace_metrics", "timestamp", "TEXT");
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_trace_metrics_ts
+          ON trace_metrics(project_id, timestamp);
+        UPDATE trace_metrics SET timestamp = (
+          SELECT t.timestamp FROM traces t
+          WHERE t.project_id = trace_metrics.project_id AND t.id = trace_metrics.trace_id
+        ) WHERE timestamp IS NULL;
+        CREATE TABLE IF NOT EXISTS daily_stats (
+          project_id TEXT NOT NULL,
+          day TEXT NOT NULL,
+          traces INTEGER NOT NULL DEFAULT 0,
+          users_json TEXT NOT NULL DEFAULT '[]',
+          observations INTEGER NOT NULL DEFAULT 0,
+          generations INTEGER NOT NULL DEFAULT 0,
+          errors INTEGER NOT NULL DEFAULT 0,
+          warnings INTEGER NOT NULL DEFAULT 0,
+          debugs INTEGER NOT NULL DEFAULT 0,
+          tokens INTEGER NOT NULL DEFAULT 0,
+          cached_tokens INTEGER NOT NULL DEFAULT 0,
+          gross_input_tokens INTEGER NOT NULL DEFAULT 0,
+          scores_count INTEGER NOT NULL DEFAULT 0,
+          scores_val_count INTEGER NOT NULL DEFAULT 0,
+          score_sum REAL NOT NULL DEFAULT 0,
+          lat_count INTEGER NOT NULL DEFAULT 0,
+          lat_sum_ms REAL NOT NULL DEFAULT 0,
+          lat_hist TEXT NOT NULL DEFAULT '[]',
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (project_id, day)
+        );
+        CREATE TABLE IF NOT EXISTS daily_model_stats (
+          project_id TEXT NOT NULL,
+          day TEXT NOT NULL,
+          model TEXT NOT NULL,
+          observations INTEGER NOT NULL DEFAULT 0,
+          tokens INTEGER NOT NULL DEFAULT 0,
+          lat_count INTEGER NOT NULL DEFAULT 0,
+          lat_sum_ms REAL NOT NULL DEFAULT 0,
+          lat_hist TEXT NOT NULL DEFAULT '[]',
+          PRIMARY KEY (project_id, day, model)
+        );
+      `);
+      this.db.pragma("user_version = 4");
+      logger.info("[SQLiteTelemetryAdapter] Migrated telemetry schema to v4");
+    }
   }
 
   private ensureColumn(table: string, column: string, definition: string): void {
@@ -320,7 +408,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
    */
   private backfillTraceMetricsCache(): void {
     this.db.exec(`
-      INSERT OR REPLACE INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count, total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens, cached_tokens, cache_creation_tokens, gross_input_tokens)
+      INSERT OR REPLACE INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count, total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens, cached_tokens, cache_creation_tokens, gross_input_tokens, timestamp)
       SELECT o.project_id, o.trace_id, t.user_id, t.session_id,
              COUNT(*),
              COALESCE(SUM(o.total_cost), 0),
@@ -333,7 +421,8 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
                  COALESCE(json_extract(o.usage_details, '$.output'), 0))), 0),
              ${TRACE_METRICS_CACHED_TOKENS_SQL},
              ${TRACE_METRICS_CACHE_CREATION_TOKENS_SQL},
-             ${TRACE_METRICS_GROSS_INPUT_TOKENS_SQL}
+             ${TRACE_METRICS_GROSS_INPUT_TOKENS_SQL},
+             t.timestamp
       FROM observations o
       LEFT JOIN traces t ON t.project_id = o.project_id AND t.id = o.trace_id
       WHERE o.is_deleted = 0
@@ -389,10 +478,11 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     }
   }
 
-  async command(opts: TelemetryQueryOpts): Promise<void> {
+  async command(opts: TelemetryQueryOpts): Promise<{ changes: number }> {
     try {
       const stmt = this.db.prepare(opts.query);
-      stmt.run(opts.params ?? {});
+      const info = stmt.run(opts.params ?? {});
+      return { changes: info.changes };
     } catch (error) {
       logger.error(`[SQLiteTelemetryAdapter] Command failed: ${opts.query}`, error);
       throw error;
