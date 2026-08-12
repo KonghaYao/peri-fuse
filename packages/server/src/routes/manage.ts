@@ -5,12 +5,13 @@
  * the local web UI to manage projects and keys. In a lite server context the
  * server runs locally so no additional auth layer is needed.
  */
+
+import { randomUUID } from "node:crypto";
 import { prisma } from "@peri-fuse/shared/src/db";
 import { apiKeys, organizations, projects } from "@peri-fuse/shared/src/db/schema/index.js";
 import { createAndAddApiKeysToDb } from "@peri-fuse/shared/src/server/auth/apiKeys";
-import { and, asc, count, eq, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
-import { randomUUID } from "node:crypto";
 
 const manage = new Hono();
 
@@ -168,6 +169,9 @@ manage.delete("/api/manage/keys/:id", async (c) => {
 // Activate — used by the web UI to obtain usable credentials for a project
 // ---------------------------------------------------------------------------
 
+/** How many concurrent web-ui keys a project may keep before pruning. */
+const MAX_WEB_UI_KEYS = 5;
+
 manage.post("/api/manage/projects/:id/activate", async (c) => {
   const projectId = c.req.param("id");
 
@@ -181,24 +185,31 @@ manage.post("/api/manage/projects/:id/activate", async (c) => {
     return c.json({ message: "Project not found" }, 404);
   }
 
-  // Delete any previous web-ui key (its sk is hashed, cannot be recovered)
-  await prisma
-    .delete(apiKeys)
-    .where(
-      and(
-        eq(apiKeys.projectId, projectId),
-        eq(apiKeys.scope, "PROJECT"),
-        eq(apiKeys.note, "web-ui"),
-      ),
-    );
-
-  // Create a fresh key for the web UI
+  // Create a fresh key for the web UI. Previous web-ui keys stay valid so
+  // already-open sessions (other tabs, other origins, reopened laptop lids)
+  // keep authenticating; only the oldest ones beyond the cap are pruned.
   const result = await createAndAddApiKeysToDb({
     prisma,
     entityId: projectId,
     scope: "PROJECT",
     note: "web-ui",
   });
+
+  const webUiKeys = await prisma
+    .select({ id: apiKeys.id })
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.projectId, projectId),
+        eq(apiKeys.scope, "PROJECT"),
+        eq(apiKeys.note, "web-ui"),
+      ),
+    )
+    .orderBy(desc(apiKeys.createdAt));
+  const staleIds = webUiKeys.slice(MAX_WEB_UI_KEYS).map((k) => k.id);
+  if (staleIds.length > 0) {
+    await prisma.delete(apiKeys).where(inArray(apiKeys.id, staleIds));
+  }
 
   return c.json({
     projectId: project.id,

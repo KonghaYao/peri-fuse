@@ -7,7 +7,7 @@
  * gateway data stays isolated per project.
  */
 
-import { getProjectContext } from "@/shared/store/project";
+import { clearProjectContext, getProjectContext } from "@/shared/store/project";
 import { ApiError } from "./api";
 
 function basicAuthHeader(publicKey: string, secretKey: string): string {
@@ -41,6 +41,8 @@ async function gatewayRequest<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // non-JSON error body
     }
+    // Same recovery as api.ts: stale credentials bounce to project selection.
+    if (res.status === 401) clearProjectContext();
     throw new ApiError(res.status, message);
   }
 

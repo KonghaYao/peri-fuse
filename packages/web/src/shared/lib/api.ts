@@ -7,7 +7,7 @@
  */
 
 import type { ProjectContext } from "@/shared/store/project";
-import { getProjectContext } from "@/shared/store/project";
+import { clearProjectContext, getProjectContext } from "@/shared/store/project";
 import type {
   CreatedKey,
   Dashboard,
@@ -88,6 +88,10 @@ async function request<T>(path: string): Promise<T> {
     } catch {
       // non-JSON error body
     }
+    // Stored credentials were invalidated server-side (e.g. pruned web-ui
+    // key). Drop the context so the router bounces back to project
+    // selection, where one click obtains fresh credentials.
+    if (res.status === 401) clearProjectContext();
     throw new ApiError(res.status, message);
   }
 
