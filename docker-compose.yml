@@ -1,0 +1,38 @@
+# Peri-Fuse docker compose demo
+#
+# 用法:
+#   docker compose up -d          # 使用 ghcr.io 镜像
+#   docker compose up -d --build  # 改用本地 Dockerfile 构建（见下方注释）
+#
+# 数据全部落在项目相对目录 ./data（挂载到容器内 /app/data，即
+# PERIFUSE_HOME），包含 SQLite 数据库、salt、加密密钥，升级镜像不会丢数据。
+# 注意：该目录已加入 .gitignore，不会被提交进仓库。
+
+services:
+  peri-fuse:
+    image: ghcr.io/konghayao/peri-fuse:latest
+    # 本地构建替代方案（二选一）：
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    #   # 本地构建时注释掉上面的 image 行
+    container_name: peri-fuse
+    restart: unless-stopped
+
+    ports:
+      - "23332:23332"
+
+    volumes:
+      # 数据落到项目相对目录 ./data（首次启动自动创建）：
+      # langfuse.db / telemetry.db / gateway.db / .salt / 加密密钥
+      - ./data:/app/data
+
+    environment:
+      LANGFUSE_MODE: lite
+      # API key 哈希盐。留空则自动生成并持久化到卷内 .salt 文件；
+      # 生产环境建议显式设置随机字符串（如 `openssl rand -hex 32`）。
+      # 注意：首次启动后更改此值会使已有 API key 全部失效。
+      SALT: ${SALT:-}
+      # 可选：覆盖端口 / 数据目录（与上方 ports / volumes 保持一致）
+      # LITE_SERVER_PORT: "23332"
+      # PERIFUSE_HOME: /app/data

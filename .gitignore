@@ -54,5 +54,8 @@ packages/gateway/src/generated/
 # CLI runtime (pid/log/state)
 .peri-fuse/
 
+# docker compose data volume (SQLite databases, salt, keys)
+data/
+
 # CLI build artifacts (copied at build time for publishing)
 packages/cli/drizzle/
