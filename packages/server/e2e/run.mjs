@@ -3,6 +3,7 @@
  * runs the Langfuse SDK E2E test, then cleans up.
  *
  * Usage:  node e2e/run.mjs
+ * Custom script:  E2E_SCRIPT=langfuse-sdk-eval-e2e.mjs node e2e/run.mjs
  */
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
@@ -13,6 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.resolve(__dirname, "..");
 const PORT = 23456;
 const HOME = `/tmp/pf-e2e-sdk-${Date.now()}`;
+const E2E_SCRIPT = process.env.E2E_SCRIPT ?? "langfuse-sdk-e2e.mjs";
 
 fs.mkdirSync(HOME, { recursive: true });
 
@@ -25,8 +27,12 @@ const server = spawn("node", ["dist/index.js"], {
 });
 
 let serverOutput = "";
-server.stdout.on("data", (d) => { serverOutput += d.toString(); });
-server.stderr.on("data", (d) => { serverOutput += d.toString(); });
+server.stdout.on("data", (d) => {
+  serverOutput += d.toString();
+});
+server.stderr.on("data", (d) => {
+  serverOutput += d.toString();
+});
 
 function waitForServer(timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
@@ -35,7 +41,9 @@ function waitForServer(timeoutMs = 15000) {
       try {
         const res = await fetch(`http://localhost:${PORT}/api/public/health`);
         if (res.ok) return resolve();
-      } catch { /* not ready yet */ }
+      } catch {
+        /* not ready yet */
+      }
       if (Date.now() - start > timeoutMs) return reject(new Error("Server start timeout"));
       setTimeout(poll, 300);
     };
@@ -56,7 +64,8 @@ function waitForCredentials(timeoutMs = 10000) {
     const poll = () => {
       const creds = extractCredentials();
       if (creds) return resolve(creds);
-      if (Date.now() - start > timeoutMs) return reject(new Error("Credentials not found in server output"));
+      if (Date.now() - start > timeoutMs)
+        return reject(new Error("Credentials not found in server output"));
       setTimeout(poll, 200);
     };
     poll();
@@ -78,8 +87,8 @@ async function main() {
     }
     console.log(`[runner] Credentials: ${creds.pk} / ${creds.sk.slice(0, 15)}…`);
 
-    console.log("[runner] Running Langfuse SDK E2E test…\n");
-    const result = spawn("node", [path.join(__dirname, "langfuse-sdk-e2e.mjs")], {
+    console.log(`[runner] Running ${E2E_SCRIPT}…\n`);
+    const result = spawn("node", [path.join(__dirname, E2E_SCRIPT)], {
       cwd: serverDir,
       env: { ...process.env, BASE: `http://localhost:${PORT}`, PK: creds.pk, SK: creds.sk },
       stdio: "inherit",
@@ -88,6 +97,21 @@ async function main() {
     const code = await new Promise((resolve) => {
       result.on("close", resolve);
     });
+
+    // --- Eval feature-set E2E (Phase 1+2: score configs / eval configs / templates / datasets) ---
+    // When E2E_SCRIPT already selects the eval suite, do not run it twice.
+    let evalCode = 0;
+    if (code === 0 && E2E_SCRIPT !== "langfuse-sdk-eval-e2e.mjs") {
+      console.log("[runner] Running Langfuse SDK Eval E2E test…\n");
+      const evalResult = spawn("node", [path.join(__dirname, "langfuse-sdk-eval-e2e.mjs")], {
+        cwd: serverDir,
+        env: { ...process.env, BASE: `http://localhost:${PORT}`, PK: creds.pk, SK: creds.sk },
+        stdio: "inherit",
+      });
+      evalCode = await new Promise((resolve) => {
+        evalResult.on("close", resolve);
+      });
+    }
 
     // --- Restart test ---
     console.log("\n[runner] Restarting server (existing DB) to verify idempotency…");
@@ -100,8 +124,12 @@ async function main() {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let server2Output = "";
-    server2.stdout.on("data", (d) => { server2Output += d.toString(); });
-    server2.stderr.on("data", (d) => { server2Output += d.toString(); });
+    server2.stdout.on("data", (d) => {
+      server2Output += d.toString();
+    });
+    server2.stderr.on("data", (d) => {
+      server2Output += d.toString();
+    });
 
     try {
       await waitForServer();
@@ -111,7 +139,9 @@ async function main() {
 
       // Verify data persisted
       const res = await fetch(`http://localhost:${PORT}/api/public/traces?limit=1`, {
-        headers: { Authorization: "Basic " + Buffer.from(`${creds.pk}:${creds.sk}`).toString("base64") },
+        headers: {
+          Authorization: "Basic " + Buffer.from(`${creds.pk}:${creds.sk}`).toString("base64"),
+        },
       });
       const data = await res.json();
       const persisted = res.ok && (data.data?.length ?? 0) > 0;
@@ -127,8 +157,8 @@ async function main() {
       server2.kill("SIGTERM");
     }
 
-    console.log(`\n[runner] E2E complete (exit code ${code}).`);
-    process.exit(code);
+    console.log(`\n[runner] E2E complete (SDK=${code}, EVAL=${evalCode}).`);
+    process.exit(code !== 0 ? code : evalCode);
   } catch (err) {
     console.error("[runner] Fatal:", err.message);
     console.error(serverOutput.slice(-1000));
@@ -136,7 +166,11 @@ async function main() {
     process.exit(1);
   } finally {
     // Cleanup temp dir
-    try { fs.rmSync(HOME, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      fs.rmSync(HOME, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   }
 }
 

@@ -12,12 +12,16 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { LiteServerEnv } from "./auth";
 import dashboardRoutes from "./routes/dashboard";
+import datasetsRoutes from "./routes/datasets";
+import evalTemplatesRoutes from "./routes/eval-templates";
+import evalsRoutes from "./routes/evals";
 import gatewayProxyRoutes from "./routes/gateway-proxy";
 import healthRoutes from "./routes/health";
 import ingestionRoutes from "./routes/ingestion";
 import manageRoutes from "./routes/manage";
 import observationsRoutes from "./routes/observations";
 import otelRoutes from "./routes/otel";
+import scoreConfigsRoutes from "./routes/score-configs";
 import scoresRoutes from "./routes/scores";
 import sessionsRoutes from "./routes/sessions";
 import tracesRoutes from "./routes/traces";
@@ -41,7 +45,7 @@ export function createApp(): Hono<LiteServerEnv> {
       "x-langfuse-secret-key",
       "x-langfuse-session-id",
     ],
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: false,
   });
   app.use("/api/public/*", corsConfig);
@@ -70,6 +74,10 @@ export function createApp(): Hono<LiteServerEnv> {
   app.route("/", tracesRoutes);
   app.route("/", observationsRoutes);
   app.route("/", scoresRoutes);
+  app.route("/", scoreConfigsRoutes);
+  app.route("/", evalTemplatesRoutes);
+  app.route("/", evalsRoutes);
+  app.route("/", datasetsRoutes);
   app.route("/", sessionsRoutes);
   app.route("/", usersRoutes);
   app.route("/", dashboardRoutes);

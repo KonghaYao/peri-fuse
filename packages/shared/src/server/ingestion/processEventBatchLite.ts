@@ -5,6 +5,7 @@
  * full mode, then writes directly to SQLite via the TelemetryDBAdapter.
  */
 
+import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import { UnauthorizedError } from "../../errors";
 import { getTelemetryDB } from "../adapters";
@@ -160,24 +161,73 @@ function eventToRow(
   }
 
   if (entityType === "score") {
+    const dataType = (body.dataType as string) ?? "NUMERIC";
+    // Lite adaptation of the upstream inflateScoreBody (validateAndInflateScore):
+    // the SDK only sends `value` + `dataType` (no stringValue), while the
+    // scores table — and the v1 GET /scores response schema — expect a numeric
+    // `value` plus a `string_value` for CATEGORICAL/BOOLEAN/TEXT. Without this
+    // derivation those scores fail the public-API validation and silently
+    // disappear from GET /api/public/scores.
+    let value = body.value ?? null;
+    let stringValue = body.stringValue ?? null;
+    if (dataType === "CATEGORICAL" || dataType === "TEXT") {
+      stringValue = typeof body.value === "string" ? body.value : stringValue;
+      // Upstream inflateScoreBody stores a numeric placeholder (config-mapped
+      // value for CATEGORICAL, 0 for TEXT) in `value`; the text lives in
+      // `string_value`. A raw string in `value` becomes NaN on read and the
+      // score is dropped by the public-API validation.
+      value = 0;
+    } else if (dataType === "BOOLEAN") {
+      stringValue = body.value === 1 ? "True" : "False";
+    }
     return {
       table: "scores",
       row: {
         ...baseRow,
+        // Upstream semantics: the server generates the id when absent (the
+        // SDK's score events carry the id only on the event envelope, never
+        // in the body).
+        id: body.id ?? randomUUID(),
         trace_id: body.traceId ?? null,
         observation_id: body.observationId ?? null,
         name: body.name ?? "unknown",
-        value: body.value ?? null,
-        string_value: body.stringValue ?? null,
+        value,
+        string_value: stringValue,
         source: (body.source as string) ?? "API",
         comment: body.comment ?? null,
         author_user_id: body.authorUserId ?? null,
         config_id: body.configId ?? null,
-        data_type: (body.dataType as string) ?? "NUMERIC",
+        data_type: dataType,
         timestamp: body.timestamp
           ? new Date(body.timestamp as string).toISOString().replace("T", " ").replace("Z", "")
           : now,
         environment: (body.environment as string) ?? "default",
+      },
+    };
+  }
+
+  if (entityType === "dataset_run_item") {
+    const datasetVersion = (body.datasetVersion as string) ?? null;
+    if (datasetVersion) {
+      // Lite has no versioned (as-of) queries – log only (see D1/D2).
+      logger.debug(
+        `[processEventBatchLite] datasetVersion ${datasetVersion} ignored for dataset run item`,
+      );
+    }
+    return {
+      table: "dataset_run_items",
+      row: {
+        ...baseRow,
+        // Upstream semantics: the server generates the id when absent.
+        id: body.id ?? randomUUID(),
+        dataset_run_id: body.runId,
+        dataset_item_id: body.datasetItemId,
+        dataset_id: body.datasetId,
+        trace_id: body.traceId,
+        observation_id: body.observationId ?? null,
+        error: body.error ?? null,
+        dataset_item_valid_from: null,
+        dataset_version: datasetVersion,
       },
     };
   }
@@ -219,6 +269,7 @@ export const processEventBatchLite = async (
     traces: [],
     observations: [],
     scores: [],
+    dataset_run_items: [],
   };
 
   for (const event of input) {
@@ -316,12 +367,12 @@ export const processEventBatchLite = async (
         // Use merge semantics for traces: later events only overwrite
         // non-null fields, preserving name/userId/tags from earlier events.
         await db.mergeInsert({
-          table: table as "traces" | "observations" | "scores",
+          table: table as "traces" | "observations" | "scores" | "dataset_run_items",
           records: rows,
         });
       } else {
         await db.insert({
-          table: table as "traces" | "observations" | "scores",
+          table: table as "traces" | "observations" | "scores" | "dataset_run_items",
           records: rows,
         });
       }

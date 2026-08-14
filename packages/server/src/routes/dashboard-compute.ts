@@ -203,6 +203,15 @@ export async function buildDashboard(
   const { from, to } = window;
   const parts = splitWindow(window);
 
+  // All-time window: rollups only cover completed days (refresh runs every
+  // ~30s), so compute the current day live as an edge to avoid a blind spot
+  // for freshly ingested data, and keep materialized days capped at yesterday.
+  if (!from && !to) {
+    const today = new Date().toISOString().slice(0, 10);
+    parts.edges.push({ from: dayStartTs(today), toExclusive: null, day: today });
+    if (parts.matToDay === null || parts.matToDay >= today) parts.matToDay = prevDay(today);
+  }
+
   // ---- Materialized full days ---------------------------------------------
   const materialized =
     parts.matFromDay || parts.matToDay || (!from && !to)

@@ -54,6 +54,9 @@ packages/gateway/src/generated/
 # CLI runtime (pid/log/state)
 .peri-fuse/
 
+# Agent workflow runtime artifacts
+.claude/workflow-runs/
+
 # docker compose data volume (SQLite databases, salt, keys)
 data/
 

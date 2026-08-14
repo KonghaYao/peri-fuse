@@ -3,7 +3,6 @@ import { v4 } from "uuid";
 import type z from "zod";
 import { prisma } from "../../db";
 import { datasetRuns } from "../../db/schema/index.js";
-import { asLiteColumn } from "../../prisma-enums";
 import type { jsonSchema } from "../../utils/zod";
 
 type Json = z.infer<typeof jsonSchema>;
@@ -75,7 +74,9 @@ export const createOrFetchDatasetRun = async ({
         projectId,
         name,
         description: description ?? null,
-        metadata: asLiteColumn(metadata ?? {}),
+        // The metadata column is TEXT; better-sqlite3 would treat a raw object
+        // as named bind parameters and fail with "Too few parameter values".
+        metadata: metadata === undefined || metadata === null ? null : JSON.stringify(metadata),
         createdAt: ts,
         updatedAt: ts,
       })

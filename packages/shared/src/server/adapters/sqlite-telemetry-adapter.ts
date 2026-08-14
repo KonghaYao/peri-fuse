@@ -265,6 +265,28 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         PRIMARY KEY (project_id, id)
       );
 
+      -- Dataset run items (written by the dataset-run-item-create ingestion
+      -- event; mirrors upstream ClickHouse dataset_run_items_rmt). The dataset
+      -- run metadata itself lives in the metadata DB (dataset_runs) — this
+      -- table only links runs to traces/items in the telemetry DB.
+      CREATE TABLE IF NOT EXISTS dataset_run_items (
+        id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        dataset_run_id TEXT NOT NULL,
+        dataset_item_id TEXT NOT NULL,
+        dataset_id TEXT NOT NULL,
+        trace_id TEXT NOT NULL,
+        observation_id TEXT,
+        error TEXT,
+        dataset_item_valid_from TEXT,
+        dataset_version TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        event_ts TEXT NOT NULL DEFAULT (datetime('now')),
+        is_deleted INTEGER DEFAULT 0,
+        PRIMARY KEY (project_id, id)
+      );
+
       -- Indexes for common query patterns
       CREATE INDEX IF NOT EXISTS idx_traces_project_timestamp
         ON traces(project_id, timestamp DESC);
@@ -284,6 +306,13 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         ON scores(project_id, trace_id);
       CREATE INDEX IF NOT EXISTS idx_scores_project_name
         ON scores(project_id, name);
+
+      CREATE INDEX IF NOT EXISTS idx_dri_project_run
+        ON dataset_run_items(project_id, dataset_run_id);
+      CREATE INDEX IF NOT EXISTS idx_dri_project_item
+        ON dataset_run_items(project_id, dataset_item_id);
+      CREATE INDEX IF NOT EXISTS idx_dri_project_trace
+        ON dataset_run_items(project_id, trace_id);
 
       -- Performance indexes for aggregation-heavy queries (sessions/users/dashboard)
       -- Covers observations list filtering by name
@@ -523,7 +552,10 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
 
     // Determine PK columns for the ON CONFLICT target
     const pkColumns =
-      opts.table === "traces" || opts.table === "observations" || opts.table === "scores"
+      opts.table === "traces" ||
+      opts.table === "observations" ||
+      opts.table === "scores" ||
+      opts.table === "dataset_run_items"
         ? ["project_id", "id"]
         : ["id"];
 
@@ -550,6 +582,26 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       logger.error(`[SQLiteTelemetryAdapter] MergeInsert into ${opts.table} failed`, error);
       throw error;
     }
+  }
+
+  /**
+   * List dataset run items for a project, optionally scoped to one run.
+   * Read-only: routed through the worker pool when available (SELECT).
+   */
+  async queryDatasetRunItems(
+    projectId: string,
+    datasetRunId?: string,
+  ): Promise<Record<string, unknown>[]> {
+    if (datasetRunId) {
+      return this.query({
+        query: `SELECT * FROM dataset_run_items WHERE project_id = @projectId AND dataset_run_id = @datasetRunId AND is_deleted = 0 ORDER BY created_at ASC`,
+        params: { projectId, datasetRunId },
+      });
+    }
+    return this.query({
+      query: `SELECT * FROM dataset_run_items WHERE project_id = @projectId AND is_deleted = 0 ORDER BY created_at ASC`,
+      params: { projectId },
+    });
   }
 
   async *queryStream<T = Record<string, unknown>>(opts: TelemetryQueryOpts): AsyncGenerator<T> {

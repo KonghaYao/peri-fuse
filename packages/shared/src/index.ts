@@ -1,14 +1,15 @@
 // Model row/insert types (previously re-exported from `@prisma/client`) are now
 // inferred from the Drizzle schema. The `Prisma` namespace (sql builders, error
 // class, loose input types) comes from the prisma-compat module.
-export * from "./db/types.js";
+
+export * from "./constants";
 export {
   Prisma,
   PrismaClientKnownRequestError,
-  toKnownRequestError,
   type Sql,
+  toKnownRequestError,
 } from "./db/prisma-compat.js";
-export * from "./constants";
+export * from "./db/types.js";
 // domain
 export * from "./domain";
 export * from "./domain/dataset-items";
@@ -29,8 +30,13 @@ export * from "./features/batchExport/types";
 // comments
 export * from "./features/comments/types";
 // datasets
-export * from "./features/datasets/validation";
+export * from "./features/datasets";
 export * from "./features/entitlements/plans";
+// The API-shape EvalTemplate type (ISO string dates) shadows the DB row type
+// of the same name re-exported from "./db/types.js" above.
+export type { EvalTemplate } from "./features/evals";
+// evals
+export * from "./features/evals";
 // experiments
 export * from "./features/experiments/utils";
 // in-app agent
@@ -88,6 +94,10 @@ export {
   SurveyName,
 } from "./prisma-enums";
 export { normalizeIngestionSdkName } from "./server/ingestion/ingestionAttribution";
+// Dataset run item creation resolves-or-creates the run by name and may infer
+// a traceId from an observationId (POST /api/public/dataset-run-items).
+export { createOrFetchDatasetRun } from "./server/repositories/dataset-runs";
+export { liteGetObservationById } from "./server/repositories/lite-queries";
 export * from "./server/repositories/types";
 // metadata conversion
 export * from "./server/utils/metadata_conversion";

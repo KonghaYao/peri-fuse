@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { clearResponseCache } from "../response-cache";
 import { apiGet, apiPost } from "./helpers";
+import { TEST_PROJECT_ID } from "./test-db-paths";
 
 const runId = randomUUID().slice(0, 8);
 
@@ -71,6 +72,32 @@ function traceEvent(id: string, timestampIso: string, userId: string) {
 
 describe("dashboard (materialized daily stats)", () => {
   beforeAll(async () => {
+    // This suite shares one telemetry SQLite DB with the other test files.
+    // The figures asserted below are absolute counts over all time, so wipe
+    // rows whose EVENT timestamp falls on the current day (all other suites
+    // ingest "now"); this suite's own seeds are 1-3 days old and are
+    // materialized into daily_stats via backfillMissingDays below.
+    const { getTelemetryDB } = await import("@peri-fuse/shared/src/server/adapters");
+    const telemetry = getTelemetryDB();
+    const dayStart = new Date();
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const cutoff = dayStart.toISOString().replace("T", " ").replace("Z", "");
+    // observations has no `timestamp` column; its event time is `start_time`.
+    // trace_metrics rows are per-trace materialized counts (no day column) and
+    // feed summary.totalObservations, so they must be wiped too.
+    const tables: Array<[string, string]> = [
+      ["traces", "timestamp"],
+      ["observations", "start_time"],
+      ["scores", "timestamp"],
+      ["trace_metrics", "timestamp"],
+    ];
+    for (const [table, timeCol] of tables) {
+      await telemetry.command({
+        query: `DELETE FROM ${table} WHERE project_id = @projectId AND ${timeCol} >= @cutoff`,
+        params: { projectId: TEST_PROJECT_ID, cutoff },
+      });
+    }
+
     const res = await apiPost("/api/public/ingestion", {
       batch: [
         traceEvent(traceA, day1Morning, `dash-u1-${runId}`),

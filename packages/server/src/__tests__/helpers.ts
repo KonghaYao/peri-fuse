@@ -58,3 +58,35 @@ export async function apiPost<T = any>(
   });
   return { status: res.status, body: await res.json().catch(() => null) };
 }
+
+/** Generic request for verbs without a dedicated helper (PATCH/DELETE/…). */
+export async function apiRequest<T = any>(
+  path: string,
+  method: string,
+  body?: unknown,
+  auth: string = basicAuth(),
+): Promise<ApiResult<T>> {
+  const headers: Record<string, string> = { Authorization: auth };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const res = await getApp().request(path, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return { status: res.status, body: await res.json().catch(() => null) };
+}
+
+export function apiPatch<T = any>(
+  path: string,
+  body: unknown,
+  auth: string = basicAuth(),
+): Promise<ApiResult<T>> {
+  return apiRequest(path, "PATCH", body, auth);
+}
+
+export function apiDelete<T = any>(
+  path: string,
+  auth: string = basicAuth(),
+): Promise<ApiResult<T>> {
+  return apiRequest(path, "DELETE", undefined, auth);
+}
