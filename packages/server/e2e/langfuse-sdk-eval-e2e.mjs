@@ -33,7 +33,9 @@ function check(name, cond, extra) {
   } else {
     fail++;
     failures.push(name);
-    console.log(`  ✗ ${name}${extra !== undefined ? " — " + JSON.stringify(extra)?.slice(0, 200) : ""}`);
+    console.log(
+      `  ✗ ${name}${extra !== undefined ? " — " + JSON.stringify(extra)?.slice(0, 200) : ""}`,
+    );
   }
 }
 function section(title) {
@@ -45,13 +47,19 @@ async function api(method, path, body, useAuth = true) {
     method,
     headers: {
       "Content-Type": "application/json",
-      ...(useAuth ? { Authorization: "Basic " + Buffer.from(`${PK}:${SK}`).toString("base64") } : {}),
+      ...(useAuth
+        ? { Authorization: "Basic " + Buffer.from(`${PK}:${SK}`).toString("base64") }
+        : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
   let json;
-  try { json = JSON.parse(text); } catch { json = text; }
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = text;
+  }
   return { status: res.status, body: json };
 }
 
@@ -105,9 +113,19 @@ async function testSdkScores() {
   // All four data types through the official SDK score() chain, flushed
   // together in one batch.
   trace.score({ name: names.numeric, value: 0.85, dataType: "NUMERIC", comment: "accuracy" });
-  trace.score({ name: names.categorical, value: "good", dataType: "CATEGORICAL", comment: "quality" });
+  trace.score({
+    name: names.categorical,
+    value: "good",
+    dataType: "CATEGORICAL",
+    comment: "quality",
+  });
   trace.score({ name: names.boolean, value: 1, dataType: "BOOLEAN", comment: "is_correct" });
-  trace.score({ name: names.text, value: "very good translation", dataType: "TEXT", comment: "feedback" });
+  trace.score({
+    name: names.text,
+    value: "very good translation",
+    dataType: "TEXT",
+    comment: "feedback",
+  });
   await langfuse.flushAsync();
   await sleep(500);
 
@@ -118,15 +136,38 @@ async function testSdkScores() {
   check("NUMERIC score persisted", byName[names.numeric]?.value === 0.85, byName[names.numeric]);
   // CATEGORICAL/BOOLEAN/TEXT persist the label in stringValue with a numeric
   // placeholder in value (upstream inflateScoreBody semantics).
-  check("CATEGORICAL score persisted", byName[names.categorical]?.stringValue === "good" && byName[names.categorical]?.dataType === "CATEGORICAL", byName[names.categorical]);
-  check("BOOLEAN score persisted", byName[names.boolean]?.stringValue === "True" && byName[names.boolean]?.dataType === "BOOLEAN", byName[names.boolean]);
-  check("TEXT score persisted", byName[names.text]?.stringValue === "very good translation" && byName[names.text]?.dataType === "TEXT", byName[names.text]);
+  check(
+    "CATEGORICAL score persisted",
+    byName[names.categorical]?.stringValue === "good" &&
+      byName[names.categorical]?.dataType === "CATEGORICAL",
+    byName[names.categorical],
+  );
+  check(
+    "BOOLEAN score persisted",
+    byName[names.boolean]?.stringValue === "True" && byName[names.boolean]?.dataType === "BOOLEAN",
+    byName[names.boolean],
+  );
+  check(
+    "TEXT score persisted",
+    byName[names.text]?.stringValue === "very good translation" &&
+      byName[names.text]?.dataType === "TEXT",
+    byName[names.text],
+  );
   check("scores carry traceId", byName[names.numeric]?.traceId === trace.id, byName[names.numeric]);
 
   // Name filter
-  const byNameFilter = await api("GET", `/api/public/scores?name=${encodeURIComponent(names.numeric)}`);
+  const byNameFilter = await api(
+    "GET",
+    `/api/public/scores?name=${encodeURIComponent(names.numeric)}`,
+  );
   const numRows = byNameFilter.body?.data ?? [];
-  check("GET /api/public/scores?name= filters", byNameFilter.status === 200 && numRows.length >= 1 && numRows.every((s) => s.name === names.numeric), byNameFilter.body);
+  check(
+    "GET /api/public/scores?name= filters",
+    byNameFilter.status === 200 &&
+      numRows.length >= 1 &&
+      numRows.every((s) => s.name === names.numeric),
+    byNameFilter.body,
+  );
 
   return { traceId: trace.id, names, observationId: span.id };
 }
@@ -144,14 +185,26 @@ async function testScoreConfigsAndPostScores(ctx) {
     minValue: 0,
     maxValue: 1,
   });
-  check("POST /api/public/score-configs → 200 + id", created.status === 200 && typeof created.body?.id === "string", created);
+  check(
+    "POST /api/public/score-configs → 200 + id",
+    created.status === 200 && typeof created.body?.id === "string",
+    created,
+  );
   const configId = created.body.id;
 
   const list = await api("GET", "/api/public/score-configs");
-  check("GET /api/public/score-configs lists it", list.status === 200 && list.body?.data?.some((c) => c.id === configId), list.body);
+  check(
+    "GET /api/public/score-configs lists it",
+    list.status === 200 && list.body?.data?.some((c) => c.id === configId),
+    list.body,
+  );
 
   const got = await api("GET", `/api/public/score-configs/${configId}`);
-  check("GET /api/public/score-configs/{id} → 200", got.status === 200 && got.body?.name === cfgName, got);
+  check(
+    "GET /api/public/score-configs/{id} → 200",
+    got.status === 200 && got.body?.name === cfgName,
+    got,
+  );
 
   const missing = await api("GET", `/api/public/score-configs/does-not-exist-${runId}`);
   check("GET unknown score-config → 404", missing.status === 404, missing);
@@ -165,11 +218,19 @@ async function testScoreConfigsAndPostScores(ctx) {
     value: 0.9,
     dataType: "NUMERIC",
   });
-  check("POST /api/public/scores with configId → 200 {id}", posted.status === 200 && typeof posted.body?.id === "string", posted);
+  check(
+    "POST /api/public/scores with configId → 200 {id}",
+    posted.status === 200 && typeof posted.body?.id === "string",
+    posted,
+  );
   const postedScoreId = posted.body.id;
 
   const viaConfig = await api("GET", `/api/public/scores?configId=${configId}`);
-  check("GET /api/public/scores?configId= finds it", viaConfig.status === 200 && (viaConfig.body?.data ?? []).some((s) => s.id === postedScoreId), viaConfig.body);
+  check(
+    "GET /api/public/scores?configId= finds it",
+    viaConfig.status === 200 && (viaConfig.body?.data ?? []).some((s) => s.id === postedScoreId),
+    viaConfig.body,
+  );
 
   // Negative: unknown configId → 404
   const badConfig = await api("POST", "/api/public/scores", {
@@ -215,7 +276,11 @@ async function testEvalConfigs() {
   });
 
   const c1 = await api("POST", "/api/public/evals", createBody("eval-config-a"));
-  check("POST /api/public/evals → 200 + id", c1.status === 200 && typeof c1.body?.id === "string", c1);
+  check(
+    "POST /api/public/evals → 200 + id",
+    c1.status === 200 && typeof c1.body?.id === "string",
+    c1,
+  );
   const evalConfigId = c1.body.id;
 
   // Same scoreName → version increments
@@ -223,15 +288,27 @@ async function testEvalConfigs() {
   check("second same-scoreName eval → version=2", c2.status === 200 && c2.body?.version === 2, c2);
 
   const list = await api("GET", "/api/public/evals");
-  check("GET /api/public/evals lists configs", list.status === 200 && (list.body?.data ?? []).length >= 2, list.body);
+  check(
+    "GET /api/public/evals lists configs",
+    list.status === 200 && (list.body?.data ?? []).length >= 2,
+    list.body,
+  );
   const alias = await api("GET", "/api/public/evals/configs");
   check("GET /api/public/evals/configs alias works", alias.status === 200, alias);
 
   const got = await api("GET", `/api/public/evals/${evalConfigId}`);
-  check("GET /api/public/evals/{id} → 200", got.status === 200 && got.body?.id === evalConfigId, got);
+  check(
+    "GET /api/public/evals/{id} → 200",
+    got.status === 200 && got.body?.id === evalConfigId,
+    got,
+  );
 
   const patched = await api("PATCH", `/api/public/evals/${evalConfigId}`, { sampling: 0.5 });
-  check("PATCH eval config → 200", patched.status === 200 && patched.body?.sampling === 0.5, patched);
+  check(
+    "PATCH eval config → 200",
+    patched.status === 200 && patched.body?.sampling === 0.5,
+    patched,
+  );
 
   const missing = await api("GET", `/api/public/evals/nope-${runId}`);
   check("GET unknown eval config → 404", missing.status === 404, missing);
@@ -259,7 +336,11 @@ async function testEvalTemplates() {
     vars: ["input", "output"],
     outputSchema: { type: "object", properties: { score: { type: "number" } } },
   });
-  check("POST /api/public/evals/templates → 200 + id", t1.status === 200 && typeof t1.body?.id === "string", t1);
+  check(
+    "POST /api/public/evals/templates → 200 + id",
+    t1.status === 200 && typeof t1.body?.id === "string",
+    t1,
+  );
   const tplId = t1.body.id;
 
   // Same name → version increments
@@ -272,12 +353,18 @@ async function testEvalTemplates() {
   check("second same-name template → version=2", t2.status === 200 && t2.body?.version === 2, t2);
 
   const list = await api("GET", "/api/public/evals/templates");
-  check("GET /api/public/evals/templates lists", list.status === 200 && (list.body?.data ?? []).some((t) => t.id === tplId), list.body);
+  check(
+    "GET /api/public/evals/templates lists",
+    list.status === 200 && (list.body?.data ?? []).some((t) => t.id === tplId),
+    list.body,
+  );
 
   const got = await api("GET", `/api/public/evals/templates/${tplId}`);
   check("GET template by id → 200", got.status === 200 && got.body?.id === tplId, got);
 
-  const patched = await api("PATCH", `/api/public/evals/templates/${tplId}`, { prompt: "Updated judge prompt" });
+  const patched = await api("PATCH", `/api/public/evals/templates/${tplId}`, {
+    prompt: "Updated judge prompt",
+  });
   check("PATCH template → 200", patched.status === 200, patched);
 
   const missing = await api("GET", `/api/public/evals/templates/nope-${runId}`);
@@ -298,15 +385,26 @@ async function testDatasets(ctx) {
   section("Datasets CRUD + runs + run items");
 
   const dsName = `eval-ds-${runId}`;
-  const ds = await api("POST", "/api/public/datasets", { name: dsName, metadata: { purpose: "eval-e2e" } });
-  check("POST /api/public/datasets → 200 + id", ds.status === 200 && typeof ds.body?.id === "string", ds);
+  const ds = await api("POST", "/api/public/datasets", {
+    name: dsName,
+    metadata: { purpose: "eval-e2e" },
+  });
+  check(
+    "POST /api/public/datasets → 200 + id",
+    ds.status === 200 && typeof ds.body?.id === "string",
+    ds,
+  );
   const datasetId = ds.body.id;
 
   const dup = await api("POST", "/api/public/datasets", { name: dsName });
   check("duplicate dataset name → 409", dup.status === 409, dup);
 
   const listDs = await api("GET", "/api/public/datasets");
-  check("GET /api/public/datasets lists", listDs.status === 200 && listDs.body?.data?.some((d) => d.id === datasetId), listDs.body);
+  check(
+    "GET /api/public/datasets lists",
+    listDs.status === 200 && listDs.body?.data?.some((d) => d.id === datasetId),
+    listDs.body,
+  );
 
   const itemId = `eval-item-${runId}`;
   const item = await api("POST", `/api/public/datasets/${datasetId}/items`, {
@@ -316,7 +414,11 @@ async function testDatasets(ctx) {
   });
   // The endpoint returns an array of created items (SDK batch semantics).
   const itemBody = Array.isArray(item.body) ? item.body[0] : item.body;
-  check("POST dataset items → 200 + id", item.status === 200 && typeof itemBody?.id === "string", item);
+  check(
+    "POST dataset items → 200 + id",
+    item.status === 200 && typeof itemBody?.id === "string",
+    item,
+  );
 
   // Versioning: POST same item id again → new version (input updated)
   const itemV2 = await api("POST", `/api/public/datasets/${datasetId}/items`, {
@@ -327,18 +429,30 @@ async function testDatasets(ctx) {
 
   const items = await api("GET", `/api/public/datasets/${datasetId}/items`);
   const versions = items.body?.data?.filter((i) => i.id === itemId) ?? [];
-  check("GET dataset items → current version only", versions.length === 1 && versions[0]?.input?.language === "en", items.body);
+  check(
+    "GET dataset items → current version only",
+    versions.length === 1 && versions[0]?.input?.language === "en",
+    items.body,
+  );
 
   // Runs
   const run = await api("POST", `/api/public/datasets/${datasetId}/runs`, {
     name: `eval-run-${runId}`,
     description: "e2e run",
   });
-  check("POST dataset runs → 200 + id", run.status === 200 && typeof run.body?.id === "string", run);
+  check(
+    "POST dataset runs → 200 + id",
+    run.status === 200 && typeof run.body?.id === "string",
+    run,
+  );
   const runId2 = run.body.id;
 
   const runs = await api("GET", `/api/public/datasets/${datasetId}/runs`);
-  check("GET dataset runs lists", runs.status === 200 && runs.body?.data?.some((r) => r.id === runId2), runs.body);
+  check(
+    "GET dataset runs lists",
+    runs.status === 200 && runs.body?.data?.some((r) => r.id === runId2),
+    runs.body,
+  );
 
   // Run items via the public REST endpoint (upstream `datasetRunItems_create`).
   // The ingestion dataset-run-item-create event is internal-only and rejected.
@@ -349,8 +463,18 @@ async function testDatasets(ctx) {
     datasetItemId: itemId,
     traceId: ctx.traceId,
   });
-  check("POST /api/public/dataset-run-items → 200 + id", riCreate.status === 200 && typeof riCreate.body?.id === "string", riCreate);
-  check("run item response carries datasetRunId/datasetRunName", riCreate.status === 200 && riCreate.body?.datasetRunName === runItemName && typeof riCreate.body?.datasetRunId === "string", riCreate.body);
+  check(
+    "POST /api/public/dataset-run-items → 200 + id",
+    riCreate.status === 200 && typeof riCreate.body?.id === "string",
+    riCreate,
+  );
+  check(
+    "run item response carries datasetRunId/datasetRunName",
+    riCreate.status === 200 &&
+      riCreate.body?.datasetRunName === runItemName &&
+      typeof riCreate.body?.datasetRunId === "string",
+    riCreate.body,
+  );
 
   // Same runName again → reuses the run (no conflict, no duplicate run)
   const riCreate2 = await api("POST", "/api/public/dataset-run-items", {
@@ -358,7 +482,11 @@ async function testDatasets(ctx) {
     datasetItemId: itemId,
     traceId: ctx.traceId,
   });
-  check("same runName re-post → 200, run reused", riCreate2.status === 200 && riCreate2.body?.datasetRunId === riCreate.body?.datasetRunId, riCreate2);
+  check(
+    "same runName re-post → 200, run reused",
+    riCreate2.status === 200 && riCreate2.body?.datasetRunId === riCreate.body?.datasetRunId,
+    riCreate2,
+  );
 
   // Unknown datasetItemId → 404
   const riMissing = await api("POST", "/api/public/dataset-run-items", {
@@ -383,26 +511,40 @@ async function testDatasets(ctx) {
     datasetItemId: itemId,
     observationId: ctx.observationId,
   });
-  check("traceId inferred from observationId → 200", riInfer.status === 200 && riInfer.body?.traceId === ctx.traceId, riInfer);
-  check("new runName auto-created a run", riInfer.status === 200 && typeof riInfer.body?.datasetRunId === "string", riInfer.body);
+  check(
+    "traceId inferred from observationId → 200",
+    riInfer.status === 200 && riInfer.body?.traceId === ctx.traceId,
+    riInfer,
+  );
+  check(
+    "new runName auto-created a run",
+    riInfer.status === 200 && typeof riInfer.body?.datasetRunId === "string",
+    riInfer.body,
+  );
   await sleep(2200); // GET runs list is response-cached for 2s
   const inferRuns = await api("GET", `/api/public/datasets/${datasetId}/runs`);
-  check("auto-created run is listed", inferRuns.status === 200 && (inferRuns.body?.data ?? []).some((r) => r.name === inferRunName), inferRuns.body);
+  check(
+    "auto-created run is listed",
+    inferRuns.status === 200 && (inferRuns.body?.data ?? []).some((r) => r.name === inferRunName),
+    inferRuns.body,
+  );
 
   // The ingestion event stays internal-only on the public API
   const ingest = await api("POST", "/api/public/ingestion", {
-    batch: [{
-      id: `eval-runitem-rejected-${runId}`,
-      type: "dataset-run-item-create",
-      timestamp: new Date().toISOString(),
-      body: {
-        traceId: ctx.traceId,
-        datasetId,
-        runId: runId2,
-        datasetItemId: itemId,
-        datasetVersion: null,
+    batch: [
+      {
+        id: `eval-runitem-rejected-${runId}`,
+        type: "dataset-run-item-create",
+        timestamp: new Date().toISOString(),
+        body: {
+          traceId: ctx.traceId,
+          datasetId,
+          runId: runId2,
+          datasetItemId: itemId,
+          datasetVersion: null,
+        },
       },
-    }],
+    ],
   });
   // Ingestion reports per-event results as 207; the run-item event must fail
   // with 400 (internal-only usage).
@@ -419,11 +561,17 @@ async function testDatasets(ctx) {
   const runDetail = await api("GET", `/api/public/datasets/${datasetId}/runs/${runId2}`);
   check("GET run detail → 200 with items", runDetail.status === 200, runDetail);
   const runItems = runDetail.body?.items ?? runDetail.body?.data ?? [];
-  const ri = Array.isArray(runItems) ? runItems.find((x) => x?.datasetItemId === itemId) : undefined;
+  const ri = Array.isArray(runItems)
+    ? runItems.find((x) => x?.datasetItemId === itemId)
+    : undefined;
   check("run detail contains our run item", ri !== undefined, runDetail.body);
   if (ri) {
     check("run item carries traceId", ri.traceId === ctx.traceId, ri);
-    check("run item scores joined (≥1 from SDK scores)", Array.isArray(ri.scores) && ri.scores.length >= 1, ri);
+    check(
+      "run item scores joined (≥1 from SDK scores)",
+      Array.isArray(ri.scores) && ri.scores.length >= 1,
+      ri,
+    );
   }
 
   const missingRun = await api("GET", `/api/public/datasets/${datasetId}/runs/nope-${runId}`);
