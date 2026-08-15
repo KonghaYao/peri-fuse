@@ -45,9 +45,11 @@ export * from "./outbound-url";
 // Query filter utilities
 export {
   ArrayOptionsFilter,
+  BooleanFilter,
   CategoryOptionsFilter,
   DateTimeFilter,
   FilterList,
+  NullFilter,
   NumberFilter,
   StringFilter,
   StringOptionsFilter,

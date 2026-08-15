@@ -32,6 +32,7 @@ import {
   createIngestionAttribution,
   eventTypes,
   type IngestionHeaderMap,
+  logger,
   processEventBatch,
   validateAndInflateScore,
   validateConfigAgainstBody,
@@ -55,6 +56,7 @@ type InflatedScoreForWrite = {
   id: string;
   traceId?: string | null;
   observationId?: string | null;
+  sessionId?: string | null;
   name: string;
   value: number;
   stringValue: string | null;
@@ -63,6 +65,7 @@ type InflatedScoreForWrite = {
   configId?: string | null;
   dataType: string;
   environment: string;
+  metadata?: unknown;
 };
 
 type PostScoreBody = z.infer<typeof PostScoresBodyV1>;
@@ -176,7 +179,7 @@ const inflateScoreBodyLite = (params: {
       value: 0,
       name: CORRECTION_NAME,
       longStringValue: body.value,
-      stringValue: null,
+      stringValue: body.value,
       dataType: ScoreDataTypeEnum.CORRECTION,
     };
     return result;
@@ -353,36 +356,82 @@ app.post("/api/public/scores", authMiddleware, async (c) => {
   if (result.errors.length > 0) {
     const db = getTelemetryDB();
     const now = new Date().toISOString().replace("T", " ").replace("Z", "");
-    await db.insert({
-      table: "scores",
-      records: [
-        {
-          id: inflated.id,
-          project_id: projectId,
-          created_at: now,
-          updated_at: now,
-          event_ts: now,
-          is_deleted: 0,
-          trace_id: inflated.traceId ?? null,
-          observation_id: inflated.observationId ?? null,
-          name: inflated.name ?? "unknown",
-          value: inflated.value ?? null,
-          string_value: inflated.stringValue ?? null,
-          source: inflated.source ?? "API",
-          comment: inflated.comment ?? null,
-          author_user_id: null,
-          config_id: inflated.configId ?? null,
-          data_type: inflated.dataType ?? "NUMERIC",
-          timestamp: now,
-          environment: inflated.environment ?? "default",
-        },
-      ],
-    });
+    try {
+      await db.insert({
+        table: "scores",
+        records: [
+          {
+            id: inflated.id,
+            project_id: projectId,
+            created_at: now,
+            updated_at: now,
+            event_ts: now,
+            is_deleted: 0,
+            trace_id: inflated.traceId ?? null,
+            observation_id: inflated.observationId ?? null,
+            session_id: inflated.sessionId ?? null,
+            name: inflated.name ?? "unknown",
+            value: inflated.value ?? null,
+            string_value: inflated.stringValue ?? null,
+            source: inflated.source ?? "API",
+            comment: inflated.comment ?? null,
+            author_user_id: null,
+            config_id: inflated.configId ?? null,
+            data_type: inflated.dataType ?? "NUMERIC",
+            timestamp: now,
+            environment: inflated.environment ?? "default",
+            metadata:
+              inflated.metadata !== undefined && inflated.metadata !== null
+                ? JSON.stringify(inflated.metadata)
+                : "{}",
+          },
+        ],
+      });
+    } catch (error) {
+      // The direct fallback is the last write path for inflated scores; a
+      // failure here must surface as a 500 (not silently drop the score).
+      logger.error("[POST /api/public/scores] Direct telemetry insert failed", error);
+      throw new Error(
+        `Failed to persist score ${inflated.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   // Official contract: 200 + { id } (upsert on id; SDK scores.create relies on
   // the JSON body).
   return c.json({ id: scoreId }, 200);
+});
+
+/**
+ * DELETE /api/public/scores/{scoreId} (v1, CLI canonical `scores delete`).
+ *
+ * Soft delete (is_deleted = 1), mirroring upstream's ClickHouse delete-row
+ * semantics — all read paths filter is_deleted = 0, so the score disappears
+ * from every list/get. Project isolation via project_id in the WHERE clause;
+ * a missing or already-deleted score (or one owned by another project) is a
+ * 404. Spec: 204 with no body.
+ */
+app.delete("/api/public/scores/:scoreId", authMiddleware, async (c) => {
+  const auth = c.get("auth");
+  const projectId = auth.scope.projectId;
+  const scoreId = c.req.param("scoreId");
+
+  const db = getTelemetryDB();
+  const result = await db.command({
+    query:
+      "UPDATE scores SET is_deleted = 1, updated_at = @now WHERE project_id = @projectId AND id = @scoreId AND is_deleted = 0",
+    params: {
+      projectId,
+      scoreId,
+      now: new Date().toISOString().replace("T", " ").replace("Z", ""),
+    },
+  });
+
+  if (result.changes === 0) {
+    throw new LangfuseNotFoundError(`Score with id '${scoreId}' not found`);
+  }
+
+  return c.body(null, 204);
 });
 
 export default app;

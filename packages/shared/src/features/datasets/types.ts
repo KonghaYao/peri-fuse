@@ -91,6 +91,27 @@ export type DatasetItemPublicApi = {
   validFrom: string;
 };
 
+/**
+ * V1 canonical dataset item shape (GET/POST /api/public/dataset-items,
+ * CLI canonical): the upstream `DatasetItem` contract — no projectId/validFrom
+ * leak, `datasetName` resolved via join, `mediaReferences` always empty (lite
+ * has no media support).
+ */
+export type DatasetItemV1PublicApi = {
+  id: string;
+  status: DatasetStatus;
+  input: JsonNested | null;
+  expectedOutput: JsonNested | null;
+  metadata: JsonNested | null;
+  sourceTraceId: string | null;
+  sourceObservationId: string | null;
+  datasetId: string;
+  datasetName: string;
+  createdAt: string;
+  updatedAt: string;
+  mediaReferences: [];
+};
+
 export type DatasetRunPublicApi = {
   id: string;
   name: string;

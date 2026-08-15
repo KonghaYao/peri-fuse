@@ -12,17 +12,24 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { LiteServerEnv } from "./auth";
 import dashboardRoutes from "./routes/dashboard";
+import datasetItemsRoutes from "./routes/dataset-items";
 import datasetsRoutes from "./routes/datasets";
+import datasetsV2Routes from "./routes/datasets-v2";
 import evalTemplatesRoutes from "./routes/eval-templates";
 import evalsRoutes from "./routes/evals";
 import gatewayProxyRoutes from "./routes/gateway-proxy";
 import healthRoutes from "./routes/health";
 import ingestionRoutes from "./routes/ingestion";
 import manageRoutes from "./routes/manage";
+import metricsV2Routes from "./routes/metrics-v2";
 import observationsRoutes from "./routes/observations";
+import observationsV2Routes from "./routes/observations-v2";
 import otelRoutes from "./routes/otel";
+import promptsV2Routes from "./routes/prompts-v2";
 import scoreConfigsRoutes from "./routes/score-configs";
 import scoresRoutes from "./routes/scores";
+import scoresV2Routes from "./routes/scores-v2";
+import scoresV3Routes from "./routes/scores-v3";
 import sessionsRoutes from "./routes/sessions";
 import tracesRoutes from "./routes/traces";
 import usersRoutes from "./routes/users";
@@ -78,6 +85,13 @@ export function createApp(): Hono<LiteServerEnv> {
   app.route("/", evalTemplatesRoutes);
   app.route("/", evalsRoutes);
   app.route("/", datasetsRoutes);
+  app.route("/", datasetItemsRoutes);
+  app.route("/", datasetsV2Routes);
+  app.route("/", observationsV2Routes);
+  app.route("/", promptsV2Routes);
+  app.route("/", scoresV2Routes);
+  app.route("/", scoresV3Routes);
+  app.route("/", metricsV2Routes);
   app.route("/", sessionsRoutes);
   app.route("/", usersRoutes);
   app.route("/", dashboardRoutes);
@@ -86,6 +100,18 @@ export function createApp(): Hono<LiteServerEnv> {
   // Gateway proxy routes (data plane): /v1/chat/completions, /v1/messages, /v1/models
   // Auth is handled internally by unifiedAuth middleware.
   app.route("/", createGatewayProxyRouter() as unknown as Hono<LiteServerEnv>);
+
+  // --- API 404 兜底（必须在 SPA fallback 之前注册）---
+  // 未注册的 /api/public/* 路径（任意方法）→ 404 JSON，复用 LangfuseNotFoundError
+  // 经 onError 产出的 {message} 形状。此前这类路径会落入 SPA fallback 返回
+  // 200 + index.html，导致 SDK/CLI 把 HTML 当 JSON 解析（静默失败）。
+  app.on(["GET", "POST", "PUT", "PATCH", "DELETE"], "/api/public/*", () => {
+    throw new LangfuseNotFoundError();
+  });
+  // 其余以 /api/ 开头的未匹配路径：跳过 SPA fallback，走全局 JSON 404。
+  app.use("/api/*", async (c) => {
+    return c.notFound();
+  });
 
   // Serve the web SPA build when present. In development the frontend runs
   // on its own Vite dev server, so the dist folder may not exist — in that
@@ -110,6 +136,10 @@ export function createApp(): Hono<LiteServerEnv> {
       "[lite-server] lite-web dist not found — API only (run the Vite dev server for the UI)",
     );
   }
+
+  // Global JSON 404 for everything else (unknown routes, non-API paths when no
+  // SPA build exists, etc.) — Hono's default fallback is text/plain.
+  app.notFound((c) => c.json({ message: "Not Found" }, 404));
 
   return app;
 }

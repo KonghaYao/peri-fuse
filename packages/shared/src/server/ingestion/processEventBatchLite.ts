@@ -170,12 +170,12 @@ function eventToRow(
     // disappear from GET /api/public/scores.
     let value = body.value ?? null;
     let stringValue = body.stringValue ?? null;
-    if (dataType === "CATEGORICAL" || dataType === "TEXT") {
+    if (dataType === "CATEGORICAL" || dataType === "TEXT" || dataType === "CORRECTION") {
       stringValue = typeof body.value === "string" ? body.value : stringValue;
       // Upstream inflateScoreBody stores a numeric placeholder (config-mapped
-      // value for CATEGORICAL, 0 for TEXT) in `value`; the text lives in
-      // `string_value`. A raw string in `value` becomes NaN on read and the
-      // score is dropped by the public-API validation.
+      // value for CATEGORICAL, 0 for TEXT/CORRECTION) in `value`; the text
+      // lives in `string_value`. A raw string in `value` becomes NaN on read
+      // and the score is dropped by the public-API validation.
       value = 0;
     } else if (dataType === "BOOLEAN") {
       stringValue = body.value === 1 ? "True" : "False";
@@ -190,6 +190,7 @@ function eventToRow(
         id: body.id ?? randomUUID(),
         trace_id: body.traceId ?? null,
         observation_id: body.observationId ?? null,
+        session_id: body.sessionId ?? null,
         name: body.name ?? "unknown",
         value,
         string_value: stringValue,
@@ -202,6 +203,7 @@ function eventToRow(
           ? new Date(body.timestamp as string).toISOString().replace("T", " ").replace("Z", "")
           : now,
         environment: (body.environment as string) ?? "default",
+        metadata: serializeValue(body.metadata) ?? "{}",
       },
     };
   }

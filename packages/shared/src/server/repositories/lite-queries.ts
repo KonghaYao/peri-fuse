@@ -7,6 +7,7 @@
  */
 
 import type { MetadataDomain, TraceDomain } from "../../domain";
+import { InvalidRequestError } from "../../errors";
 import { getTelemetryDB } from "../adapters";
 import { logger } from "../logger";
 import type { FilterList } from "../queries/clickhouse-sql/clickhouse-filter";
@@ -92,6 +93,8 @@ const LITE_FILTER_COLUMNS: Record<string, Set<string>> = {
     "id",
     "author_user_id",
     "queue_id",
+    "metadata",
+    "session_id",
   ]),
   traces: new Set([
     "id",
@@ -116,11 +119,26 @@ function escapeLike(value: string): string {
 }
 
 /**
+ * Strip a table prefix from a clickhouseSelect ('t.user_id' -> 'user_id').
+ * Column mappings for traces-table columns use prefixed selects ('t.user_id',
+ * 't.tags', 't.name') while the special-case branches below match bare names.
+ */
+function stripTablePrefix(field: string): string {
+  const dot = field.indexOf(".");
+  return dot > 0 ? field.slice(dot + 1) : field;
+}
+
+/**
  * Convert a FilterList into a SQLite WHERE clause (without the `WHERE` keyword)
  * plus bound parameters. Supports the filter types used by the public API
- * observations/scores/traces endpoints. Filters targeting columns that do not
- * exist on the given table are skipped (they are handled via subqueries or are
- * not applicable in lite mode).
+ * observations/scores/traces endpoints.
+ *
+ * Filters on columns that cannot be executed against the target table are NOT
+ * silently dropped: trace-property filters (user_id/session_id/trace_name/tags)
+ * are lowered to EXISTS subqueries on `traces`, `dataset_run_id` (lite has no
+ * dataset-run scores) compiles to a constant-false clause, and any other
+ * column outside the per-table whitelist raises InvalidRequestError (400)
+ * instead of returning unfiltered data.
  *
  * The base query is expected to already constrain `project_id` and
  * `is_deleted = 0`.
@@ -145,29 +163,88 @@ export function liteBuildFilterWhere(
     // project_id / is_deleted are enforced by the base query.
     if (field === "project_id" || field === "is_deleted") return;
 
-    // userId on observations lives on the traces table -> subquery.
-    if (table === "observations" && clickhouseTable === "traces" && field === "user_id") {
-      const p = `uf${idx++}`;
-      params[p] = String(raw.value ?? "");
-      conditions.push(
-        `trace_id IN (SELECT id FROM traces WHERE project_id = @projectId AND user_id = @${p})`,
+    // Trace-property filters on observations live on the traces table ->
+    // EXISTS subqueries.
+    if (table === "observations" && clickhouseTable === "traces") {
+      const traceField = stripTablePrefix(field);
+      if (traceField === "user_id" || traceField === "session_id" || traceField === "trace_name") {
+        const p = `uf${idx++}`;
+        params[p] = String(raw.value ?? "");
+        const traceColumn = traceField === "trace_name" ? "name" : traceField;
+        conditions.push(
+          `trace_id IN (SELECT id FROM traces WHERE project_id = @projectId AND ${traceColumn} = @${p})`,
+        );
+        return;
+      }
+      // Trace-tag filters -> match the JSON tags array on traces.
+      // "all of" requires every tag; "any of" matches any tag.
+      if (traceField === "tags") {
+        const values = Array.isArray(raw.values) ? (raw.values as unknown[]) : [];
+        if (values.length === 0) return;
+        const parts = values.map((v) => {
+          const p = `tag${idx++}`;
+          params[p] = `%"${escapeLike(String(v))}"%`;
+          return `t.tags LIKE @${p}`;
+        });
+        if (operator === "none of") {
+          conditions.push(
+            `trace_id NOT IN (SELECT t.id FROM traces t WHERE t.project_id = @projectId AND (${parts.join(" OR ")}))`,
+          );
+        } else {
+          conditions.push(
+            `trace_id IN (SELECT t.id FROM traces t WHERE t.project_id = @projectId AND ${operator === "all of" ? parts.join(" AND ") : `(${parts.join(" OR ")})`})`,
+          );
+        }
+        return;
+      }
+      throw new InvalidRequestError(
+        `Filter column "${field}" on table "traces" is not supported for observations in lite mode`,
       );
-      return;
     }
 
-    // Trace-tag filters on scores -> match the JSON tags array on traces.
-    if (table === "scores" && clickhouseTable === "traces" && field === "tags") {
-      const values = Array.isArray(raw.values) ? (raw.values as unknown[]) : [];
-      if (values.length === 0) return;
-      const ors = values.map((v) => {
-        const p = `tag${idx++}`;
-        params[p] = `%"${escapeLike(String(v))}"%`;
-        return `t.tags LIKE @${p}`;
-      });
-      conditions.push(
-        `trace_id IN (SELECT t.id FROM traces t WHERE t.project_id = @projectId AND (${ors.join(" OR ")}))`,
+    // Trace-property filters on scores -> EXISTS subqueries on traces.
+    if (table === "scores" && clickhouseTable === "traces") {
+      const traceField = stripTablePrefix(field);
+      if (traceField === "user_id") {
+        const p = `uf${idx++}`;
+        params[p] = String(raw.value ?? "");
+        conditions.push(
+          `trace_id IN (SELECT id FROM traces WHERE project_id = @projectId AND user_id = @${p})`,
+        );
+        return;
+      }
+      // Spec (v2/scores traceTags): "Only scores linked to traces that include
+      // ALL of these tags will be returned" — "all of" requires every tag.
+      if (traceField === "tags") {
+        const values = Array.isArray(raw.values) ? (raw.values as unknown[]) : [];
+        if (values.length === 0) return;
+        const parts = values.map((v) => {
+          const p = `tag${idx++}`;
+          params[p] = `%"${escapeLike(String(v))}"%`;
+          return `t.tags LIKE @${p}`;
+        });
+        if (operator === "none of") {
+          conditions.push(
+            `trace_id NOT IN (SELECT t.id FROM traces t WHERE t.project_id = @projectId AND (${parts.join(" OR ")}))`,
+          );
+        } else {
+          conditions.push(
+            `trace_id IN (SELECT t.id FROM traces t WHERE t.project_id = @projectId AND ${operator === "all of" ? parts.join(" AND ") : `(${parts.join(" OR ")})`})`,
+          );
+        }
+        return;
+      }
+      if (traceField === "trace_name" || traceField === "name") {
+        const p = `uf${idx++}`;
+        params[p] = String(raw.value ?? "");
+        conditions.push(
+          `trace_id IN (SELECT id FROM traces WHERE project_id = @projectId AND name = @${p})`,
+        );
+        return;
+      }
+      throw new InvalidRequestError(
+        `Filter column "${field}" on table "traces" is not supported for scores in lite mode`,
       );
-      return;
     }
 
     // Tags filter directly on the traces table (JSON array column).
@@ -193,21 +270,37 @@ export function liteBuildFilterWhere(
       return;
     }
 
-    // userId on scores lives on traces -> subquery.
-    if (table === "scores" && clickhouseTable === "traces" && field === "user_id") {
-      const p = `uf${idx++}`;
-      params[p] = String(raw.value ?? "");
-      conditions.push(
-        `trace_id IN (SELECT id FROM traces WHERE project_id = @projectId AND user_id = @${p})`,
-      );
+    // Lite has no dataset-run scores: a dataset_run_id filter matches nothing.
+    if (table === "scores" && stripTablePrefix(field) === "dataset_run_id") {
+      conditions.push("1 = 0");
       return;
     }
 
-    // Only handle filters whose column exists on the target table.
-    if (clickhouseTable !== table && clickhouseTable !== "") return;
-    if (!columns.has(field)) return;
+    // Only handle filters whose column exists on the target table. For
+    // json_extract() expressions (stringObject filters on JSON columns) the
+    // whitelist is validated against the extracted base column. Anything else
+    // is a column the lite mode cannot execute -> explicit 400 instead of
+    // silently returning unfiltered data.
+    const jsonExtractMatch = /^json_extract\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,/.exec(field);
+    const baseColumn = jsonExtractMatch ? jsonExtractMatch[1] : field;
+    if (clickhouseTable !== table && clickhouseTable !== "") {
+      throw new InvalidRequestError(
+        `Filter column "${field}" on table "${clickhouseTable}" is not supported for ${table} in lite mode`,
+      );
+    }
+    if (!columns.has(baseColumn)) {
+      throw new InvalidRequestError(
+        `Filter column "${field}" is not supported for ${table} in lite mode`,
+      );
+    }
 
     const col = field;
+
+    // Null filter (is null / is not null)
+    if (operator === "is null" || operator === "is not null") {
+      conditions.push(`${col} ${operator === "is null" ? "IS NULL" : "IS NOT NULL"}`);
+      return;
+    }
 
     // String options filter (any of / none of)
     if (Array.isArray(raw.values)) {
@@ -239,6 +332,14 @@ export function liteBuildFilterWhere(
       const p = `num${idx++}`;
       params[p] = raw.value;
       conditions.push(`${col} ${operator} @${p}`);
+      return;
+    }
+
+    // Boolean filter (SQLite stores booleans as 0/1)
+    if (typeof raw.value === "boolean") {
+      const p = `bool${idx++}`;
+      params[p] = raw.value ? 1 : 0;
+      conditions.push(`${col} ${operator === "<>" ? "!=" : operator} @${p}`);
       return;
     }
 

@@ -45,6 +45,17 @@ export async function getDatasetById(projectId: string, datasetId: string): Prom
   return row;
 }
 
+/**
+ * Resolve a dataset by (project-scoped) name, or null when absent. Used by the
+ * v1 dataset-items endpoints, which address datasets by name (CLI canonical).
+ */
+export async function getDatasetByName(projectId: string, name: string): Promise<Dataset | null> {
+  const row = await prisma.query.datasets.findFirst({
+    where: and(eq(datasets.projectId, projectId), eq(datasets.name, name)),
+  });
+  return row ?? null;
+}
+
 export async function listDatasets(
   projectId: string,
   opts: { page: number; limit: number; name?: string; id?: string },

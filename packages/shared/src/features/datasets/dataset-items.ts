@@ -8,7 +8,7 @@
  * no current version (deleted/archived) are 404 for PATCH/DELETE (decision R2).
  */
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, lte, or } from "drizzle-orm";
 import { type DatasetItem, type DatasetStatus, prisma } from "../../db";
 import { datasetItems, datasets } from "../../db/schema/index.js";
 import { LangfuseNotFoundError } from "../../errors";
@@ -180,6 +180,63 @@ export async function listDatasetItems(
     isNull(datasetItems.validTo),
     eq(datasetItems.isDeleted, false),
     opts.status !== undefined ? eq(datasetItems.status, opts.status) : undefined,
+  );
+
+  const items = await prisma.query.datasetItems.findMany({
+    where,
+    orderBy: desc(datasetItems.createdAt),
+    limit: opts.limit,
+    offset: (opts.page - 1) * opts.limit,
+  });
+
+  const totalItems =
+    (await prisma
+      .select({ value: count() })
+      .from(datasetItems)
+      .where(where)
+      .then((rows) => rows[0]?.value ?? 0)) ?? 0;
+
+  return { items, totalItems };
+}
+
+/**
+ * V1 canonical list (GET /api/public/dataset-items): project-wide, with an
+ * optional dataset scope and sourceTraceId/sourceObservationId filters.
+ *
+ * `version` gives point-in-time semantics per the v1 contract: rows whose
+ * version window contains the timestamp (valid_from <= version AND (valid_to
+ * IS NULL OR valid_to > version)). Without `version` only current versions
+ * are returned (valid_to IS NULL AND is_deleted = 0).
+ */
+export async function listDatasetItemsV1(
+  projectId: string,
+  opts: {
+    datasetId?: string;
+    sourceTraceId?: string;
+    sourceObservationId?: string;
+    version?: Date;
+    page: number;
+    limit: number;
+  },
+): Promise<{ items: DatasetItem[]; totalItems: number }> {
+  const versionScope =
+    opts.version !== undefined
+      ? and(
+          lte(datasetItems.validFrom, opts.version),
+          or(isNull(datasetItems.validTo), gt(datasetItems.validTo, opts.version)),
+        )
+      : and(isNull(datasetItems.validTo), eq(datasetItems.isDeleted, false));
+
+  const where = and(
+    eq(datasetItems.projectId, projectId),
+    opts.datasetId !== undefined ? eq(datasetItems.datasetId, opts.datasetId) : undefined,
+    opts.sourceTraceId !== undefined
+      ? eq(datasetItems.sourceTraceId, opts.sourceTraceId)
+      : undefined,
+    opts.sourceObservationId !== undefined
+      ? eq(datasetItems.sourceObservationId, opts.sourceObservationId)
+      : undefined,
+    versionScope,
   );
 
   const items = await prisma.query.datasetItems.findMany({

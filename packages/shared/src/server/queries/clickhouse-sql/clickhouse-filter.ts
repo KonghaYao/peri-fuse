@@ -200,6 +200,46 @@ export class CategoryOptionsFilter {
   }
 }
 
+export class BooleanFilter {
+  clickhouseTable: string;
+  field: string;
+  operator: string;
+  value: any;
+  tablePrefix?: string;
+  constructor(opts?: FilterOpts) {
+    this.clickhouseTable = opts?.clickhouseTable ?? "";
+    this.field = opts?.field ?? "";
+    this.operator = opts?.operator ?? "=";
+    this.value = opts?.value;
+    this.tablePrefix = opts?.tablePrefix;
+  }
+  apply(): AppliedFilter {
+    return { query: "1=1", params: {} };
+  }
+  toSql(): string {
+    return "1=1";
+  }
+}
+
+export class NullFilter {
+  clickhouseTable: string;
+  field: string;
+  operator: string;
+  tablePrefix?: string;
+  constructor(opts?: FilterOpts) {
+    this.clickhouseTable = opts?.clickhouseTable ?? "";
+    this.field = opts?.field ?? "";
+    this.operator = opts?.operator ?? "is null";
+    this.tablePrefix = opts?.tablePrefix;
+  }
+  apply(): AppliedFilter {
+    return { query: "1=1", params: {} };
+  }
+  toSql(): string {
+    return "1=1";
+  }
+}
+
 export function buildClickhouseFilter(_filter: any): string {
   return "1=1";
 }

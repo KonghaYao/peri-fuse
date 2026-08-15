@@ -136,7 +136,10 @@ function inflateScoreBody(params: ValidateAndInflateScoreParams & { config?: Sco
       value: 0,
       name: CORRECTION_NAME,
       longStringValue: body.value,
-      stringValue: null,
+      // Lite mode persists scores to a `scores.string_value` column only
+      // (no long_string_value column); mirror the text there so lite reads
+      // (rowToScoreDomain / polymorphicValueForV3) can recover it.
+      stringValue: body.value,
       dataType: ScoreDataTypeEnum.CORRECTION,
     };
   }

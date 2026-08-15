@@ -245,7 +245,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       CREATE TABLE IF NOT EXISTS scores (
         id TEXT NOT NULL,
         project_id TEXT NOT NULL,
-        trace_id TEXT NOT NULL,
+        trace_id TEXT,
         observation_id TEXT,
         name TEXT NOT NULL,
         value REAL,
@@ -262,8 +262,12 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         is_deleted INTEGER DEFAULT 0,
         environment TEXT DEFAULT 'default',
         queue_id TEXT,
+        metadata TEXT DEFAULT '{}',
+        session_id TEXT,
         PRIMARY KEY (project_id, id)
       );
+      CREATE INDEX IF NOT EXISTS idx_scores_project_ts
+        ON scores(project_id, timestamp DESC, id DESC);
 
       -- Dataset run items (written by the dataset-run-item-create ingestion
       -- event; mirrors upstream ClickHouse dataset_run_items_rmt). The dataset
@@ -344,6 +348,22 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     this.ensureColumn("trace_metrics", "cached_tokens", "INTEGER DEFAULT 0");
     this.ensureColumn("trace_metrics", "cache_creation_tokens", "INTEGER DEFAULT 0");
     this.ensureColumn("trace_metrics", "gross_input_tokens", "INTEGER DEFAULT 0");
+
+    // v5: v2/v3 scores API support — scores gained a JSON metadata column and
+    // a session_id column (session-level scores) after the table shipped.
+    // ensureColumn is idempotent (PRAGMA table_info check), so this is safe to
+    // run on every startup for databases created before the columns existed.
+    this.ensureColumn("scores", "metadata", "TEXT DEFAULT '{}'");
+    this.ensureColumn("scores", "session_id", "TEXT");
+    // v6: session-level scores — trace_id must be nullable. SQLite cannot drop
+    // a NOT NULL constraint via ALTER TABLE, so rebuild the table when the
+    // legacy constraint is detected (runs before any writes; indexes are
+    // recreated afterwards).
+    this.ensureScoresTraceIdNullable();
+    this.db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_scores_project_ts
+        ON scores(project_id, timestamp DESC, id DESC)`,
+    );
 
     // One-time backfill of cache token columns for existing rows (guarded by
     // PRAGMA user_version so it only runs once per database file).
@@ -428,6 +448,84 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
       logger.info(`[SQLiteTelemetryAdapter] Added column ${table}.${column}`);
     }
+  }
+
+  /**
+   * v6 migration: session-level scores require a nullable scores.trace_id.
+   * Databases created before this change declare `trace_id TEXT NOT NULL`,
+   * which rejects session scores (no trace). SQLite cannot ALTER a column
+   * constraint, so the table is rebuilt (data copied, indexes recreated).
+   * Runs on every startup; the PRAGMA notnull check makes it a no-op for
+   * databases that already have the nullable column.
+   */
+  private ensureScoresTraceIdNullable(): void {
+    const cols = this.db.prepare(`PRAGMA table_info(scores)`).all() as Array<{
+      name: string;
+      notnull: number;
+    }>;
+    const traceId = cols.find((c) => c.name === "trace_id");
+    if (traceId?.notnull !== 1) return;
+
+    const columns = [
+      "id",
+      "project_id",
+      "trace_id",
+      "observation_id",
+      "name",
+      "value",
+      "string_value",
+      "source",
+      "comment",
+      "author_user_id",
+      "config_id",
+      "data_type",
+      "timestamp",
+      "created_at",
+      "updated_at",
+      "event_ts",
+      "is_deleted",
+      "environment",
+      "queue_id",
+      "metadata",
+      "session_id",
+    ].join(", ");
+    this.db.exec(`
+      CREATE TABLE scores_new (
+        id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        trace_id TEXT,
+        observation_id TEXT,
+        name TEXT NOT NULL,
+        value REAL,
+        string_value TEXT,
+        source TEXT NOT NULL DEFAULT 'API',
+        comment TEXT,
+        author_user_id TEXT,
+        config_id TEXT,
+        data_type TEXT NOT NULL DEFAULT 'NUMERIC',
+        timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        event_ts TEXT NOT NULL DEFAULT (datetime('now')),
+        is_deleted INTEGER DEFAULT 0,
+        environment TEXT DEFAULT 'default',
+        queue_id TEXT,
+        metadata TEXT DEFAULT '{}',
+        session_id TEXT,
+        PRIMARY KEY (project_id, id)
+      );
+      INSERT INTO scores_new (${columns})
+        SELECT ${columns} FROM scores;
+      DROP TABLE scores;
+      ALTER TABLE scores_new RENAME TO scores;
+      CREATE INDEX IF NOT EXISTS idx_scores_project_ts
+        ON scores(project_id, timestamp DESC, id DESC);
+      CREATE INDEX IF NOT EXISTS idx_scores_project_trace
+        ON scores(project_id, trace_id);
+      CREATE INDEX IF NOT EXISTS idx_scores_project_name
+        ON scores(project_id, name);
+    `);
+    logger.info("[SQLiteTelemetryAdapter] Rebuilt scores table (trace_id now nullable)");
   }
 
   /**

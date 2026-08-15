@@ -6,6 +6,7 @@
 
 import {
   type DatasetItemPublicApi,
+  type DatasetItemV1PublicApi,
   type DatasetPublicApi,
   type DatasetRunItemRow,
   type DatasetRunItemWithScores,
@@ -43,6 +44,31 @@ export function toDatasetItemPublicApi(row: DatasetItem): DatasetItemPublicApi {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     validFrom: row.validFrom.toISOString(),
+  };
+}
+
+/**
+ * V1 canonical item shape: the upstream `DatasetItem` contract. `datasetName`
+ * comes from the resolved dataset row (the table only stores datasetId);
+ * `mediaReferences` is always empty (lite has no media support).
+ */
+export function toDatasetItemV1PublicApi(
+  row: DatasetItem,
+  datasetName: string,
+): DatasetItemV1PublicApi {
+  return {
+    id: row.id,
+    status: (row.status ?? "ACTIVE") as DatasetItemV1PublicApi["status"],
+    input: parseJsonField(row.input),
+    expectedOutput: parseJsonField(row.expectedOutput),
+    metadata: parseJsonField(row.metadata),
+    sourceTraceId: row.sourceTraceId,
+    sourceObservationId: row.sourceObservationId,
+    datasetId: row.datasetId,
+    datasetName,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    mediaReferences: [],
   };
 }
 
