@@ -1,0 +1,111 @@
+# Publish the `peri-fuse` CLI to the npm registry.
+#
+# Release flow (manual version bump, tag-triggered publish):
+#   1. Bump the version in packages/cli/package.json and commit it.
+#   2. Tag the release:  git tag v0.4.2 && git push origin v0.4.2
+#   3. This workflow verifies the tag matches the package version,
+#      builds all publish dependencies, and runs `pnpm publish`.
+#
+# Prerequisites:
+#   - An npm access token with "publish" permission stored as the `NPM_TOKEN`
+#     repository secret. Use a granular/CI token so 2FA/OTP is not required.
+#
+# Manual trigger (workflow_dispatch):
+#   - dry-run: build everything and show the packed tarball, no publish.
+#   - without dry-run: publish the current packages/cli/package.json version.
+
+name: Publish CLI to npm
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Only build and verify the package, do not publish"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish peri-fuse
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build publish dependencies
+        # build.mjs bundles packages/server via esbuild and resolves the
+        # workspace packages (@peri-fuse/shared, @peri/gateway) through their
+        # `dist` output; it also copies the web SPA. Build order matters.
+        run: |
+          pnpm --filter @peri-fuse/shared run build
+          pnpm --filter @peri/gateway run build
+          pnpm --filter @peri-fuse/web run build
+
+      - name: Build CLI package
+        run: pnpm --filter peri-fuse run build
+
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(node -p "require('./packages/cli/package.json').version")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Git tag v${tag_version} does not match packages/cli/package.json version ${pkg_version}. Bump the version and retag."
+            exit 1
+          fi
+          echo "Releasing peri-fuse v${pkg_version}"
+
+      - name: Verify publish artifacts
+        # Guard against publishing a partial package: build.mjs silently
+        # skips the web SPA when web/dist is missing.
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const required = [
+              ['packages/cli/dist/index.js', 'file'],
+              ['packages/cli/dist/server.cjs', 'file'],
+              ['packages/cli/dist/drizzle', 'dir'],
+              ['packages/cli/drizzle', 'dir'],
+              ['packages/cli/dist/web/index.html', 'file'],
+            ];
+            const missing = required.filter(([p, t]) =>
+              t === 'file' ? !fs.existsSync(p) : !fs.existsSync(p) || fs.readdirSync(p).length === 0,
+            );
+            if (missing.length > 0) {
+              console.error('::error::Missing publish artifacts: ' + missing.map(([p]) => p).join(', '));
+              process.exit(1);
+            }
+            console.log('Publish artifacts OK');
+          "
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ "${{ inputs.dry-run }}" = "true" ]; then
+            # `pnpm publish --dry-run` is skipped when the version already
+            # exists on the registry — use `pnpm pack` to inspect the tarball.
+            pnpm --filter peri-fuse pack --pack-destination "$RUNNER_TEMP"
+            echo "--- tarball contents:"
+            tar -tzf "$RUNNER_TEMP"/peri-fuse-*.tgz | sort
+          else
+            pnpm --filter peri-fuse publish --no-git-checks
+          fi

@@ -23,7 +23,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "pnpm -r run test",
-    "db:generate": "pnpm --filter @peri-fuse/shared run db:generate"
+    "db:generate": "pnpm --filter @peri-fuse/shared run db:generate",
+    "release": "node scripts/release.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
