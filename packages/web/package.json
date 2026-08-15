@@ -19,10 +19,12 @@
   },
   "author": "engineering@langfuse.com",
   "dependencies": {
+    "@hookform/resolvers": "^5.8.0",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-popover": "^1.1.23",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-separator": "^1.1.8",
@@ -35,11 +37,14 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.552.0",
     "react": "19.2.4",
+    "react-day-picker": "^10.0.1",
     "react-dom": "19.2.4",
+    "react-hook-form": "^7.85.0",
     "react-router-dom": "^7.9.0",
     "react18-json-view": "^0.2.8-canary.6",
     "recharts": "^3.8.0",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",

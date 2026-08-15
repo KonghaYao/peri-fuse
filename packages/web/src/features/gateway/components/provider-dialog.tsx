@@ -1,8 +1,13 @@
 /**
  * Create/Edit Provider dialog form.
+ *
+ * Form behavior & validation via React Hook Form + Zod (shadcn/ui Form).
  */
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 import { Button } from "@/shared/components/ui/button";
 import {
   Dialog,
@@ -11,8 +16,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/shared/components/ui/form";
 import { Input } from "@/shared/components/ui/input";
-import { Label } from "@/shared/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -22,23 +34,18 @@ import {
 } from "@/shared/components/ui/select";
 import type { GatewayProvider } from "@/shared/lib/gateway-api";
 
-interface ProviderFormState {
-  name: string;
-  type: string;
-  baseUrl: string;
-  apiKey: string;
-  budgetLimit: string;
-  budgetPeriod: string;
-}
+const providerFormSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  type: z.string().min(1, "Type is required"),
+  baseUrl: z.string().trim().min(1, "Base URL is required").url("Must be a valid URL"),
+  apiKey: z.string().trim(),
+  budgetLimit: z.string().refine((v) => v === "" || !Number.isNaN(Number(v)), {
+    message: "Must be a valid number",
+  }),
+  budgetPeriod: z.string().trim(),
+});
 
-const emptyForm: ProviderFormState = {
-  name: "",
-  type: "openai",
-  baseUrl: "",
-  apiKey: "",
-  budgetLimit: "",
-  budgetPeriod: "",
-};
+type ProviderFormValues = z.infer<typeof providerFormSchema>;
 
 export function ProviderDialog({
   open,
@@ -60,12 +67,23 @@ export function ProviderDialog({
   }) => void;
   isPending: boolean;
 }) {
-  const [form, setForm] = useState<ProviderFormState>(emptyForm);
   const isEdit = !!provider;
+
+  const form = useForm<ProviderFormValues>({
+    resolver: zodResolver(providerFormSchema),
+    defaultValues: {
+      name: "",
+      type: "openai",
+      baseUrl: "",
+      apiKey: "",
+      budgetLimit: "",
+      budgetPeriod: "",
+    },
+  });
 
   useEffect(() => {
     if (open) {
-      setForm(
+      form.reset(
         provider
           ? {
               name: provider.name,
@@ -75,26 +93,28 @@ export function ProviderDialog({
               budgetLimit: provider.budgetLimit != null ? String(provider.budgetLimit) : "",
               budgetPeriod: provider.budgetPeriod ?? "",
             }
-          : emptyForm,
+          : {
+              name: "",
+              type: "openai",
+              baseUrl: "",
+              apiKey: "",
+              budgetLimit: "",
+              budgetPeriod: "",
+            },
       );
     }
-  }, [open, provider]);
+  }, [open, provider, form]);
 
-  const set = (field: keyof ProviderFormState) => (value: string) =>
-    setForm((f) => ({ ...f, [field]: value }));
-
-  const handleSubmit = () => {
+  const handleSubmit = (values: ProviderFormValues) => {
     onSubmit({
-      name: form.name.trim(),
-      type: form.type,
-      baseUrl: form.baseUrl.trim(),
-      apiKey: form.apiKey.trim() || undefined,
-      budgetLimit: form.budgetLimit ? Number(form.budgetLimit) : null,
-      budgetPeriod: form.budgetPeriod || null,
+      name: values.name,
+      type: values.type,
+      baseUrl: values.baseUrl,
+      apiKey: values.apiKey || undefined,
+      budgetLimit: values.budgetLimit ? Number(values.budgetLimit) : null,
+      budgetPeriod: values.budgetPeriod || null,
     });
   };
-
-  const valid = form.name.trim() && form.baseUrl.trim();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -102,86 +122,127 @@ export function ProviderDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Provider" : "Add Provider"}</DialogTitle>
           <DialogDescription>
-            {isEdit
-              ? "Update provider configuration."
-              : "Connect an LLM provider to the gateway."}
+            {isEdit ? "Update provider configuration." : "Connect an LLM provider to the gateway."}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input
-              placeholder="e.g. openai-prod"
-              value={form.name}
-              onChange={(e) => set("name")(e.target.value)}
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="e.g. openai-prod" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="space-y-1.5">
-            <Label>Type</Label>
-            <Select value={form.type} onValueChange={set("type")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="openai">OpenAI-compatible</SelectItem>
-                <SelectItem value="anthropic">Anthropic</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Base URL</Label>
-            <Input
-              placeholder="https://api.openai.com/v1"
-              value={form.baseUrl}
-              onChange={(e) => set("baseUrl")(e.target.value)}
+            <FormField
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Type</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="openai">OpenAI-compatible</SelectItem>
+                      <SelectItem value="anthropic">Anthropic</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="space-y-1.5">
-            <Label>
-              API Key {isEdit && <span className="font-normal text-fg-tertiary">(leave blank to keep current)</span>}
-            </Label>
-            <Input
-              type="password"
-              placeholder={isEdit ? "••••••••" : "sk-..."}
-              value={form.apiKey}
-              onChange={(e) => set("apiKey")(e.target.value)}
+            <FormField
+              control={form.control}
+              name="baseUrl"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Base URL</FormLabel>
+                  <FormControl>
+                    <Input placeholder="https://api.openai.com/v1" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Budget Limit ($)</Label>
-              <Input
-                type="number"
-                placeholder="Optional"
-                value={form.budgetLimit}
-                onChange={(e) => set("budgetLimit")(e.target.value)}
+            <FormField
+              control={form.control}
+              name="apiKey"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    API Key{" "}
+                    {isEdit && (
+                      <span className="font-normal text-fg-tertiary">
+                        (leave blank to keep current)
+                      </span>
+                    )}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="password"
+                      placeholder={isEdit ? "••••••••" : "sk-..."}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="budgetLimit"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Budget Limit ($)</FormLabel>
+                    <FormControl>
+                      <Input type="number" placeholder="Optional" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="budgetPeriod"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Budget Period</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. 30d, 24h" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Budget Period</Label>
-              <Input
-                placeholder="e.g. 30d, 24h"
-                value={form.budgetPeriod}
-                onChange={(e) => set("budgetPeriod")(e.target.value)}
-              />
-            </div>
-          </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSubmit} disabled={!valid || isPending}>
-              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEdit ? "Save" : "Create"}
-            </Button>
-          </div>
-        </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isEdit ? "Save" : "Create"}
+              </Button>
+            </div>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

@@ -1,16 +1,23 @@
 /**
  * FilterInput — Spectra §6.6 filter field.
  *
- * A controlled text/date filter that commits on Enter (or blur for dates),
- * shows a leading icon and an inline clear (×) button when active. The value
- * is URL-backed via useTableState, so this component keeps a local draft and
- * syncs it whenever the external (URL) value changes.
+ * A controlled text filter that commits on Enter, shows a leading icon and an
+ * inline clear (×) button when active. The value is URL-backed via
+ * useTableState, so this component keeps a local draft and syncs it whenever
+ * the external (URL) value changes.
+ *
+ * 日期筛选见 DateFilterInput（Popover + Calendar，社区标准）。
  */
 import { type LucideIcon, Search, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { Input } from "@/shared/components/ui/input";
 import { cn } from "@/shared/lib/utils";
+
+/** 供筛选栏的 Search 按钮触发提交（等价按 Enter）。 */
+export interface FilterInputHandle {
+  commit: () => void;
+}
 
 interface FilterInputProps {
   /** Current committed value from the URL (undefined = inactive). */
@@ -19,14 +26,9 @@ interface FilterInputProps {
   onCommit: (value: string | undefined) => void;
   icon?: LucideIcon;
   placeholder?: string;
-  type?: "text" | "datetime-local";
   className?: string;
   title?: string;
-}
-
-/** Dates are stored in the URL as ISO strings but edited as "YYYY-MM-DDTHH:mm". */
-function toDraft(v: string | undefined, isDate: boolean) {
-  return isDate && v ? new Date(v).toISOString().slice(0, 16) : (v ?? "");
+  ref?: Ref<FilterInputHandle>;
 }
 
 export function FilterInput({
@@ -34,45 +36,42 @@ export function FilterInput({
   onCommit,
   icon: Icon = Search,
   placeholder,
-  type = "text",
   className,
   title,
+  ref,
 }: FilterInputProps) {
-  const isDate = type === "datetime-local";
-
-  const [draft, setDraft] = useState(() => toDraft(value, isDate));
+  const [draft, setDraft] = useState(value ?? "");
 
   // Keep the draft in sync when the URL value changes externally
   // (e.g. Clear-all, back/forward navigation).
   useEffect(() => {
-    setDraft(toDraft(value, isDate));
-  }, [value, isDate]);
+    setDraft(value ?? "");
+  }, [value]);
 
   const commitDraft = (raw: string) => {
-    if (isDate) {
-      onCommit(raw ? new Date(raw).toISOString() : undefined);
-    } else {
-      const trimmed = raw.trim();
-      onCommit(trimmed === "" ? undefined : trimmed);
-    }
+    const trimmed = raw.trim();
+    onCommit(trimmed === "" ? undefined : trimmed);
   };
+  const commitDraftRef = useRef(commitDraft);
+  commitDraftRef.current = commitDraft;
+
+  // Expose commit() to the parent's Search button; draftRef keeps the
+  // latest draft without re-creating the handle on every keystroke.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  useImperativeHandle(ref, () => ({ commit: () => commitDraftRef.current(draftRef.current) }), []);
 
   return (
     <div className={cn("relative", className)}>
       <Icon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-tertiary" />
       <Input
-        type={type}
         title={title}
         placeholder={placeholder}
         value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          // Dates commit immediately (no Enter affordance on native pickers).
-          if (isDate) commitDraft(e.target.value);
-        }}
+        onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") commitDraft((e.target as HTMLInputElement).value);
-          if (e.key === "Escape") setDraft(toDraft(value, isDate));
+          if (e.key === "Escape") setDraft(value ?? "");
         }}
         className={cn("pl-8", draft && "pr-8")}
       />

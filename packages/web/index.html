@@ -12,7 +12,7 @@
     />
     <script>
       // Apply the persisted theme before first paint (dark-first, no FOUC).
-      (function () {
+      (() => {
         try {
           var t = localStorage.getItem("peri-fuse-theme");
           if (t === "light") document.documentElement.classList.remove("dark");

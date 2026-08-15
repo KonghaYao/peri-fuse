@@ -1,18 +1,13 @@
 import { Search } from "lucide-react";
+import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
-import { FilterInput } from "@/shared/components/filter-input";
+import { FilterInput, type FilterInputHandle } from "@/shared/components/filter-input";
+import { FilterSelect } from "@/shared/components/filter-select";
 import { Pagination } from "@/shared/components/pagination";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/components/ui/select";
 import {
   Table,
   TableBody,
@@ -27,7 +22,6 @@ import { formatDateTime } from "@/shared/lib/format";
 import type { Score } from "@/shared/lib/types";
 
 const PAGE_SIZE = 25;
-const ALL = "__all__";
 
 type ScoreFilters = { name?: string; source?: string; dataType?: string };
 
@@ -40,6 +34,8 @@ function scoreDisplay(s: Score): string {
 }
 
 export function ScoresPage() {
+  const nameFilterRef = useRef<FilterInputHandle>(null);
+
   const tableState = useTableState<ScoreFilters>({
     filterKeys: ["name", "source", "dataType"],
     defaultSort: "timestamp.desc",
@@ -62,40 +58,39 @@ export function ScoresPage() {
 
       <div className="flex flex-wrap items-center gap-2 px-6 py-3">
         <FilterInput
+          ref={nameFilterRef}
           className="w-52"
           placeholder="Filter by name…"
           icon={Search}
           value={tableState.filters.name}
           onCommit={(v) => tableState.setFilter("name", v)}
         />
-        <Select
-          value={tableState.filters.source ?? ALL}
-          onValueChange={(v) => tableState.setFilter("source", v !== ALL ? v : undefined)}
-        >
-          <SelectTrigger className="h-8 w-40">
-            <SelectValue placeholder="Source" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All sources</SelectItem>
-            <SelectItem value="API">API</SelectItem>
-            <SelectItem value="EVAL">EVAL</SelectItem>
-            <SelectItem value="ANNOTATION">ANNOTATION</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={tableState.filters.dataType ?? ALL}
-          onValueChange={(v) => tableState.setFilter("dataType", v !== ALL ? v : undefined)}
-        >
-          <SelectTrigger className="h-8 w-40">
-            <SelectValue placeholder="Data type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All types</SelectItem>
-            <SelectItem value="NUMERIC">NUMERIC</SelectItem>
-            <SelectItem value="CATEGORICAL">CATEGORICAL</SelectItem>
-            <SelectItem value="BOOLEAN">BOOLEAN</SelectItem>
-          </SelectContent>
-        </Select>
+        <FilterSelect
+          placeholder="Source"
+          allLabel="All sources"
+          value={tableState.filters.source}
+          onCommit={(v) => tableState.setFilter("source", v)}
+          options={[
+            { value: "API", label: "API" },
+            { value: "EVAL", label: "EVAL" },
+            { value: "ANNOTATION", label: "ANNOTATION" },
+          ]}
+        />
+        <FilterSelect
+          placeholder="Data type"
+          allLabel="All types"
+          value={tableState.filters.dataType}
+          onCommit={(v) => tableState.setFilter("dataType", v)}
+          options={[
+            { value: "NUMERIC", label: "NUMERIC" },
+            { value: "CATEGORICAL", label: "CATEGORICAL" },
+            { value: "BOOLEAN", label: "BOOLEAN" },
+          ]}
+        />
+        <Button size="sm" variant="secondary" onClick={() => nameFilterRef.current?.commit()}>
+          <Search className="h-4 w-4" />
+          Search
+        </Button>
         {tableState.activeFilterCount > 0 && (
           <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
             <Search className="h-4 w-4" />

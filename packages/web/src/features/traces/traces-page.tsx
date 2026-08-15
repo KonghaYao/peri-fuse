@@ -10,13 +10,14 @@
  */
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { Calendar, Globe, Search, User } from "lucide-react";
-import { useCallback, useEffect, useMemo } from "react";
+import { Globe, Search, User } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { TracePeekView } from "@/features/traces/trace-peek-view";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
 import { DataTable } from "@/shared/components/data-table";
-import { FilterInput } from "@/shared/components/filter-input";
+import { DateFilterInput } from "@/shared/components/date-filter-input";
+import { FilterInput, type FilterInputHandle } from "@/shared/components/filter-input";
 import { IoCell } from "@/shared/components/io-cell";
 import {
   formatAsLabel,
@@ -423,6 +424,9 @@ type TraceFilters = {
 export function TracesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const peekedTraceId = searchParams.get("peek");
+  const nameFilterRef = useRef<FilterInputHandle>(null);
+  const userIdFilterRef = useRef<FilterInputHandle>(null);
+  const environmentFilterRef = useRef<FilterInputHandle>(null);
 
   const tableState = useTableState<TraceFilters>({
     filterKeys: ["name", "userId", "environment", "fromTimestamp", "toTimestamp"],
@@ -518,6 +522,7 @@ export function TracesPage() {
             toolbar={
               <div className="flex flex-wrap items-center gap-2">
                 <FilterInput
+                  ref={nameFilterRef}
                   className="w-44"
                   placeholder="Filter by name…"
                   icon={Search}
@@ -525,6 +530,7 @@ export function TracesPage() {
                   onCommit={(v) => tableState.setFilter("name", v)}
                 />
                 <FilterInput
+                  ref={userIdFilterRef}
                   className="w-44"
                   placeholder="Filter by userId…"
                   icon={User}
@@ -532,28 +538,41 @@ export function TracesPage() {
                   onCommit={(v) => tableState.setFilter("userId", v)}
                 />
                 <FilterInput
+                  ref={environmentFilterRef}
                   className="w-44"
                   placeholder="Filter by environment…"
                   icon={Globe}
                   value={tableState.filters.environment}
                   onCommit={(v) => tableState.setFilter("environment", v)}
                 />
-                <FilterInput
-                  type="datetime-local"
-                  className="w-52"
+                <DateFilterInput
+                  className="w-44"
                   title="From timestamp"
-                  icon={Calendar}
+                  boundary="start"
+                  placeholder="From date"
                   value={tableState.filters.fromTimestamp}
                   onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
                 />
-                <FilterInput
-                  type="datetime-local"
-                  className="w-52"
+                <DateFilterInput
+                  className="w-44"
                   title="To timestamp"
-                  icon={Calendar}
+                  boundary="end"
+                  placeholder="To date"
                   value={tableState.filters.toTimestamp}
                   onCommit={(v) => tableState.setFilter("toTimestamp", v)}
                 />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    nameFilterRef.current?.commit();
+                    userIdFilterRef.current?.commit();
+                    environmentFilterRef.current?.commit();
+                  }}
+                >
+                  <Search className="h-4 w-4" />
+                  Search
+                </Button>
                 {tableState.activeFilterCount > 0 && (
                   <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
                     <Search className="h-4 w-4" />

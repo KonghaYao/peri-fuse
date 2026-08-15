@@ -1,18 +1,13 @@
 import { Search } from "lucide-react";
+import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
-import { FilterInput } from "@/shared/components/filter-input";
+import { FilterInput, type FilterInputHandle } from "@/shared/components/filter-input";
+import { FilterSelect } from "@/shared/components/filter-select";
 import { LevelBadge, ObservationTypeBadge } from "@/shared/components/observation-badges";
 import { Pagination } from "@/shared/components/pagination";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { Button } from "@/shared/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/components/ui/select";
 import {
   Table,
   TableBody,
@@ -27,11 +22,12 @@ import { formatDateTime, formatTokens } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 
 const PAGE_SIZE = 25;
-const ALL = "__all__";
 
 type ObservationFilters = { name?: string; type?: string; level?: string };
 
 export function ObservationsPage() {
+  const nameFilterRef = useRef<FilterInputHandle>(null);
+
   const tableState = useTableState<ObservationFilters>({
     filterKeys: ["name", "type", "level"],
     defaultSort: "startTime.desc",
@@ -54,41 +50,40 @@ export function ObservationsPage() {
 
       <div className="flex flex-wrap items-center gap-2 px-6 py-3">
         <FilterInput
+          ref={nameFilterRef}
           className="w-52"
           placeholder="Filter by name…"
           icon={Search}
           value={tableState.filters.name}
           onCommit={(v) => tableState.setFilter("name", v)}
         />
-        <Select
-          value={tableState.filters.type ?? ALL}
-          onValueChange={(v) => tableState.setFilter("type", v !== ALL ? v : undefined)}
-        >
-          <SelectTrigger className="h-8 w-40">
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All types</SelectItem>
-            <SelectItem value="SPAN">SPAN</SelectItem>
-            <SelectItem value="GENERATION">GENERATION</SelectItem>
-            <SelectItem value="EVENT">EVENT</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={tableState.filters.level ?? ALL}
-          onValueChange={(v) => tableState.setFilter("level", v !== ALL ? v : undefined)}
-        >
-          <SelectTrigger className="h-8 w-40">
-            <SelectValue placeholder="Level" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All levels</SelectItem>
-            <SelectItem value="DEBUG">DEBUG</SelectItem>
-            <SelectItem value="DEFAULT">DEFAULT</SelectItem>
-            <SelectItem value="WARNING">WARNING</SelectItem>
-            <SelectItem value="ERROR">ERROR</SelectItem>
-          </SelectContent>
-        </Select>
+        <FilterSelect
+          placeholder="Type"
+          allLabel="All types"
+          value={tableState.filters.type}
+          onCommit={(v) => tableState.setFilter("type", v)}
+          options={[
+            { value: "SPAN", label: "SPAN" },
+            { value: "GENERATION", label: "GENERATION" },
+            { value: "EVENT", label: "EVENT" },
+          ]}
+        />
+        <FilterSelect
+          placeholder="Level"
+          allLabel="All levels"
+          value={tableState.filters.level}
+          onCommit={(v) => tableState.setFilter("level", v)}
+          options={[
+            { value: "DEBUG", label: "DEBUG" },
+            { value: "DEFAULT", label: "DEFAULT" },
+            { value: "WARNING", label: "WARNING" },
+            { value: "ERROR", label: "ERROR" },
+          ]}
+        />
+        <Button size="sm" variant="secondary" onClick={() => nameFilterRef.current?.commit()}>
+          <Search className="h-4 w-4" />
+          Search
+        </Button>
         {tableState.activeFilterCount > 0 && (
           <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
             <Search className="h-4 w-4" />
