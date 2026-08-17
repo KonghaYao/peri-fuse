@@ -29,6 +29,12 @@ export const BAR_COLORS: Record<string, string> = {
 };
 export const BAR_COLOR_FALLBACK = "bg-slate-400/60 dark:bg-slate-400/50";
 
+/** Subagent observations are AGENT spans named `subagent*`; their internal
+ *  observations are rendered in a separate sub-band, not the main track. */
+export function isSubagentObservation(o: Observation): boolean {
+  return o.type === "AGENT" && (o.name?.startsWith("subagent") ?? false);
+}
+
 export type BandSegment = {
   id: string;
   obs: Observation;
@@ -299,7 +305,7 @@ export function TimelineBand({
   );
 }
 
-function BandBlock({
+export function BandBlock({
   seg,
   top,
   pxPerMs,
@@ -326,6 +332,9 @@ function BandBlock({
   const topY = isInstant ? top - 4 : top; // undo the block's vertical inset
   const color = BAR_COLORS[obs.type] ?? BAR_COLOR_FALLBACK;
   const showName = !isInstant && w >= 64; // only wide blocks carry an inline label
+  // Subagent placeholders on the main track: keep the AGENT block but give it
+  // a distinct look — its internals live in a separate sub-band.
+  const isSub = isSubagentObservation(obs);
 
   return (
     <div
@@ -339,9 +348,13 @@ function BandBlock({
         "absolute cursor-pointer outline-none",
         isInstant ? "rounded-none shadow-none" : "rounded-[4px] shadow-sm",
         color,
+        isSub &&
+          !isInstant &&
+          "border border-white/60 [background-image:linear-gradient(to_bottom,rgba(255,255,255,.25),rgba(255,255,255,0))]",
         (hovered || selected) && "ring-2 ring-brand",
         seg.running &&
           !isInstant &&
+          !isSub &&
           "opacity-90 [background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.35)_0_4px,transparent_4px_8px)]",
         "focus-visible:ring-2 focus-visible:ring-brand",
       )}
@@ -349,7 +362,7 @@ function BandBlock({
     >
       {showName && (
         <span className="block truncate px-1.5 text-[10px] font-medium leading-[18px] text-white/90">
-          {obs.name ?? "(unnamed)"}
+          {isSub ? `▸ ${obs.name ?? "subagent"}` : (obs.name ?? "(unnamed)")}
         </span>
       )}
     </div>
@@ -385,11 +398,16 @@ function HoverCard({
         <span>+{formatMs(seg.startMs)}</span>
         <span>{seg.running ? "running…" : formatDuration(obs.startTime, obs.endTime!)}</span>
       </div>
-      {(tokenText || (obs.level && obs.level !== "DEFAULT")) && (
+      {tokenText && (
         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-fg-tertiary">
-          {tokenText && <span className="tnum font-mono">{tokenText} tok</span>}
+          <span className="tnum font-mono">{tokenText} tok</span>
           {obs.level && obs.level !== "DEFAULT" && <LevelBadge level={obs.level} />}
         </div>
+      )}
+      {isSubagentObservation(obs) && (
+        <p className="mt-1 text-[10px] font-semibold text-brand">
+          ▸ Subagent — internals shown below
+        </p>
       )}
       {obs.statusMessage && (
         <p className="mt-0.5 line-clamp-2 text-[11px] text-danger">{obs.statusMessage}</p>
