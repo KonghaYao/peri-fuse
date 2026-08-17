@@ -8,7 +8,7 @@ import { ChevronRight, Filter } from "lucide-react";
 import { useState } from "react";
 import { LevelBadge, ObservationTypeIcon } from "@/shared/components/observation-badges";
 import { Button } from "@/shared/components/ui/button";
-import { formatDuration } from "@/shared/lib/format";
+import { estimateTokens, formatClockTime, formatDuration, formatTokens } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
 
@@ -22,12 +22,15 @@ export type TreeNode = {
  * `stage-*` spans — agent internal phases (stage-reason / stage-act / ...)
  * that add little signal on top of the agent -> tool/generation chain.
  *
- * ERROR-level observations are always kept: even a `stage-*` node can carry
- * a failure signal (statusMessage) that must stay visible.
+ * `tool-batch*` wrappers are NOT filtered here: they carry real tool-call
+ * children, so the tree keeps them. The timeline filters them on its own.
+ *
+ * ERROR-level observations are always kept: even a noise node can carry a
+ * failure signal (statusMessage) that must stay visible.
  */
-function isNoiseObservation(o: Observation): boolean {
+export function isNoiseObservation(o: Observation): boolean {
   if (o.level === "ERROR") return false;
-  return o.name?.startsWith("stage-") ?? false;
+  return (o.name?.startsWith("stage-") ?? false);
 }
 
 /**
@@ -102,6 +105,13 @@ export function ObservationNode({
   const isSelected = selectedId === o.id;
   const interactive = Boolean(onSelect);
 
+  // Rough output-size estimate for TOOL nodes: output is free-text JSON, so
+  // chars/4 gives a good-enough token count without a tokenizer dependency.
+  const outputTokens =
+    o.type === "TOOL" && o.output != null
+      ? estimateTokens(typeof o.output === "string" ? o.output : JSON.stringify(o.output))
+      : null;
+
   return (
     <div>
       <div
@@ -139,8 +149,17 @@ export function ObservationNode({
           {o.name ?? <span className="text-fg-tertiary">(unnamed)</span>}
         </span>
         {o.level && o.level !== "DEFAULT" && <LevelBadge level={o.level} />}
-        <span className="tnum ml-auto shrink-0 pl-2 font-mono text-[11px] text-fg-tertiary">
-          {formatDuration(o.startTime, o.endTime)}
+        <span className="tnum ml-auto flex shrink-0 items-center gap-2 pl-2 font-mono text-[11px] text-fg-tertiary">
+          {outputTokens != null && (
+            <span title="output 估算 token 数" className="text-brand/70">
+              ~{formatTokens(outputTokens)} tokens
+            </span>
+          )}
+          {o.type === "EVENT" ? (
+            <span title={`发生时刻 ${o.startTime ?? ""}`}>{formatClockTime(o.startTime)}</span>
+          ) : (
+            <span>{formatDuration(o.startTime, o.endTime)}</span>
+          )}
         </span>
       </div>
       {expanded &&

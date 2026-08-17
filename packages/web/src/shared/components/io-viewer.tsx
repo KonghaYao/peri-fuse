@@ -7,7 +7,7 @@
  */
 import { Braces, MessageSquareText } from "lucide-react";
 import { useMemo, useState } from "react";
-import { extractMessages, isChatPayload } from "@/shared/components/chat-utils";
+import { extractMessages, isChatPayload, parseMaybeString } from "@/shared/components/chat-utils";
 import { ChatViewer } from "@/shared/components/chat-viewer";
 import { JsonViewer } from "@/shared/components/json-viewer";
 import { cn } from "@/shared/lib/utils";
@@ -48,12 +48,13 @@ function ModeToggle({ mode, onChange }: { mode: ViewMode; onChange: (m: ViewMode
 }
 
 export function IoViewer({ data }: { data: unknown }) {
-  const isChat = useMemo(() => isChatPayload(data), [data]);
-  const messages = useMemo(() => (isChat ? extractMessages(data) : null), [data, isChat]);
+  const parsed = useMemo(() => parseMaybeString(data), [data]);
+  const isChat = useMemo(() => isChatPayload(parsed), [parsed]);
+  const messages = useMemo(() => (isChat ? extractMessages(parsed) : null), [isChat, parsed]);
   const [mode, setMode] = useState<ViewMode>("chat");
 
   if (!isChat || !messages) {
-    return <JsonViewer data={data} />;
+    return <JsonViewer data={parsed} />;
   }
 
   return (

@@ -14,6 +14,19 @@ export function formatDateTime(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? "" : dateTimeFmt.format(d);
 }
 
+const clockFmt = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+/** ISO date-time -> local "15:41:02". Point-in-time events carry no duration. */
+export function formatClockTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : clockFmt.format(d);
+}
+
 /** Seconds -> "1.24 s" / "312 ms". */
 export function formatLatency(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || seconds < 0) return "—";
@@ -46,6 +59,17 @@ export function formatTokens(n: number | null | undefined): string {
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(n);
+}
+
+/**
+ * Rough token estimate for free-text payloads (tool output etc.) — ~4 chars
+ * per token, the standard rule of thumb. Plenty for "~1.2k tokens" displays;
+ * exact counting would need a tokenizer (heavyweight BPE vocab tables) for
+ * no visible gain in this context. Returns null for empty/falsy text.
+ */
+export function estimateTokens(text: string | null | undefined): number | null {
+  if (!text) return null;
+  return Math.max(1, Math.round(text.length / 4));
 }
 
 /** Plain integer with thousands separators. */

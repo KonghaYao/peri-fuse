@@ -20,7 +20,13 @@ import {
   User,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { type ChatMessage, contentToText, groupConsecutive } from "@/shared/components/chat-utils";
+import { PartView } from "@/shared/components/chat-parts";
+import {
+  type ChatMessage,
+  contentToText,
+  extractParts,
+  groupConsecutive,
+} from "@/shared/components/chat-utils";
 import {
   Dialog,
   DialogContent,
@@ -39,8 +45,6 @@ import { cn } from "@/shared/lib/utils";
 const INITIAL_VISIBLE = 20;
 /** Additional messages loaded per "show earlier" click. */
 const LOAD_STEP = 50;
-/** Character threshold beyond which a message body is truncated. */
-const TRUNCATE_CHARS = 1200;
 
 // ---------------------------------------------------------------------------
 // Role presentation config
@@ -115,48 +119,6 @@ function roleConfig(role: string): RoleConfig {
   const cfg = ROLE_CONFIG[role];
   if (cfg) return cfg;
   return { ...FALLBACK_ROLE, label: role };
-}
-
-// ---------------------------------------------------------------------------
-// Message content block (with truncation for long bodies)
-// ---------------------------------------------------------------------------
-
-function MessageBody({ text, mono }: { text: string; mono?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const needsTruncation = text.length > TRUNCATE_CHARS;
-  const display = needsTruncation && !expanded ? `${text.slice(0, TRUNCATE_CHARS)}…` : text;
-
-  return (
-    <div>
-      <pre
-        className={cn(
-          "whitespace-pre-wrap break-words text-xs leading-relaxed",
-          mono ? "font-mono" : "font-sans",
-          !expanded && needsTruncation && "line-clamp-none",
-        )}
-      >
-        {display}
-      </pre>
-      {needsTruncation && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {expanded ? (
-            <>
-              <ChevronUp className="h-3 w-3" /> Show less
-            </>
-          ) : (
-            <>
-              <ChevronDown className="h-3 w-3" /> Show more ({(text.length / 1000).toFixed(1)}k
-              chars)
-            </>
-          )}
-        </button>
-      )}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +203,9 @@ function MessageJsonDialog({ message, index }: { message: ChatMessage; index: nu
 function MessageBubble({ message, index }: { message: ChatMessage; index: number }) {
   const cfg = roleConfig(message.role);
   const Icon = cfg.icon;
-  const text = contentToText(message.content);
+  const parts = useMemo(() => extractParts(message.content, message.toolCalls), [message]);
+  const summary = contentToText(message.content);
+  const toolCount = parts.filter((p) => p.type === "tool_use").length;
   const [collapsed, setCollapsed] = useState(cfg.defaultCollapsed ?? false);
 
   const label = cfg.label || message.role;
@@ -294,21 +258,14 @@ function MessageBubble({ message, index }: { message: ChatMessage; index: number
         {/* Content */}
         {!collapsed ? (
           <div className={cn("rounded-lg border px-3 py-2", cfg.bubble)}>
-            {text ? (
-              <MessageBody text={text} mono={cfg.mono} />
+            {parts.length > 0 ? (
+              <div className="space-y-1.5">
+                {parts.map((part, i) => (
+                  <PartView key={i} part={part} mono={cfg.mono} />
+                ))}
+              </div>
             ) : (
               <span className="text-xs italic text-muted-foreground">(empty)</span>
-            )}
-            {/* Tool calls attached to an assistant message */}
-            {Boolean(message.toolCalls) && (
-              <div className="mt-2 border-t border-border/60 pt-2">
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Tool calls
-                </div>
-                <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
-                  {JSON.stringify(message.toolCalls, null, 2)}
-                </pre>
-              </div>
             )}
           </div>
         ) : (
@@ -320,7 +277,12 @@ function MessageBubble({ message, index }: { message: ChatMessage; index: number
               cfg.bubble,
             )}
           >
-            {text ? `${text.slice(0, 80)}${text.length > 80 ? "…" : ""}` : "(empty)"}
+            {summary ? `${summary.slice(0, 80)}${summary.length > 80 ? "…" : ""}` : "(empty)"}
+            {toolCount > 0 && (
+              <span className="ml-2 font-medium">
+                [{toolCount} tool call{toolCount > 1 ? "s" : ""}]
+              </span>
+            )}
             <span className="ml-2 font-medium">— click to expand</span>
           </button>
         )}

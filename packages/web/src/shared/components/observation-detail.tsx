@@ -8,10 +8,11 @@ import { Clock, Cpu, Layers, Star } from "lucide-react";
 import { IoViewer } from "@/shared/components/io-viewer";
 import { JsonViewer } from "@/shared/components/json-viewer";
 import { LevelBadge, ObservationTypeBadge } from "@/shared/components/observation-badges";
+import { ObservationPreview } from "@/shared/components/observation-preview";
 import { Badge } from "@/shared/components/ui/badge";
 import { Separator } from "@/shared/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
-import { formatDateTime, formatDuration, formatTokens } from "@/shared/lib/format";
+import { formatClockTime, formatDateTime, formatDuration, formatTokens } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 
 /**
@@ -72,21 +73,31 @@ export function ScoreList({ scores }: { scores: ScoreSummary[] }) {
 }
 
 export function IoTabs({
+  observation,
   input,
   output,
   metadata,
 }: {
+  /** When present (observation detail panel) a human-readable Preview tab is
+   * prepended and selected by default; trace-level IO keeps plain tabs. */
+  observation?: Observation;
   input: unknown;
   output: unknown;
   metadata: unknown;
 }) {
   return (
-    <Tabs defaultValue="input">
+    <Tabs defaultValue={observation ? "preview" : "input"}>
       <TabsList>
+        {observation && <TabsTrigger value="preview">Preview</TabsTrigger>}
         <TabsTrigger value="input">Input</TabsTrigger>
         <TabsTrigger value="output">Output</TabsTrigger>
         <TabsTrigger value="metadata">Metadata</TabsTrigger>
       </TabsList>
+      {observation && (
+        <TabsContent value="preview" className="mt-3">
+          <ObservationPreview observation={observation} />
+        </TabsContent>
+      )}
       <TabsContent value="input" className="mt-3">
         <IoViewer data={input} />
       </TabsContent>
@@ -116,7 +127,15 @@ export function ObservationDetail({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <StatChip icon={Clock} label="Duration" value={formatDuration(o.startTime, o.endTime)} />
+        <StatChip
+          icon={Clock}
+          label={o.type === "EVENT" ? "At" : "Duration"}
+          value={
+            o.type === "EVENT"
+              ? formatClockTime(o.startTime)
+              : formatDuration(o.startTime, o.endTime)
+          }
+        />
         <StatChip icon={Cpu} label="Model" value={o.model ?? "—"} />
         <StatChip
           icon={Layers}
@@ -138,7 +157,7 @@ export function ObservationDetail({
 
       <Separator />
 
-      <IoTabs input={o.input} output={o.output} metadata={o.metadata} />
+      <IoTabs observation={o} input={o.input} output={o.output} metadata={o.metadata} />
 
       {scores.length > 0 && (
         <>

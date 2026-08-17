@@ -1,0 +1,1 @@
+LITE_SERVER_PORT=23432 pnpm --filter @peri-fuse/server run dev
