@@ -6,7 +6,16 @@
  * the left driving the detail panel on the right. Reached from the trace peek
  * view's "Open full view" action or a direct URL.
  */
-import { ArrowLeft, Clock, Copy, Cpu, Layers, ListTree, Star } from "lucide-react";
+import {
+  ArrowLeft,
+  ChartNoAxesCombined,
+  Clock,
+  Copy,
+  Cpu,
+  Layers,
+  ListTree,
+  Star,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { LocalIsoDate } from "@/shared/components/local-iso-date";
@@ -16,7 +25,8 @@ import {
   ScoreList,
   StatChip,
 } from "@/shared/components/observation-detail";
-import { buildTree, ObservationNode } from "@/shared/components/observation-tree";
+import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
+import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
 import { ErrorState } from "@/shared/components/state";
 import { toast } from "@/shared/components/toast";
 import { Badge } from "@/shared/components/ui/badge";
@@ -86,11 +96,16 @@ function TraceDetailSkeleton() {
 export function TraceDetailPage() {
   const { traceId } = useParams<{ traceId: string }>();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [timelineOpen, setTimelineOpen] = useState(false);
 
   const query = useTraceQuery(traceId);
   const trace = query.data;
 
-  const tree = useMemo(() => buildTree(trace?.observations ?? []), [trace]);
+  const [omitNoise, setOmitNoise] = useState(true);
+  const tree = useMemo(
+    () => buildTree(trace?.observations ?? [], { omitNoise }),
+    [trace, omitNoise],
+  );
 
   if (query.isLoading) return <TraceDetailSkeleton />;
   if (query.error) return <ErrorState error={query.error} />;
@@ -159,14 +174,24 @@ export function TraceDetailPage() {
           <StatChip icon={Layers} label="Observations" value={String(trace.observations.length)} />
           <StatChip icon={Cpu} label="Tokens" value={formatTokens(totalTokens)} />
           <StatChip icon={Star} label="Scores" value={String(trace.scores.length)} />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-11 self-end"
+            onClick={() => setTimelineOpen(true)}
+          >
+            <ChartNoAxesCombined className="h-3.5 w-3.5" />
+            Timeline
+          </Button>
         </div>
       </div>
 
       {/* Body: observation tree + detail */}
       <div className="flex min-h-0 flex-1">
         <Card className="m-4 mr-0 flex w-[45%] min-w-[320px] flex-col overflow-hidden">
-          <CardHeader className="border-b border-border pb-3">
+          <CardHeader className="flex-row items-center justify-between border-b border-border pb-3">
             <CardTitle className="text-sm text-fg-primary">Observation tree</CardTitle>
+            <OmitNoiseToggle omitNoise={omitNoise} onChange={setOmitNoise} />
           </CardHeader>
           <CardContent className="min-h-0 flex-1 p-2">
             <ScrollArea className="h-full">
@@ -215,6 +240,8 @@ export function TraceDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <ObservationTimelineDialog trace={trace} open={timelineOpen} onOpenChange={setTimelineOpen} />
     </div>
   );
 }

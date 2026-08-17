@@ -8,7 +8,17 @@
  * right (trace-level IO + scores when the root is selected). "Open full view"
  * navigates to the dedicated trace-detail page.
  */
-import { ArrowUpRight, Clock, Copy, Cpu, Layers, ListTree, Star, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  ChartNoAxesCombined,
+  Clock,
+  Copy,
+  Cpu,
+  Layers,
+  ListTree,
+  Star,
+  X,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -19,7 +29,8 @@ import {
   ScoreList,
   StatChip,
 } from "@/shared/components/observation-detail";
-import { buildTree, ObservationNode } from "@/shared/components/observation-tree";
+import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
+import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
 import { toast } from "@/shared/components/toast";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
@@ -35,7 +46,12 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
   const trace = query.data;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const tree = useMemo(() => buildTree(trace?.observations ?? []), [trace]);
+  const [omitNoise, setOmitNoise] = useState(true);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+  const tree = useMemo(
+    () => buildTree(trace?.observations ?? [], { omitNoise }),
+    [trace, omitNoise],
+  );
 
   const copyId = () => {
     navigator.clipboard.writeText(traceId);
@@ -61,6 +77,15 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
           </h2>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title="Timeline"
+            onClick={() => setTimelineOpen(true)}
+          >
+            <ChartNoAxesCombined className="h-4 w-4" />
+          </Button>
           <Link to={`/traces/${encodeURIComponent(traceId)}`} title="Open full view">
             <Button variant="ghost" size="icon" className="h-8 w-8">
               <ArrowUpRight className="h-4 w-4" />
@@ -136,6 +161,9 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
               <div className="flex shrink-0 items-center gap-1.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-fg-tertiary">
                 <ListTree className="h-3.5 w-3.5" />
                 Observation tree
+                <span className="ml-auto">
+                  <OmitNoiseToggle omitNoise={omitNoise} onChange={setOmitNoise} />
+                </span>
               </div>
               <ScrollArea className="min-h-0 flex-1">
                 <div className="px-2 pb-2">
@@ -199,6 +227,15 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
           </div>
         </>
       ) : null}
+
+      {trace && (
+        <ObservationTimelineDialog
+          trace={trace}
+          open={timelineOpen}
+          onOpenChange={setTimelineOpen}
+          omitNoise={omitNoise}
+        />
+      )}
     </aside>
   );
 }

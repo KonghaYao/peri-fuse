@@ -4,9 +4,10 @@
  * session with a divider between traces).
  */
 
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Filter } from "lucide-react";
 import { useState } from "react";
 import { LevelBadge, ObservationTypeIcon } from "@/shared/components/observation-badges";
+import { Button } from "@/shared/components/ui/button";
 import { formatDuration } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
@@ -17,18 +18,51 @@ export type TreeNode = {
 };
 
 /**
+ * Observations that are pure intermediate noise and hidden from the tree:
+ * `stage-*` spans — agent internal phases (stage-reason / stage-act / ...)
+ * that add little signal on top of the agent -> tool/generation chain.
+ *
+ * ERROR-level observations are always kept: even a `stage-*` node can carry
+ * a failure signal (statusMessage) that must stay visible.
+ */
+function isNoiseObservation(o: Observation): boolean {
+  if (o.level === "ERROR") return false;
+  return o.name?.startsWith("stage-") ?? false;
+}
+
+/**
  * Builds a forest from the flat observation list using parentObservationId.
  * Children are sorted by startTime; observations whose parent is missing
  * (e.g. filtered out) are treated as roots.
+ *
+ * With `omitNoise` (default true) noise observations (see
+ * `isNoiseObservation`) are hidden from the tree; their children are hoisted
+ * onto the nearest visible ancestor so the agent -> tool/generation chain
+ * stays intact.
  */
-export function buildTree(observations: Observation[]): TreeNode[] {
+export function buildTree(
+  observations: Observation[],
+  opts: { omitNoise?: boolean } = {},
+): TreeNode[] {
+  const omitNoise = opts.omitNoise ?? true;
   const nodes = new Map<string, TreeNode>();
+  const hidden = new Set<string>();
   for (const o of observations) {
     nodes.set(o.id, { observation: o, children: [] });
+    if (omitNoise && isNoiseObservation(o)) hidden.add(o.id);
   }
   const roots: TreeNode[] = [];
   for (const node of nodes.values()) {
-    const parentId = node.observation.parentObservationId;
+    if (hidden.has(node.observation.id)) continue;
+    // Hoist: walk up the parent chain until the first visible ancestor.
+    const visited = new Set<string>();
+    let parentId = node.observation.parentObservationId;
+    while (parentId && hidden.has(parentId) && !visited.has(parentId)) {
+      visited.add(parentId);
+      const parent = nodes.get(parentId);
+      if (!parent) break;
+      parentId = parent.observation.parentObservationId;
+    }
     const parent = parentId ? nodes.get(parentId) : undefined;
     if (parent && parent !== node) {
       parent.children.push(node);
@@ -120,5 +154,30 @@ export function ObservationNode({
           />
         ))}
     </div>
+  );
+}
+
+/**
+ * Toggle for the noise-omission behaviour of `buildTree`. Active (default)
+ * means noise nodes (stage-* spans) are hidden.
+ */
+export function OmitNoiseToggle({
+  omitNoise,
+  onChange,
+}: {
+  omitNoise: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={cn("h-7 w-7", omitNoise && "bg-brand-subtle text-brand")}
+      onClick={() => onChange(!omitNoise)}
+      title={omitNoise ? "隐藏噪音节点（stage-*）" : "显示全部节点"}
+      aria-pressed={omitNoise}
+    >
+      <Filter className="h-3.5 w-3.5" />
+    </Button>
   );
 }

@@ -12,7 +12,7 @@ import { ArrowLeft, ArrowUpRight, ChevronRight, ListTree, Users } from "lucide-r
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ObservationDetail } from "@/shared/components/observation-detail";
-import { buildTree, ObservationNode } from "@/shared/components/observation-tree";
+import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
 import { EmptyState, ErrorState } from "@/shared/components/state";
 import { Badge } from "@/shared/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
@@ -97,9 +97,10 @@ export function SessionDetailPage() {
 
   const session = query.data;
 
+  const [omitNoise, setOmitNoise] = useState(true);
   const trees = useMemo(
-    () => (session?.traces ?? []).map((t) => buildTree(t.observations)),
-    [session],
+    () => (session?.traces ?? []).map((t) => buildTree(t.observations, { omitNoise })),
+    [session, omitNoise],
   );
 
   // The selected observation and the trace it belongs to (for its scores).
@@ -189,8 +190,9 @@ export function SessionDetailPage() {
       {/* Body: merged observation tree + detail panel */}
       <div className="flex min-h-0 flex-1">
         <Card className="m-4 mr-0 flex w-[45%] min-w-[320px] flex-col overflow-hidden">
-          <CardHeader className="pb-2">
+          <CardHeader className="flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm">Observation tree</CardTitle>
+            <OmitNoiseToggle omitNoise={omitNoise} onChange={setOmitNoise} />
           </CardHeader>
           <CardContent className="min-h-0 flex-1 p-2">
             {query.isLoading ? (
