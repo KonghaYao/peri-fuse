@@ -109,8 +109,10 @@ export function responseCache(
       const shared = await pending;
       if (shared) {
         c.header("X-Cache", "HIT");
-        // Clone so each waiter gets an unconsumed body.
-        return c.body(await shared.clone().text(), 200, {
+        // Clone so each waiter gets an unconsumed body. arrayBuffer (not text)
+        // so oversized bodies don't hit the V8 string cap.
+        const buf = await shared.clone().arrayBuffer();
+        return c.body(buf, 200, {
           "Content-Type": shared.headers.get("content-type") ?? "application/json",
         });
       }
@@ -123,8 +125,36 @@ export function responseCache(
       const res = c.res;
       if (res.status !== 200) return;
 
-      const body = await res.text();
+      // Oversized bodies are served straight through: decoding them into a
+      // string hits the V8 string cap (text() throws past ~512 MiB), and a
+      // body beyond MAX_BYTES would only evict the whole cache anyway.
+      const declared = Number(res.headers.get("content-length") ?? 0);
+      if (declared > MAX_BYTES) {
+        c.header("X-Cache", "SKIP");
+        const finish = (
+          pending as Promise<Response | null> & {
+            finish?: (v: Response | null) => void;
+          }
+        ).finish;
+        finish?.(res.clone());
+        return;
+      }
+
+      const buf = await res.arrayBuffer();
       const contentType = res.headers.get("content-type") ?? "application/json";
+      if (buf.byteLength > MAX_BYTES) {
+        c.res = new Response(buf, { status: 200, headers: res.headers });
+        c.header("X-Cache", "SKIP");
+        const finish = (
+          pending as Promise<Response | null> & {
+            finish?: (v: Response | null) => void;
+          }
+        ).finish;
+        finish?.(new Response(buf, { status: 200, headers: { "Content-Type": contentType } }));
+        return;
+      }
+
+      const body = new TextDecoder().decode(buf);
       // The body stream was consumed above — hand the client an equivalent one.
       c.res = new Response(body, { status: 200, headers: res.headers });
       c.header("X-Cache", "MISS");
