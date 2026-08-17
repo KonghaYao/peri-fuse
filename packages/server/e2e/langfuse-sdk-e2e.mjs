@@ -3,7 +3,7 @@
  *
  * Usage:
  *   1. Start the server:  PERIFUSE_HOME=/tmp/pf-e2e pnpm dev:server
- *   2. Run this test:     PK=<pk> SK=<sk> BASE=http://localhost:23332 node e2e/langfuse-sdk-e2e.mjs
+ *   2. Run this test:     PK=<pk> SK=<sk> BASE=http://localhost:23432 node e2e/langfuse-sdk-e2e.mjs
  *
  * Or use the npm script (auto-starts a throwaway server):
  *   pnpm test:e2e
@@ -14,7 +14,7 @@
  */
 import { Langfuse } from "langfuse";
 
-const BASE = process.env.BASE ?? "http://localhost:23332";
+const BASE = process.env.BASE ?? "http://localhost:23432";
 const PK = process.env.PK;
 const SK = process.env.SK;
 if (!PK || !SK) {

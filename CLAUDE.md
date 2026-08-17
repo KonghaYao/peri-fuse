@@ -99,8 +99,8 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 
 ```bash
 pnpm run dev                  # 同时启动后端（tsx watch）和前端（Vite）
-pnpm run dev:server           # 仅后端开发（port 23332）
-pnpm run dev:web              # 仅前端开发（Vite port 5173，代理 /api → 23332）
+pnpm run dev:server           # 仅后端开发（port 23432）
+pnpm run dev:web              # 仅前端开发（Vite port 5173，代理 /api → 23432）
 pnpm run build                # 全量构建（shared → gateway → server → cli → web）
 pnpm run typecheck            # 全包 TypeScript 类型检查
 pnpm run lint                 # Biome lint + format 检查
@@ -180,7 +180,7 @@ pnpm run svc:logs             # 查看服务日志
 - 通用图标使用 `lucide-react`。
 - 样式使用 Tailwind CSS 4（`@tailwindcss/postcss`），工具类优先。
 - 页面流程必须覆盖 loading（Skeleton）、empty、error 和 retry 状态。
-- 开发时 Vite 代理 `/api` 到 `http://localhost:23332`；生产时 server 直接托管 `web/dist`。
+- 开发时 Vite 代理 `/api` 到 `http://localhost:23432`（dev 端口）；生产时 server 直接托管 `web/dist`（port 23332）。
 
 ### 存储层
 
@@ -245,7 +245,7 @@ pnpm run svc:logs             # 查看服务日志
 
 ### 全局 / Server
 
-- `LITE_SERVER_PORT`：Server 端口（默认 23332）。
+- `LITE_SERVER_PORT`：Server 端口（生产默认 23332；开发统一用 23432，root `dev`/`dev:server` 脚本与 `vite.config.ts` 代理已按此约定，勿混用）。
 - `LANGFUSE_MODE`：运行模式（固定 `lite`，server 启动时自动设置）。
 - `PERIFUSE_HOME`：全局数据目录（默认 `~/.peri-fuse`），所有 SQLite 数据库、salt、encryption key 存放于此。
 - `DATABASE_URL`：Prisma SQLite 路径（默认 `<PERIFUSE_HOME>/langfuse.db`）。

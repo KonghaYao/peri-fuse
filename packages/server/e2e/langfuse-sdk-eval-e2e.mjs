@@ -12,7 +12,7 @@
  */
 import { Langfuse } from "langfuse";
 
-const BASE = process.env.BASE ?? "http://localhost:23332";
+const BASE = process.env.BASE ?? "http://localhost:23432";
 const PK = process.env.PK;
 const SK = process.env.SK;
 if (!PK || !SK) {
