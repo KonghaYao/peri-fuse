@@ -8,13 +8,15 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowUpRight, ChevronRight, ListTree, Users } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ChartNoAxesCombined, ChevronRight, ListTree, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ObservationDetail } from "@/shared/components/observation-detail";
+import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
 import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
 import { EmptyState, ErrorState } from "@/shared/components/state";
 import { Badge } from "@/shared/components/ui/badge";
+import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Separator } from "@/shared/components/ui/separator";
@@ -88,6 +90,7 @@ export function SessionDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [timelineOpen, setTimelineOpen] = useState(false);
 
   const query = useQuery({
     queryKey: ["session", sessionId],
@@ -148,6 +151,17 @@ export function SessionDetailPage() {
               </p>
             )}
           </div>
+          {session && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              onClick={() => setTimelineOpen(true)}
+            >
+              <ChartNoAxesCombined className="h-4 w-4" />
+              Timeline
+            </Button>
+          )}
         </div>
 
         {session && (
@@ -247,6 +261,15 @@ export function SessionDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {session && (
+        <ObservationTimelineDialog
+          traces={session.traces}
+          open={timelineOpen}
+          onOpenChange={setTimelineOpen}
+          omitNoise={omitNoise}
+        />
+      )}
     </div>
   );
 }

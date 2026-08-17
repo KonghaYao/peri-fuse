@@ -15,6 +15,43 @@ const TICK_TARGET_PX = 90; // target px between ruler labels
 const GROUP_GAP = 8; // px between type tracks
 export const LABEL_W = 64; // px, type-track label column
 
+// ---------------------------------------------------------------------------
+// Duration → opacity ("heat") mapping
+//
+// Robust log-space normalization: log10 compresses orders of magnitude (a
+// 10ms and a 10s observation differ by 3 log units regardless of the range),
+// the MAD anchors the scale to the *typical* duration instead of the max, and
+// a hard z-clamp caps outliers so one very long observation can never wash
+// the rest out to near-transparent.
+// ---------------------------------------------------------------------------
+
+const OPACITY_MIN = 0.25; // shortest visible
+const OPACITY_MAX = 0.95; // longest
+const OPACITY_FLAT = 0.65; // fallback when there is nothing to rank against
+const MAD_TO_SIGMA = 1.4826; // median absolute deviation → σ approximation
+const Z_CLAMP = 2.5; // ±2.5σ ≈ 98.8% of a normal distribution
+
+export type DurationOpacity = (ms: number) => number;
+
+export function buildDurationOpacity(durations: number[]): DurationOpacity {
+  const xs = durations
+    .filter((d) => Number.isFinite(d) && d > 0)
+    .map((d) => Math.log10(d + 1));
+  if (xs.length < 3) return () => OPACITY_FLAT; // not enough signal to rank
+  xs.sort((a, b) => a - b);
+  const median = xs[Math.floor(xs.length / 2)];
+  const devs = xs.map((x) => Math.abs(x - median)).sort((a, b) => a - b);
+  const mad = devs[Math.floor(devs.length / 2)];
+  if (mad < 1e-9) return () => OPACITY_FLAT; // all durations identical
+  const scale = mad * MAD_TO_SIGMA;
+  return (ms) => {
+    if (!Number.isFinite(ms) || ms <= 0) return OPACITY_MIN; // instants = shortest
+    const z = (Math.log10(ms + 1) - median) / scale;
+    const u = Math.max(-Z_CLAMP, Math.min(Z_CLAMP, z));
+    return OPACITY_MIN + (OPACITY_MAX - OPACITY_MIN) * ((u + Z_CLAMP) / (2 * Z_CLAMP));
+  };
+}
+
 export const BAR_COLORS: Record<string, string> = {
   SPAN: "bg-blue-500/70 dark:bg-blue-400/60",
   EVENT: "bg-green-500/80 dark:bg-green-400/70",
@@ -29,6 +66,16 @@ export const BAR_COLORS: Record<string, string> = {
 };
 export const BAR_COLOR_FALLBACK = "bg-slate-400/60 dark:bg-slate-400/50";
 
+// Accent dots for cross-trace timelines (one color per trace/turn).
+export const TRACE_COLORS = [
+  "bg-amber-500",
+  "bg-sky-500",
+  "bg-rose-500",
+  "bg-emerald-500",
+  "bg-violet-500",
+  "bg-orange-500",
+];
+
 /** Subagent observations are AGENT spans named `subagent*`; their internal
  *  observations are rendered in a separate sub-band, not the main track. */
 export function isSubagentObservation(o: Observation): boolean {
@@ -42,6 +89,7 @@ export type BandSegment = {
   endMs: number; // offset; === totalMs while still running
   running: boolean;
   lane: number;
+  traceIndex?: number; // which source/trace this observation belongs to
 };
 
 /**
@@ -54,6 +102,7 @@ export function layoutLanes(
   observations: Observation[],
   t0: number,
   totalMs: number,
+  traceOf?: Map<string, number>,
 ): BandSegment[] {
   const items = observations
     .map((o) => {
@@ -69,6 +118,7 @@ export function layoutLanes(
         endMs: isInstant ? startMs : (endMs ?? totalMs),
         running: !isInstant && endMs === null,
         lane: 0,
+        traceIndex: traceOf?.get(o.id),
       };
     })
     .sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
@@ -114,6 +164,7 @@ export function layoutTypeLanes(
   observations: Observation[],
   t0: number,
   totalMs: number,
+  traceOf?: Map<string, number>,
 ): TypeLaneGroup[] {
   const byType = new Map<string, Observation[]>();
   for (const o of observations) {
@@ -125,7 +176,7 @@ export function layoutTypeLanes(
   const pushGroup = (type: string) => {
     const obs = byType.get(type);
     if (!obs || obs.length === 0) return;
-    const segments = layoutLanes(obs, t0, totalMs);
+    const segments = layoutLanes(obs, t0, totalMs, traceOf);
     const laneCount = segments.reduce((m, s) => Math.max(m, s.lane + 1), 0);
     groups.push({ type, segments, laneCount });
   };
@@ -210,12 +261,16 @@ export function TimelineBand({
   groups,
   totalMs,
   width,
+  opacityFor,
+  traceNames,
   selectedId,
   onSelect,
 }: {
   groups: TypeLaneGroup[];
   totalMs: number;
   width: number;
+  opacityFor?: DurationOpacity;
+  traceNames?: string[]; // cross-trace (session) mode: one name per source
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
@@ -285,6 +340,7 @@ export function TimelineBand({
               seg={seg}
               top={seg.lane * LANE_H + 4} /* relative to the track row */
               pxPerMs={pxPerMs}
+              opacityFor={opacityFor}
               hovered={hoverId === seg.id}
               selected={selectedId === seg.id}
               onHover={setHoverId}
@@ -299,6 +355,7 @@ export function TimelineBand({
           left={hovered.leftPx}
           top={hovered.topPx}
           width={width}
+          traceNames={traceNames}
         />
       )}
     </div>
@@ -309,6 +366,7 @@ export function BandBlock({
   seg,
   top,
   pxPerMs,
+  opacityFor,
   hovered,
   selected,
   onHover,
@@ -317,6 +375,7 @@ export function BandBlock({
   seg: BandSegment;
   top: number;
   pxPerMs: number;
+  opacityFor?: DurationOpacity;
   hovered: boolean;
   selected: boolean;
   onHover: (id: string | null) => void;
@@ -335,6 +394,9 @@ export function BandBlock({
   // Subagent placeholders on the main track: keep the AGENT block but give it
   // a distinct look — its internals live in a separate sub-band.
   const isSub = isSubagentObservation(obs);
+  // Heat mode: opacity encodes duration (longer = deeper); hover restores full
+  // color so a faint block is still easy to inspect.
+  const opacity = opacityFor ? (hovered ? 1 : opacityFor(seg.endMs - seg.startMs)) : undefined;
 
   return (
     <div
@@ -358,7 +420,7 @@ export function BandBlock({
           "opacity-90 [background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.35)_0_4px,transparent_4px_8px)]",
         "focus-visible:ring-2 focus-visible:ring-brand",
       )}
-      style={{ left, width: w, top: topY, height: h }}
+      style={{ left, width: w, top: topY, height: h, opacity }}
     >
       {showName && (
         <span className="block truncate px-1.5 text-[10px] font-medium leading-[18px] text-white/90">
@@ -375,18 +437,30 @@ function HoverCard({
   left,
   top,
   width,
+  traceNames,
 }: {
   seg: BandSegment;
   left: number;
   top: number;
   width: number;
+  traceNames?: string[];
 }) {
   const { obs } = seg;
   const tokenText = obs.totalTokens > 0 ? formatTokens(obs.totalTokens) : null;
+  const trace =
+    traceNames && seg.traceIndex !== undefined && traceNames[seg.traceIndex]
+      ? { name: traceNames[seg.traceIndex], color: TRACE_COLORS[seg.traceIndex % TRACE_COLORS.length] }
+      : null;
+  // Near the top of the scroll area an upward card would be clipped under the
+  // sticky header — flip it below the block instead.
+  const flipDown = top < 96;
   return (
     <div
-      className="pointer-events-none absolute z-50 w-56 -translate-y-full rounded-md border border-line bg-popover p-2 text-xs shadow-lg"
-      style={{ left: Math.min(Math.max(left + 8, 8), width - 232), top: top - 6 }}
+      className={cn(
+        "pointer-events-none absolute z-50 w-56 rounded-md border border-line bg-popover p-2 text-xs shadow-lg",
+        flipDown ? "translate-y-0" : "-translate-y-full",
+      )}
+      style={{ left: Math.min(Math.max(left + 8, 8), width - 232), top: flipDown ? top + LANE_H + 6 : top - 6 }}
     >
       <div className="flex items-center gap-1.5">
         <ObservationTypeIcon type={obs.type} />
@@ -394,6 +468,12 @@ function HoverCard({
           {obs.name ?? "(unnamed)"}
         </span>
       </div>
+      {trace && (
+        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-fg-secondary">
+          <span className={cn("h-2 w-2 shrink-0 rounded-full", trace.color)} />
+          <span className="truncate">Turn {seg.traceIndex! + 1} · {trace.name}</span>
+        </div>
+      )}
       <div className="tnum mt-1 flex justify-between font-mono text-[11px] text-fg-secondary">
         <span>+{formatMs(seg.startMs)}</span>
         <span>{seg.running ? "running…" : formatDuration(obs.startTime, obs.endTime!)}</span>
