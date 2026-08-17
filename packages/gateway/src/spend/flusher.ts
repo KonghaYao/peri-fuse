@@ -6,6 +6,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "../db.js";
 import { apiKey, dailySpend, spendLog } from "../db/schema.js";
 import { gatewayEnv } from "../env.js";
+import { slowLogWriter } from "../slow-log/writer.js";
 import { generateId } from "../utils/id.js";
 
 export interface SpendEvent {
@@ -35,6 +36,7 @@ export interface SpendEvent {
   response?: string;
   errorMessage?: string;
   traceId?: string;
+  stream?: boolean;
 }
 
 interface DailySpendIncrement {
@@ -80,6 +82,31 @@ class SpendFlusher {
    * Enqueue a spend event for batch writing.
    */
   enqueue(event: SpendEvent): void {
+    // Slow request log (best-effort, non-blocking)
+    if (gatewayEnv.slowLogEnabled) {
+      slowLogWriter.writeIfSlow({
+        projectId: event.projectId,
+        callType: event.callType,
+        apiKey: event.apiKey,
+        model: event.model,
+        modelGroup: event.modelGroup,
+        provider: event.provider,
+        endTime: event.endTime,
+        latencyMs: event.requestDurationMs ?? event.endTime.getTime() - event.startTime.getTime(),
+        ttftMs: event.completionStartTime
+          ? event.completionStartTime.getTime() - event.startTime.getTime()
+          : undefined,
+        stream: event.stream,
+        status: event.status,
+        errorMessage: event.errorMessage,
+        promptTokens: event.promptTokens,
+        completionTokens: event.completionTokens,
+        totalTokens: event.totalTokens,
+        spend: event.spend,
+        traceId: event.traceId,
+      });
+    }
+
     this.spendLogQueue.push(event);
 
     // Also queue daily aggregation

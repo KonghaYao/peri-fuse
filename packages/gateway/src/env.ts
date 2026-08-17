@@ -58,4 +58,13 @@ export const gatewayEnv = {
   perifuseEndpoint: process.env.PERIFUSE_ENDPOINT ?? null,
   perifusePublicKey: process.env.PERIFUSE_PUBLIC_KEY ?? null,
   perifuseSecretKey: process.env.PERIFUSE_SECRET_KEY ?? null,
+  // Slow request log
+  slowLogEnabled: process.env.GATEWAY_SLOW_LOG_ENABLED === "true",
+  slowLogThresholdMs: process.env.GATEWAY_SLOW_LOG_THRESHOLD_MS
+    ? parseInt(process.env.GATEWAY_SLOW_LOG_THRESHOLD_MS, 10)
+    : 100,
+  slowLogRetentionDays: process.env.GATEWAY_SLOW_LOG_RETENTION_DAYS
+    ? parseInt(process.env.GATEWAY_SLOW_LOG_RETENTION_DAYS, 10)
+    : 7,
+  slowLogDir: process.env.GATEWAY_SLOW_LOG_DIR ?? path.join(dataDir, "slow-logs"),
 } as const;

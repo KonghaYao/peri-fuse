@@ -175,7 +175,7 @@ messages.post("/v1/messages", async (c) => {
           requestDurationMs: Date.now() - startTime.getTime(),
           model: result.deployment.providerModel, modelId: result.deployment.id,
           modelGroup: req.model, provider: result.deployment.providerName,
-          apiBase: result.deployment.baseUrl, protocol: "anthropic", status: "success",
+          apiBase: result.deployment.baseUrl, protocol: "anthropic", stream: req.stream, status: "success",
         });
 
         hookRegistry.runPostSuccess(hookCtx, {
@@ -218,7 +218,7 @@ messages.post("/v1/messages", async (c) => {
       requestDurationMs: latencyMs, model: result.deployment.providerModel,
       modelId: result.deployment.id, modelGroup: req.model,
       provider: result.deployment.providerName, apiBase: result.deployment.baseUrl,
-      protocol: "anthropic", status: "success",
+      protocol: "anthropic", stream: req.stream, status: "success",
     });
 
     hookRegistry.runPostSuccess(hookCtx, {

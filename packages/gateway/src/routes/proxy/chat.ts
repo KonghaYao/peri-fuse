@@ -142,6 +142,7 @@ chat.post("/v1/chat/completions", async (c) => {
           provider: result.deployment.providerName,
           apiBase: result.deployment.baseUrl,
           protocol: "openai",
+          stream: req.stream,
           status: "success",
         });
 
@@ -208,6 +209,7 @@ chat.post("/v1/chat/completions", async (c) => {
       provider: result.deployment.providerName,
       apiBase: result.deployment.baseUrl,
       protocol: "openai",
+      stream: req.stream,
       status: "success",
     });
 
