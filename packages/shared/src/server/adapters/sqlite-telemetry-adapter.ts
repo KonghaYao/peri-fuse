@@ -93,6 +93,9 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   private readonly dbPath: string;
   private readPool: SqliteReadPool | null = null;
   private readPoolInit = false;
+  /** Writes since the last ANALYZE; triggers a re-ANALYZE at the threshold. */
+  private analyzeWriteCounter = 0;
+  private static readonly ANALYZE_WRITE_THRESHOLD = 50_000;
 
   constructor(dbPath?: string) {
     const rawPath = dbPath ?? process.env.LANGFUSE_SQLITE_DB_PATH ?? DEFAULT_DB_PATH;
@@ -118,6 +121,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     // Initialize schema
     this.initializeSchema();
     this.migrateSchema();
+    this.analyzeTables();
 
     logger.info(`[SQLiteTelemetryAdapter] Database opened at ${resolvedPath}`);
   }
@@ -440,6 +444,33 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     }
   }
 
+  /**
+   * Refresh SQLite query-plan statistics (ANALYZE) for the hot tables.
+   *
+   * Without ANALYZE the planner falls back to default cost estimates: on a
+   * million-row observations table it can pick a low-selectivity index (e.g.
+   * idx_obs_start_level via `is_deleted = 0`) over the precise
+   * (project_id, trace_id) index, turning a trace point lookup into a
+   * full-project scan + temp B-tree (measured: ~1.5s → ~7ms on 1.1M rows).
+   * ANALYZE is cheap (~0.1s at 1M+ rows) and runs once at startup; the stats
+   * go stale as the DB grows, so re-run on a write-count threshold.
+   */
+  private analyzeTables(): void {
+    try {
+      this.db.exec("ANALYZE observations; ANALYZE traces; ANALYZE scores; ANALYZE trace_metrics;");
+    } catch (error) {
+      logger.error("[SQLiteTelemetryAdapter] ANALYZE failed", error);
+    }
+  }
+
+  private maybeReanalyze(): void {
+    this.analyzeWriteCounter++;
+    if (this.analyzeWriteCounter >= SQLiteTelemetryAdapter.ANALYZE_WRITE_THRESHOLD) {
+      this.analyzeWriteCounter = 0;
+      this.analyzeTables();
+    }
+  }
+
   private ensureColumn(table: string, column: string, definition: string): void {
     const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{
       name: string;
@@ -631,6 +662,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         }
       });
       insertMany(opts.records);
+      this.maybeReanalyze();
     } catch (error) {
       logger.error(`[SQLiteTelemetryAdapter] Insert into ${opts.table} failed`, error);
       throw error;
@@ -676,6 +708,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         }
       });
       insertMany(opts.records);
+      this.maybeReanalyze();
     } catch (error) {
       logger.error(`[SQLiteTelemetryAdapter] MergeInsert into ${opts.table} failed`, error);
       throw error;
