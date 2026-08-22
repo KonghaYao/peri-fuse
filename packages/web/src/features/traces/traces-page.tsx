@@ -2,8 +2,9 @@
  * Traces table — lite replica of web's traces table use-case.
  *
  * Data flow: a "core" list query provides the row identities, then a per-page
- * metrics query (GET /api/public/traces/metrics) supplies IO/latency/tokens/
- * levels which are joined client-side by id (joinTableCoreAndMetrics).
+ * metrics query (GET /api/public/traces/metrics) supplies bounded IO previews,
+ * latency, tokens, and levels which are joined client-side by id
+ * (joinTableCoreAndMetrics).
  * Metrics cells render skeletons until the metrics query resolves.
  *
  * State is URL-synced via useTableState (page, sort, filters in searchParams).

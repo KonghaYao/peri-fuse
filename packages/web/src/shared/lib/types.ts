@@ -266,9 +266,9 @@ export type TraceMetrics = {
   calculatedTotalCost: number | null;
   usageDetails: Record<string, number>;
   costDetails: Record<string, number>;
-  input: unknown;
-  output: unknown;
-  metadata: unknown;
+  input?: unknown;
+  output?: unknown;
+  metadata?: unknown;
 };
 
 // ---------------------------------------------------------------------------

@@ -87,8 +87,10 @@ app.get("/api/public/traces", authMiddleware, responseCache(2_000), async (c) =>
 //
 // Lite-mode-only aggregate endpoint backing the lite-web traces table. For the
 // given trace ids it returns per-trace metrics (latency, tokens, cost, level
-// counts, observation count) plus input/output/metadata, computed directly from
-// the SQLite telemetry store (mirrors web's `traces.metrics` tRPC + IO cells).
+// counts, observation count). The optional `fields` parameter can request
+// `metrics`, full `io`, or bounded `io_preview`; omitting it preserves the
+// original full-IO response. Everything is computed directly from SQLite
+// (mirrors web's `traces.metrics` tRPC + IO cells).
 // Registered before the `:traceId` route so "metrics" is not matched as an id.
 // ---------------------------------------------------------------------------
 
@@ -103,6 +105,21 @@ app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), asyn
 
   if (traceIds.length === 0) return c.json([]);
 
+  const fieldsParam = c.req.query("fields");
+  const fields = new Set(
+    (fieldsParam ?? "")
+      .split(",")
+      .map((field) => field.trim())
+      .filter(Boolean),
+  );
+  const includeIo = fieldsParam === undefined || fields.has("io");
+  const includeIoPreview = !includeIo && fields.has("io_preview");
+  const traceProjection = includeIo
+    ? "id, input, output, metadata"
+    : includeIoPreview
+      ? "id, substr(input, 1, 500) AS input, substr(output, 1, 500) AS output, substr(metadata, 1, 500) AS metadata"
+      : "id";
+
   const db = getTelemetryDB();
   try {
     const placeholders = traceIds.map((_, i) => `@id${i}`).join(",");
@@ -114,7 +131,7 @@ app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), asyn
     const [traceRows, obsRows] = await Promise.all([
       db.query<Record<string, unknown>>({
         query: `
-          SELECT id, input, output, metadata
+          SELECT ${traceProjection}
           FROM traces
           WHERE project_id = @projectId AND id IN (${placeholders}) AND is_deleted = 0
         `,
@@ -148,13 +165,16 @@ app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), asyn
       obsByTrace.set(tid, list);
     }
 
-    const metrics = traceIds.map((traceId) =>
-      aggregateTraceMetrics(
+    const metrics = traceIds.map((traceId) => {
+      const row = aggregateTraceMetrics(
         traceId,
         obsByTrace.get(traceId) ?? [],
         ioByTrace.get(traceId) ?? { input: null, output: null, metadata: null },
-      ),
-    );
+      );
+      if (includeIo || includeIoPreview) return row;
+      const { input: _input, output: _output, metadata: _metadata, ...metricsOnly } = row;
+      return metricsOnly;
+    });
 
     return c.json(metrics);
   } catch (error) {

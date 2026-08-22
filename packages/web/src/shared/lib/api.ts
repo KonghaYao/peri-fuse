@@ -236,7 +236,10 @@ export function getDashboard(params: DashboardQueryParams = {}): Promise<Dashboa
 export function getTracesMetrics(traceIds: string[]): Promise<TraceMetrics[]> {
   if (traceIds.length === 0) return Promise.resolve([]);
   return request<TraceMetrics[]>(
-    `/api/public/traces/metrics${toQueryString({ traceIds: traceIds.join(",") })}`,
+    `/api/public/traces/metrics${toQueryString({
+      traceIds: traceIds.join(","),
+      fields: "metrics,io_preview",
+    })}`,
   );
 }
 
