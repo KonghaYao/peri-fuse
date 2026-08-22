@@ -16,6 +16,7 @@ import dashboardRoutes from "./routes/dashboard";
 import datasetItemsRoutes from "./routes/dataset-items";
 import datasetsRoutes from "./routes/datasets";
 import datasetsV2Routes from "./routes/datasets-v2";
+import errorsRoutes from "./routes/errors";
 import evalTemplatesRoutes from "./routes/eval-templates";
 import evalsRoutes from "./routes/evals";
 import gatewayProxyRoutes from "./routes/gateway-proxy";
@@ -87,6 +88,7 @@ export function createApp(): Hono<LiteServerEnv> {
   app.route("/", scoreConfigsRoutes);
   app.route("/", evalTemplatesRoutes);
   app.route("/", evalsRoutes);
+  app.route("/", errorsRoutes);
   app.route("/", datasetsRoutes);
   app.route("/", datasetItemsRoutes);
   app.route("/", datasetsV2Routes);

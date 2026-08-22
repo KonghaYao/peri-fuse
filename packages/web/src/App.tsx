@@ -9,6 +9,9 @@ import { hasActiveProject, useProjectContext } from "@/shared/store/project";
 const DashboardPage = lazy(() =>
   import("@/features/dashboard/dashboard-page").then((m) => ({ default: m.DashboardPage })),
 );
+const ErrorsPage = lazy(() =>
+  import("@/features/errors/errors-page").then((m) => ({ default: m.ErrorsPage })),
+);
 const TracesPage = lazy(() =>
   import("@/features/traces/traces-page").then((m) => ({ default: m.TracesPage })),
 );
@@ -130,6 +133,16 @@ export default function App() {
               <RequireProject>
                 <Suspense fallback={<PageFallback />}>
                   <TracesPage />
+                </Suspense>
+              </RequireProject>
+            }
+          />
+          <Route
+            path="errors"
+            element={
+              <RequireProject>
+                <Suspense fallback={<PageFallback />}>
+                  <ErrorsPage />
                 </Suspense>
               </RequireProject>
             }

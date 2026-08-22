@@ -244,6 +244,54 @@ export type DashboardQueryParams = {
 };
 
 // ---------------------------------------------------------------------------
+// Error investigation (GET /api/public/errors)
+// ---------------------------------------------------------------------------
+
+export type ErrorQueryParams = {
+  from?: string;
+  to?: string;
+  search?: string;
+  type?: string;
+  model?: string;
+};
+
+export type ErrorEvent = {
+  id: string;
+  traceId: string | null;
+  parentObservationId: string | null;
+  name: string | null;
+  type: string;
+  startTime: string;
+  endTime: string | null;
+  statusMessage: string | null;
+  model: string | null;
+  environment: string | null;
+  traceName: string | null;
+  sessionId: string | null;
+  userId: string | null;
+};
+
+export type ErrorAnalysis = {
+  summary: {
+    totalErrors: number;
+    affectedTraces: number;
+    uniqueSignatures: number;
+    firstSeen: string | null;
+    lastSeen: string | null;
+  };
+  groups: Array<{
+    signature: string;
+    count: number;
+    traceCount: number;
+    lastSeen: string;
+  }>;
+  models: Array<{ model: string; count: number }>;
+  daily: Array<{ date: string; count: number }>;
+  data: ErrorEvent[];
+  meta: { cursor: string | null };
+};
+
+// ---------------------------------------------------------------------------
 // Trace metrics (GET /api/public/traces/metrics)
 // ---------------------------------------------------------------------------
 

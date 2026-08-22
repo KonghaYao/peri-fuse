@@ -335,6 +335,10 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       -- Covers dashboard level mix (time-bounded GROUP BY level)
       CREATE INDEX IF NOT EXISTS idx_obs_start_level
         ON observations(project_id, is_deleted, start_time, level);
+      -- Covers the error investigation feed and signature analysis. Level is
+      -- before time so ERROR-only windows do not scan every observation.
+      CREATE INDEX IF NOT EXISTS idx_obs_error_start
+        ON observations(project_id, is_deleted, level, start_time DESC, id DESC);
       -- Covers sessions list: GROUP BY session_id with timestamp/user aggregation
       CREATE INDEX IF NOT EXISTS idx_traces_deleted_session
         ON traces(project_id, is_deleted, session_id, timestamp, user_id, environment, tags);

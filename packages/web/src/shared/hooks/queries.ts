@@ -25,6 +25,7 @@ import {
   getTraceIo,
   getTraceShell,
   getTracesMetrics,
+  listErrors,
   listObservations,
   listProjectKeys,
   listProjects,
@@ -36,6 +37,7 @@ import {
 } from "@/shared/lib/api";
 import type {
   DashboardQueryParams,
+  ErrorQueryParams,
   ObservationListParams,
   ScoreListParams,
   SessionListParams,
@@ -61,6 +63,7 @@ export const queryKeys = {
   observations: (params: ObservationListParams) => ["observations", params] as const,
   scores: (params: ScoreListParams) => ["scores", params] as const,
   dashboard: (params?: DashboardQueryParams) => ["dashboard", params ?? {}] as const,
+  errors: (params: ErrorQueryParams) => ["errors", params] as const,
   projects: ["projects"] as const,
   projectKeys: (projectId: string) => ["project-keys", projectId] as const,
 };
@@ -178,6 +181,17 @@ export function useDashboardQuery(params?: DashboardQueryParams) {
   return useQuery({
     queryKey: queryKeys.dashboard(params),
     queryFn: () => getDashboard(params),
+    refetchInterval: refetchInterval || false,
+  });
+}
+
+export function useErrorsQuery(params: ErrorQueryParams) {
+  const refetchInterval = useRefreshInterval();
+  return useInfiniteQuery({
+    queryKey: queryKeys.errors(params),
+    queryFn: ({ pageParam }) => listErrors(params, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.meta.cursor ?? undefined,
     refetchInterval: refetchInterval || false,
   });
 }

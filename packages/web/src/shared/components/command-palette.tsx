@@ -14,6 +14,7 @@ import {
   Moon,
   Search,
   Settings as SettingsIcon,
+  ShieldAlert,
   Star,
   Sun,
   UserRound,
@@ -88,6 +89,13 @@ export function CommandPalette() {
         icon: ListTree,
         keywords: "traces spans llm calls",
         action: () => navigate("/traces"),
+      },
+      {
+        id: "errors",
+        label: "Investigate Errors",
+        icon: ShieldAlert,
+        keywords: "errors failures incidents exceptions root cause debug",
+        action: () => navigate("/errors"),
       },
       {
         id: "sessions",

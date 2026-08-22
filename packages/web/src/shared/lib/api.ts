@@ -13,6 +13,8 @@ import type {
   CursorPage,
   Dashboard,
   DashboardQueryParams,
+  ErrorAnalysis,
+  ErrorQueryParams,
   Observation,
   ObservationListParams,
   Paged,
@@ -231,6 +233,15 @@ export function listScores(params: ScoreListParams = {}): Promise<Paged<Score>> 
 
 export function getDashboard(params: DashboardQueryParams = {}): Promise<Dashboard> {
   return request<Dashboard>(`/api/public/dashboard${toQueryString({ ...params })}`);
+}
+
+export function listErrors(
+  params: ErrorQueryParams = {},
+  cursor?: string | null,
+): Promise<ErrorAnalysis> {
+  return request<ErrorAnalysis>(
+    `/api/public/errors${toQueryString({ ...params, cursor, limit: 50 })}`,
+  );
 }
 
 export function getTracesMetrics(traceIds: string[]): Promise<TraceMetrics[]> {

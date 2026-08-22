@@ -21,6 +21,7 @@ import {
   Search,
   Server,
   Settings as SettingsIcon,
+  ShieldAlert,
   Star,
   Sun,
   UserRound,
@@ -41,6 +42,7 @@ const SIDEBAR_KEY = "peri-fuse-sidebar-collapsed";
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: Gauge },
   { to: "/traces", label: "Traces", icon: ListTree },
+  { to: "/errors", label: "Errors", icon: ShieldAlert },
   { to: "/sessions", label: "Sessions", icon: Users },
   { to: "/users", label: "Users", icon: UserRound },
   { to: "/observations", label: "Observations", icon: Activity },
