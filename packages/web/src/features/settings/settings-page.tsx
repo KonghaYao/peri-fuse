@@ -67,6 +67,11 @@ export function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="rounded-md border border-border bg-surface-inset px-3 py-2 text-xs leading-5 text-fg-secondary">
+                Keys marked <span className="font-mono">web-ui</span> are created automatically when
+                this dashboard activates a project. Up to five recent web-ui keys are kept so open
+                browser sessions continue working; older ones are removed automatically.
+              </div>
               <div className="flex items-center gap-2">
                 <Button
                   onClick={() =>
@@ -115,6 +120,11 @@ export function SettingsPage() {
                         <div className="text-xs text-fg-tertiary">
                           {k.displaySecretKey} · {new Date(k.createdAt).toLocaleDateString()}
                           {k.note ? ` · ${k.note}` : ""}
+                        </div>
+                        <div className="mt-0.5 text-xs text-fg-tertiary">
+                          {k.expiresAt
+                            ? `Expires ${new Date(k.expiresAt).toLocaleString()}`
+                            : "No expiration"}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">

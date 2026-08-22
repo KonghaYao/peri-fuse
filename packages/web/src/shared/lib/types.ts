@@ -253,6 +253,7 @@ export type ErrorQueryParams = {
   search?: string;
   type?: string;
   model?: string;
+  environment?: string;
 };
 
 export type ErrorEvent = {
@@ -345,6 +346,8 @@ export type SessionListParams = {
   limit?: number;
   userId?: string;
   environment?: string;
+  fromTimestamp?: string;
+  toTimestamp?: string;
   orderBy?: string; // e.g. "createdAt.desc"
 };
 
@@ -412,6 +415,8 @@ export type UserListParams = {
   limit?: number;
   userId?: string;
   environment?: string;
+  fromTimestamp?: string;
+  toTimestamp?: string;
   orderBy?: string; // e.g. "lastSeen.desc"
 };
 
@@ -433,6 +438,7 @@ export type ProjectKey = {
   displaySecretKey: string;
   note: string | null;
   createdAt: string;
+  expiresAt: string | null;
 };
 
 export type CreatedKey = {

@@ -112,6 +112,7 @@ manage.get("/api/manage/projects/:id/keys", async (c) => {
       displaySecretKey: k.displaySecretKey,
       note: k.note,
       createdAt: k.createdAt.toISOString(),
+      expiresAt: k.expiresAt?.toISOString() ?? null,
     })),
   );
 });

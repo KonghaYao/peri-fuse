@@ -3,13 +3,19 @@ import { describe, expect, it } from "vitest";
 import { apiGet, apiPost } from "./helpers";
 import { createSecondProject } from "./second-project";
 
-function errorBatch(traceId: string, signature: string, timestamp: string, count: number) {
+function errorBatch(
+  traceId: string,
+  signature: string,
+  timestamp: string,
+  count: number,
+  environment = "default",
+) {
   return [
     {
       id: randomUUID(),
       type: "trace-create",
       timestamp,
-      body: { id: traceId, timestamp, name: "failing-trace" },
+      body: { id: traceId, timestamp, name: "failing-trace", environment },
     },
     ...Array.from({ length: count }, (_, index) => ({
       id: randomUUID(),
@@ -23,6 +29,7 @@ function errorBatch(traceId: string, signature: string, timestamp: string, count
         level: "ERROR",
         statusMessage: signature,
         model: "test-model",
+        environment,
         input: "must-not-appear-in-index",
       },
     })),
@@ -76,5 +83,25 @@ describe("GET /api/public/errors", () => {
   it("rejects malformed cursors", async () => {
     const result = await apiGet("/api/public/errors?cursor=not-a-cursor");
     expect(result.status).toBe(400);
+  });
+
+  it("filters the incident window by exact environment", async () => {
+    const signature = `environment failure ${randomUUID()}`;
+    const timestamp = new Date().toISOString();
+    const ingestion = await apiPost("/api/public/ingestion", {
+      batch: [
+        ...errorBatch(`prod-${randomUUID()}`, signature, timestamp, 1, "production"),
+        ...errorBatch(`stage-${randomUUID()}`, signature, timestamp, 1, "staging"),
+      ],
+    });
+    expect(ingestion.status).toBe(207);
+
+    const result = await apiGet<any>(
+      `/api/public/errors?search=${encodeURIComponent(signature)}&environment=production`,
+    );
+    expect(result.status).toBe(200);
+    expect(result.body.summary.totalErrors).toBe(1);
+    expect(result.body.data).toHaveLength(1);
+    expect(result.body.data[0].environment).toBe("production");
   });
 });

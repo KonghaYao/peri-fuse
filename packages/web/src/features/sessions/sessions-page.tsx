@@ -7,11 +7,12 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { Globe, Search, User } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
 import { DataTable } from "@/shared/components/data-table";
-import { FilterInput } from "@/shared/components/filter-input";
+import { DateFilterInput } from "@/shared/components/date-filter-input";
+import { FilterInput, type FilterInputHandle } from "@/shared/components/filter-input";
 import { LocalIsoDate } from "@/shared/components/local-iso-date";
 import { PageHeader } from "@/shared/components/state";
 import TableIdOrName from "@/shared/components/table-id";
@@ -218,12 +219,16 @@ const columns: ColumnDef<SessionsTableRow, unknown>[] = [
 type SessionFilters = {
   userId?: string;
   environment?: string;
+  fromTimestamp?: string;
+  toTimestamp?: string;
 };
 
 export function SessionsPage() {
   const navigate = useNavigate();
+  const userFilterRef = useRef<FilterInputHandle>(null);
+  const environmentFilterRef = useRef<FilterInputHandle>(null);
   const tableState = useTableState<SessionFilters>({
-    filterKeys: ["userId", "environment"],
+    filterKeys: ["userId", "environment", "fromTimestamp", "toTimestamp"],
     defaultSort: "createdAt.desc",
   });
 
@@ -238,7 +243,10 @@ export function SessionsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="Sessions" description="Groups of traces sharing a session id." />
+      <PageHeader
+        title="Sessions"
+        description="Groups of traces and usage in the selected window."
+      />
 
       <div className="flex flex-1 flex-col overflow-hidden px-4 py-3">
         <DataTable
@@ -246,7 +254,11 @@ export function SessionsPage() {
           data={rows}
           isLoading={query.isLoading}
           error={query.error}
-          emptyMessage="No sessions found."
+          emptyMessage={
+            tableState.activeFilterCount > 0
+              ? "No sessions match the current filters."
+              : "No sessions found."
+          }
           meta={query.data?.meta}
           page={tableState.page}
           pageSize={PAGE_SIZE}
@@ -258,6 +270,7 @@ export function SessionsPage() {
           toolbar={
             <div className="flex flex-wrap items-center gap-2">
               <FilterInput
+                ref={userFilterRef}
                 className="w-44"
                 placeholder="Filter by userId…"
                 icon={User}
@@ -265,12 +278,40 @@ export function SessionsPage() {
                 onCommit={(v) => tableState.setFilter("userId", v)}
               />
               <FilterInput
+                ref={environmentFilterRef}
                 className="w-44"
                 placeholder="Filter by environment…"
                 icon={Globe}
                 value={tableState.filters.environment}
                 onCommit={(v) => tableState.setFilter("environment", v)}
               />
+              <DateFilterInput
+                className="w-36"
+                value={tableState.filters.fromTimestamp}
+                onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
+                placeholder="From date…"
+                title="Session activity start date"
+                boundary="start"
+              />
+              <DateFilterInput
+                className="w-36"
+                value={tableState.filters.toTimestamp}
+                onCommit={(v) => tableState.setFilter("toTimestamp", v)}
+                placeholder="To date…"
+                title="Session activity end date"
+                boundary="end"
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  userFilterRef.current?.commit();
+                  environmentFilterRef.current?.commit();
+                }}
+              >
+                <Search className="h-4 w-4" />
+                Search
+              </Button>
               {tableState.activeFilterCount > 0 && (
                 <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
                   <Search className="h-4 w-4" />

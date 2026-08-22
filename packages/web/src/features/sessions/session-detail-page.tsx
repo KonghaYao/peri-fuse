@@ -227,9 +227,12 @@ export function SessionDetailPage() {
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold tracking-tight">{sessionId}</h1>
             {session && (
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Started {formatDateTime(session.createdAt)}
-              </p>
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span>Started {formatDateTime(session.createdAt)}</span>
+                <Badge variant="outline" className="font-normal">
+                  Full session · all times and environments
+                </Badge>
+              </div>
             )}
           </div>
           {session && (

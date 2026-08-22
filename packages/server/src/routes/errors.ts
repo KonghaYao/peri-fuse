@@ -19,6 +19,7 @@ const ErrorQuery = z.object({
   search: z.string().trim().max(500).optional(),
   type: z.string().trim().max(50).optional(),
   model: z.string().trim().max(200).optional(),
+  environment: z.string().trim().max(200).optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -59,7 +60,7 @@ app.get("/api/public/errors", authMiddleware, responseCache(3_000), async (c) =>
   if (cursor === null) return c.json({ message: "Invalid cursor" }, 400);
 
   const projectId = c.get("auth").scope.projectId;
-  const { search, type, model, limit } = parsed.data;
+  const { search, type, model, environment, limit } = parsed.data;
   const params: Record<string, unknown> = {
     projectId,
     rowLimit: limit + 1,
@@ -90,6 +91,10 @@ app.get("/api/public/errors", authMiddleware, responseCache(3_000), async (c) =>
       where.push("o.model = @model");
       params.model = model;
     }
+  }
+  if (environment) {
+    where.push("o.environment = @environment");
+    params.environment = environment;
   }
   const baseWhere = where.join(" AND ");
   const pageWhere = cursor

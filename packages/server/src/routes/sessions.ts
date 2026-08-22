@@ -20,6 +20,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 import { responseCache } from "../response-cache";
+import { toSqliteTime } from "../shaping/metrics-v2-filters";
 import { transformDbToApiObservation } from "../shaping/observations";
 import { aggregateTraceMetrics, parseJsonValue, toMs } from "../shaping/trace-metrics";
 
@@ -41,6 +42,8 @@ const GetSessionsQuery = z.object({
     .default(SESSION_LIST_LIMIT_DEFAULT),
   userId: z.string().optional(),
   environment: z.string().optional(),
+  fromTimestamp: z.string().datetime().optional(),
+  toTimestamp: z.string().datetime().optional(),
   // orderBy=column.asc|desc; column validated against an allowlist below.
   orderBy: z.string().optional(),
 });
@@ -144,7 +147,7 @@ app.get("/api/public/sessions", authMiddleware, responseCache(2_000), async (c) 
   if (!parsed.success) {
     return c.json({ message: "Invalid request data", error: parsed.error.issues }, 400);
   }
-  const { page, limit, userId, environment } = parsed.data;
+  const { page, limit, userId, environment, fromTimestamp, toTimestamp } = parsed.data;
   const { expr: orderExpr, dir: orderDir } = parseOrderBy(parsed.data.orderBy);
 
   const db = getTelemetryDB();
@@ -160,11 +163,28 @@ app.get("/api/public/sessions", authMiddleware, responseCache(2_000), async (c) 
       filters.push("t.environment LIKE @environment");
       params.environment = `%${environment}%`;
     }
+    if (fromTimestamp) {
+      filters.push("t.timestamp >= @fromTimestamp");
+      params.fromTimestamp = toSqliteTime(fromTimestamp);
+    }
+    if (toTimestamp) {
+      filters.push("t.timestamp <= @toTimestamp");
+      params.toTimestamp = toSqliteTime(toTimestamp);
+    }
     const filterSql = filters.length > 0 ? `AND ${filters.join(" AND ")}` : "";
 
     const rows = await db.query<SessionListRow>({
       query: `
-        WITH page_sessions AS (
+        WITH filtered_traces AS (
+          SELECT t.id, t.project_id, t.session_id, t.user_id,
+                 t.timestamp, t.tags, t.environment
+          FROM traces t
+          WHERE t.project_id = @projectId
+            AND t.is_deleted = 0
+            AND t.session_id IS NOT NULL
+            AND t.session_id != ''
+            ${filterSql}
+        ), session_base AS (
           SELECT t.session_id AS id,
                  MIN(t.timestamp) AS created_at,
                  COUNT(*) AS count_traces,
@@ -172,24 +192,10 @@ app.get("/api/public/sessions", authMiddleware, responseCache(2_000), async (c) 
                    AS session_duration,
                  GROUP_CONCAT(t.tags, CHAR(31)) AS tags_concat,
                  MAX(t.environment) AS environment
-          FROM traces t
-          WHERE t.project_id = @projectId
-            AND t.is_deleted = 0
-            AND t.session_id IS NOT NULL
-            AND t.session_id != ''
-            ${filterSql}
+          FROM filtered_traces t
           GROUP BY t.session_id
-          ORDER BY ${orderExpr} ${orderDir}, t.session_id ASC
-          LIMIT @limit OFFSET @offset
-        )
-        SELECT ps.*,
-               m.input_cost, m.output_cost, m.total_cost,
-               m.input_tokens, m.output_tokens, m.total_tokens,
-               m.cached_tokens,
-               u.users_concat
-        FROM page_sessions ps
-        LEFT JOIN (
-          SELECT session_id,
+        ), session_metrics AS (
+          SELECT ft.session_id,
                  SUM(input_cost) AS input_cost,
                  SUM(output_cost) AS output_cost,
                  SUM(total_cost) AS total_cost,
@@ -197,22 +203,30 @@ app.get("/api/public/sessions", authMiddleware, responseCache(2_000), async (c) 
                  COALESCE(SUM(output_tokens), 0) AS output_tokens,
                  COALESCE(SUM(total_tokens), 0) AS total_tokens,
                  COALESCE(SUM(cached_tokens), 0) AS cached_tokens
-          FROM trace_metrics
-          WHERE project_id = @projectId
-            AND session_id IN (SELECT id FROM page_sessions)
-          GROUP BY session_id
-        ) m ON m.session_id = ps.id
-        LEFT JOIN (
+          FROM filtered_traces ft
+          LEFT JOIN trace_metrics tm
+            ON tm.project_id = ft.project_id AND tm.trace_id = ft.id
+          GROUP BY ft.session_id
+        ), session_users AS (
           SELECT session_id, GROUP_CONCAT(user_id, CHAR(31)) AS users_concat
           FROM (
             SELECT DISTINCT session_id, user_id
-            FROM trace_metrics
-            WHERE project_id = @projectId
-              AND session_id IN (SELECT id FROM page_sessions)
-              AND user_id IS NOT NULL AND user_id != ''
+            FROM filtered_traces
+            WHERE user_id IS NOT NULL AND user_id != ''
           )
           GROUP BY session_id
-        ) u ON u.session_id = ps.id
+        ), sessions AS (
+          SELECT sb.*, sm.input_cost, sm.output_cost, sm.total_cost,
+                 sm.input_tokens, sm.output_tokens, sm.total_tokens,
+                 sm.cached_tokens, su.users_concat
+          FROM session_base sb
+          LEFT JOIN session_metrics sm ON sm.session_id = sb.id
+          LEFT JOIN session_users su ON su.session_id = sb.id
+        )
+        SELECT *
+        FROM sessions
+        ORDER BY ${orderExpr} ${orderDir}, id ASC
+        LIMIT @limit OFFSET @offset
       `,
       params: { ...params, limit, offset: (page - 1) * limit },
     });
@@ -258,13 +272,7 @@ app.get("/api/public/sessions", authMiddleware, responseCache(2_000), async (c) 
     });
   } catch (error) {
     logger.error("[lite-server] sessions list query failed", error);
-    return c.json(
-      {
-        data: [],
-        meta: { page, limit, totalItems: 0, totalPages: 0 },
-      },
-      200,
-    );
+    throw error;
   }
 });
 

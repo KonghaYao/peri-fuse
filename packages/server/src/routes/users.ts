@@ -16,6 +16,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 import { responseCache } from "../response-cache";
+import { toSqliteTime } from "../shaping/metrics-v2-filters";
 
 const app = new Hono<LiteServerEnv>();
 
@@ -32,6 +33,8 @@ const GetUsersQuery = z.object({
     .default(USER_LIST_LIMIT_DEFAULT),
   userId: z.string().optional(),
   environment: z.string().optional(),
+  fromTimestamp: z.string().datetime().optional(),
+  toTimestamp: z.string().datetime().optional(),
   // orderBy=column.asc|desc; column validated against an allowlist below.
   orderBy: z.string().optional(),
 });
@@ -91,7 +94,7 @@ app.get("/api/public/users", authMiddleware, responseCache(2_000), async (c) => 
   if (!parsed.success) {
     return c.json({ message: "Invalid request data", error: parsed.error.issues }, 400);
   }
-  const { page, limit, userId, environment } = parsed.data;
+  const { page, limit, userId, environment, fromTimestamp, toTimestamp } = parsed.data;
   const { expr: orderExpr, dir: orderDir } = parseOrderBy(parsed.data.orderBy);
 
   const db = getTelemetryDB();
@@ -107,45 +110,48 @@ app.get("/api/public/users", authMiddleware, responseCache(2_000), async (c) => 
       filters.push("t.environment LIKE @environment");
       params.environment = `%${environment}%`;
     }
+    if (fromTimestamp) {
+      filters.push("t.timestamp >= @fromTimestamp");
+      params.fromTimestamp = toSqliteTime(fromTimestamp);
+    }
+    if (toTimestamp) {
+      filters.push("t.timestamp <= @toTimestamp");
+      params.toTimestamp = toSqliteTime(toTimestamp);
+    }
     const filterSql = filters.length > 0 ? `AND ${filters.join(" AND ")}` : "";
 
     const rows = await db.query<UserListRow>({
       query: `
-        WITH page_users AS (
-          SELECT t.user_id AS id,
-                 MIN(t.timestamp) AS first_seen,
-                 MAX(t.timestamp) AS last_seen,
-                 COUNT(*) AS count_traces,
-                 MAX(t.environment) AS environment
+        WITH filtered_traces AS (
+          SELECT t.id, t.project_id, t.user_id, t.timestamp, t.environment
           FROM traces t
           WHERE t.project_id = @projectId
             AND t.is_deleted = 0
             AND t.user_id IS NOT NULL
             AND t.user_id != ''
             ${filterSql}
-          GROUP BY t.user_id
-          ORDER BY ${orderExpr} ${orderDir}, t.user_id ASC
-          LIMIT @limit OFFSET @offset
+        ), users AS (
+          SELECT ft.user_id AS id,
+                 MIN(ft.timestamp) AS first_seen,
+                 MAX(ft.timestamp) AS last_seen,
+                 COUNT(*) AS count_traces,
+                 MAX(ft.environment) AS environment,
+                 COALESCE(SUM(tm.obs_count), 0) AS count_observations,
+                 SUM(tm.input_cost) AS input_cost,
+                 SUM(tm.output_cost) AS output_cost,
+                 SUM(tm.total_cost) AS total_cost,
+                 COALESCE(SUM(tm.input_tokens), 0) AS input_tokens,
+                 COALESCE(SUM(tm.output_tokens), 0) AS output_tokens,
+                 COALESCE(SUM(tm.total_tokens), 0) AS total_tokens
+          FROM filtered_traces ft
+          LEFT JOIN trace_metrics tm
+            ON tm.project_id = ft.project_id AND tm.trace_id = ft.id
+          GROUP BY ft.user_id
         )
-        SELECT pu.*,
-               m.count_observations,
-               m.input_cost, m.output_cost, m.total_cost,
-               m.input_tokens, m.output_tokens, m.total_tokens
-        FROM page_users pu
-        LEFT JOIN (
-          SELECT user_id,
-                 COALESCE(SUM(obs_count), 0) AS count_observations,
-                 SUM(input_cost) AS input_cost,
-                 SUM(output_cost) AS output_cost,
-                 SUM(total_cost) AS total_cost,
-                 COALESCE(SUM(input_tokens), 0) AS input_tokens,
-                 COALESCE(SUM(output_tokens), 0) AS output_tokens,
-                 COALESCE(SUM(total_tokens), 0) AS total_tokens
-          FROM trace_metrics
-          WHERE project_id = @projectId
-            AND user_id IN (SELECT id FROM page_users)
-          GROUP BY user_id
-        ) m ON m.user_id = pu.id
+        SELECT *
+        FROM users
+        ORDER BY ${orderExpr} ${orderDir}, id ASC
+        LIMIT @limit OFFSET @offset
       `,
       params: { ...params, limit, offset: (page - 1) * limit },
     });
@@ -189,13 +195,7 @@ app.get("/api/public/users", authMiddleware, responseCache(2_000), async (c) => 
     });
   } catch (error) {
     logger.error("[lite-server] users list query failed", error);
-    return c.json(
-      {
-        data: [],
-        meta: { page, limit, totalItems: 0, totalPages: 0 },
-      },
-      200,
-    );
+    throw error;
   }
 });
 

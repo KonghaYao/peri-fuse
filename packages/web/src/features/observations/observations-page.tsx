@@ -140,7 +140,13 @@ export function ObservationsPage() {
       ) : query.error ? (
         <ErrorState error={query.error} />
       ) : observations.length === 0 ? (
-        <EmptyState message="No observations found." />
+        <EmptyState
+          message={
+            tableState.activeFilterCount > 0
+              ? "No observations match the current filters."
+              : "No observations found."
+          }
+        />
       ) : (
         <>
           <div className="flex-1 overflow-auto px-4">

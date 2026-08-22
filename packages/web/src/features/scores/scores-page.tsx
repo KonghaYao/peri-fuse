@@ -147,7 +147,13 @@ export function ScoresPage() {
       ) : query.error ? (
         <ErrorState error={query.error} />
       ) : scores.length === 0 ? (
-        <EmptyState message="No scores found." />
+        <EmptyState
+          message={
+            tableState.activeFilterCount > 0
+              ? "No scores match the current filters."
+              : "No scores found."
+          }
+        />
       ) : (
         <>
           <div className="flex-1 overflow-auto px-4">

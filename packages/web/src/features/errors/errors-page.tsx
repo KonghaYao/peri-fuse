@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronRight, Clock3, Search, X } from "lucide-react";
+import { AlertTriangle, ChevronRight, Clock3, Globe, Search, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
@@ -76,12 +76,14 @@ function ErrorRow({
 export function ErrorsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [clock] = useState(() => Date.now());
-  const [selectedId, setSelectedId] = useState<string>();
   const searchRef = useRef<FilterInputHandle>(null);
+  const environmentRef = useRef<FilterInputHandle>(null);
   const range = searchParams.get("range") ?? "7d";
   const search = searchParams.get("search") ?? undefined;
   const type = searchParams.get("type") ?? undefined;
   const model = searchParams.get("model") ?? undefined;
+  const environment = searchParams.get("environment") ?? undefined;
+  const selectedId = searchParams.get("errorId") ?? undefined;
 
   const params = useMemo<ErrorQueryParams>(() => {
     const duration = RANGE_MS[range] ?? RANGE_MS["7d"];
@@ -90,8 +92,9 @@ export function ErrorsPage() {
       search,
       type,
       model,
+      environment,
     };
-  }, [clock, model, range, search, type]);
+  }, [clock, environment, model, range, search, type]);
   const query = useErrorsQuery(params);
   const analysis = query.data?.pages[0];
   const errors = query.data?.pages.flatMap((page) => page.data) ?? [];
@@ -102,14 +105,25 @@ export function ErrorsPage() {
       const next = new URLSearchParams(current);
       if (value) next.set(key, value);
       else next.delete(key);
+      next.delete("errorId");
       return next;
     });
-    setSelectedId(undefined);
+  };
+
+  const selectError = (id: string | undefined) => {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (id) next.set("errorId", id);
+        else next.delete("errorId");
+        return next;
+      },
+      { replace: true },
+    );
   };
 
   const clearFilters = () => {
     setSearchParams({ range });
-    setSelectedId(undefined);
   };
 
   return (
@@ -146,7 +160,22 @@ export function ErrorsPage() {
           value={search}
           onCommit={(value) => updateFilter("search", value)}
         />
-        <Button size="sm" variant="secondary" onClick={() => searchRef.current?.commit()}>
+        <FilterInput
+          ref={environmentRef}
+          className="w-40"
+          placeholder="Environment…"
+          icon={Globe}
+          value={environment}
+          onCommit={(value) => updateFilter("environment", value)}
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            searchRef.current?.commit();
+            environmentRef.current?.commit();
+          }}
+        >
           <Search className="h-3.5 w-3.5" /> Search
         </Button>
         <FilterSelect
@@ -169,7 +198,7 @@ export function ErrorsPage() {
             label: `${item.model} (${item.count})`,
           }))}
         />
-        {(search || type || model) && (
+        {(search || type || model || environment) && (
           <Button size="sm" variant="ghost" onClick={clearFilters}>
             <X className="h-3.5 w-3.5" /> Clear filters
           </Button>
@@ -224,7 +253,7 @@ export function ErrorsPage() {
                     key={error.id}
                     error={error}
                     selected={error.id === selectedId}
-                    onSelect={() => setSelectedId(error.id)}
+                    onSelect={() => selectError(error.id)}
                   />
                 ))}
                 {query.hasNextPage && (
@@ -244,7 +273,7 @@ export function ErrorsPage() {
         </main>
 
         {selected && (
-          <ErrorInvestigationPanel error={selected} onClose={() => setSelectedId(undefined)} />
+          <ErrorInvestigationPanel error={selected} onClose={() => selectError(undefined)} />
         )}
       </div>
     </div>
