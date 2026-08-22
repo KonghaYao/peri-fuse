@@ -201,30 +201,55 @@ function buildObservationsV2Filter(props: ObservationsV2QueryProps) {
   return filterList;
 }
 
-// ============================================================================
-// Query
-// ============================================================================
+const traceColumn = (column: string, alias = column) =>
+  `(SELECT t.${column} FROM traces t WHERE t.id = o.trace_id AND t.project_id = o.project_id) AS ${alias}`;
 
-// Trace context is fetched via scalar subqueries (not a JOIN) so that the
-// unqualified column names emitted by liteBuildFilterWhere (e.g. `name`) stay
-// unambiguous inside the WHERE clause.
-const OBSERVATIONS_V2_SELECT = `
-  SELECT
-    o.id, o.trace_id, o.project_id, o.type, o.parent_observation_id, o.environment,
-    o.start_time, o.end_time, o.name, o.metadata, o.level, o.status_message,
-    o.version, o.input, o.output, o.model, o.model_parameters,
-    o.provided_usage_details, o.usage_details, o.provided_cost_details, o.cost_details,
-    o.total_cost, o.completion_start_time, o.prompt_id, o.prompt_name, o.prompt_version,
-    o.created_at, o.updated_at, o.event_ts,
-    (SELECT t.user_id FROM traces t WHERE t.id = o.trace_id AND t.project_id = o.project_id) AS user_id,
-    (SELECT t.session_id FROM traces t WHERE t.id = o.trace_id AND t.project_id = o.project_id) AS session_id,
-    (SELECT t.tags FROM traces t WHERE t.id = o.trace_id AND t.project_id = o.project_id) AS tags,
-    (SELECT t.release FROM traces t WHERE t.id = o.trace_id AND t.project_id = o.project_id) AS release,
-    (SELECT t.name FROM traces t WHERE t.id = o.trace_id AND t.project_id = o.project_id) AS trace_name,
-    (SELECT t.bookmarked FROM traces t WHERE t.id = o.trace_id AND t.project_id = o.project_id) AS bookmarked,
-    (SELECT t.public FROM traces t WHERE t.id = o.trace_id AND t.project_id = o.project_id) AS public
-  FROM observations o
-`;
+/** Build a projection from field groups so omitted IO is never read from disk. */
+export function buildObservationsV2Select(fields: ReadonlySet<ObservationV2FieldGroup>): string {
+  const columns = [
+    "o.id",
+    "o.trace_id",
+    "o.project_id",
+    "o.type",
+    "o.parent_observation_id",
+    "o.start_time",
+    "o.end_time",
+  ];
+
+  if (fields.has("basic")) {
+    columns.push(
+      "o.environment",
+      "o.name",
+      "o.level",
+      "o.status_message",
+      "o.version",
+      traceColumn("user_id"),
+      traceColumn("session_id"),
+      traceColumn("bookmarked"),
+      traceColumn("public"),
+    );
+  }
+  if (fields.has("time")) {
+    columns.push("o.completion_start_time", "o.created_at", "o.updated_at");
+  }
+  if (fields.has("io")) columns.push("o.input", "o.output");
+  if (fields.has("metadata")) columns.push("o.metadata");
+  if (fields.has("model")) columns.push("o.model", "o.model_parameters");
+  if (fields.has("usage")) {
+    columns.push(
+      "o.provided_usage_details",
+      "o.usage_details",
+      "o.provided_cost_details",
+      "o.cost_details",
+      "o.total_cost",
+    );
+  }
+  if (fields.has("prompt")) columns.push("o.prompt_id", "o.prompt_name", "o.prompt_version");
+  if (fields.has("trace_context")) {
+    columns.push(traceColumn("tags"), traceColumn("release"), traceColumn("name", "trace_name"));
+  }
+  return `SELECT\n    ${columns.join(",\n    ")}\n  FROM observations o`;
+}
 
 function mapObservationRow(row: Record<string, unknown>): EventsObservationRecordReadType {
   return {
@@ -288,6 +313,7 @@ export async function generateObservationsV2ForPublicApi(
   props: ObservationsV2QueryProps & {
     limit: number;
     cursor?: ObservationsV2Cursor | null;
+    fields: ReadonlySet<ObservationV2FieldGroup>;
   },
 ): Promise<EventsObservationRecordReadType[]> {
   const db = getTelemetryDB();
@@ -326,7 +352,7 @@ export async function generateObservationsV2ForPublicApi(
 
   const rows = await db.query<Record<string, unknown>>({
     query: `
-      ${OBSERVATIONS_V2_SELECT}
+      ${buildObservationsV2Select(props.fields)}
       WHERE ${whereClause}
       ORDER BY o.start_time DESC, o.id DESC
       LIMIT @limit

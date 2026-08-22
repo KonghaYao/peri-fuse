@@ -46,6 +46,7 @@ export type TraceWithDetails = Trace & {
   latency: number; // seconds; -1 when metrics were not requested/available
   totalCost: number; // -1 when metrics were not requested/available
   observations: Observation[];
+  observationCount: number; // -1 when metrics were not requested
   scores: Score[];
   htmlPath?: string;
 };
@@ -82,8 +83,8 @@ export type Observation = {
   statusMessage: string | null;
   version: string | null;
   environment?: string | null;
-  input: unknown;
-  output: unknown;
+  input?: unknown;
+  output?: unknown;
   metadata?: unknown;
   model: string | null;
   modelId?: string | null;
@@ -118,6 +119,11 @@ export type ObservationListParams = {
   fromStartTime?: string;
   toStartTime?: string;
   version?: string;
+};
+
+export type CursorPage<T> = {
+  data: T[];
+  meta: { cursor: string | null };
 };
 
 // ---------------------------------------------------------------------------

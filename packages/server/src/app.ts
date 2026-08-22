@@ -11,6 +11,7 @@ import { logger } from "@peri-fuse/shared/src/server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { LiteServerEnv } from "./auth";
+import { largeResponseLogger } from "./large-response-logger";
 import dashboardRoutes from "./routes/dashboard";
 import datasetItemsRoutes from "./routes/dataset-items";
 import datasetsRoutes from "./routes/datasets";
@@ -36,6 +37,8 @@ import usersRoutes from "./routes/users";
 
 export function createApp(): Hono<LiteServerEnv> {
   const app = new Hono<LiteServerEnv>();
+
+  app.use("/api/*", largeResponseLogger());
 
   // Mirror web's permissive CORS (origin: true, credentials: false) so SDKs
   // and browser-based clients can call the public API cross-origin.

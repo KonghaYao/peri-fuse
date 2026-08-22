@@ -10,6 +10,7 @@ import type { ProjectContext } from "@/shared/store/project";
 import { clearProjectContext, getProjectContext } from "@/shared/store/project";
 import type {
   CreatedKey,
+  CursorPage,
   Dashboard,
   DashboardQueryParams,
   Observation,
@@ -117,6 +118,109 @@ export function getTrace(traceId: string): Promise<TraceWithDetails> {
   return request<TraceWithDetails>(`/api/public/traces/${encodeURIComponent(traceId)}`);
 }
 
+export function getTraceShell(traceId: string): Promise<TraceWithDetails> {
+  return request<TraceWithDetails>(
+    `/api/public/traces/${encodeURIComponent(traceId)}?fields=core,scores,metrics`,
+  );
+}
+
+export function getTraceIo(traceId: string): Promise<TraceWithDetails> {
+  return request<TraceWithDetails>(
+    `/api/public/traces/${encodeURIComponent(traceId)}?fields=core,io`,
+  );
+}
+
+const OBSERVATION_SUMMARY_FIELDS = "core,basic,time,model,usage,prompt,metrics";
+const OBSERVATION_DETAIL_FIELDS = `${OBSERVATION_SUMMARY_FIELDS},io,metadata`;
+
+function parseJsonIfPossible(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function observationFromV2(row: Record<string, unknown>): Observation {
+  const usage = (row.usageDetails ?? {}) as Record<string, number>;
+  const costs = (row.costDetails ?? {}) as Record<string, number>;
+  const promptTokens = usage.input ?? 0;
+  const completionTokens = usage.output ?? 0;
+  return {
+    id: String(row.id),
+    traceId: row.traceId ? String(row.traceId) : null,
+    parentObservationId: row.parentObservationId ? String(row.parentObservationId) : null,
+    type: String(row.type ?? "SPAN"),
+    name: row.name ? String(row.name) : null,
+    startTime: String(row.startTime),
+    endTime: row.endTime ? String(row.endTime) : null,
+    level: row.level ? String(row.level) : null,
+    statusMessage: row.statusMessage ? String(row.statusMessage) : null,
+    version: row.version ? String(row.version) : null,
+    environment: row.environment ? String(row.environment) : null,
+    input: parseJsonIfPossible(row.input),
+    output: parseJsonIfPossible(row.output),
+    metadata: row.metadata,
+    model: row.providedModelName ? String(row.providedModelName) : null,
+    modelId: row.modelId ? String(row.modelId) : null,
+    modelParameters: row.modelParameters,
+    promptTokens,
+    completionTokens,
+    totalTokens: usage.total ?? promptTokens + completionTokens,
+    usage: {
+      input: promptTokens,
+      output: completionTokens,
+      total: usage.total ?? 0,
+      unit: "TOKENS",
+    },
+    usageDetails: usage,
+    costDetails: costs,
+    calculatedInputCost: costs.input ?? null,
+    calculatedOutputCost: costs.output ?? null,
+    calculatedTotalCost: costs.total ?? (row.totalCost as number | null | undefined) ?? null,
+    completionStartTime: row.completionStartTime ? String(row.completionStartTime) : null,
+    promptId: row.promptId ? String(row.promptId) : null,
+    promptName: row.promptName ? String(row.promptName) : null,
+    promptVersion: typeof row.promptVersion === "number" ? row.promptVersion : null,
+    createdAt: row.createdAt ? String(row.createdAt) : undefined,
+    updatedAt: row.updatedAt ? String(row.updatedAt) : undefined,
+  };
+}
+
+export async function listTraceObservationSummaries(
+  traceId: string,
+  cursor?: string | null,
+  limit = 100,
+): Promise<CursorPage<Observation>> {
+  const page = await request<CursorPage<Record<string, unknown>>>(
+    `/api/public/v2/observations${toQueryString({
+      traceId,
+      cursor,
+      limit,
+      fields: OBSERVATION_SUMMARY_FIELDS,
+    })}`,
+  );
+  return { data: page.data.map(observationFromV2), meta: page.meta };
+}
+
+export async function getObservationDetail(observationId: string): Promise<Observation> {
+  const filter = JSON.stringify([
+    { type: "string", column: "id", operator: "=", value: observationId },
+  ]);
+  const page = await request<CursorPage<Record<string, unknown>>>(
+    `/api/public/v2/observations${toQueryString({
+      filter,
+      limit: 1,
+      fields: OBSERVATION_DETAIL_FIELDS,
+      expandMetadata: "*",
+    })}`,
+  );
+  const row = page.data[0];
+  if (!row) throw new ApiError(404, `Observation ${observationId} not found`);
+  return observationFromV2(row);
+}
+
 export function listObservations(params: ObservationListParams = {}): Promise<Paged<Observation>> {
   return request<Paged<Observation>>(`/api/public/observations${toQueryString({ ...params })}`);
 }
@@ -141,7 +245,9 @@ export function listSessions(params: SessionListParams = {}): Promise<Paged<Sess
 }
 
 export function getSession(sessionId: string): Promise<SessionDetail> {
-  return request<SessionDetail>(`/api/public/sessions/${encodeURIComponent(sessionId)}`);
+  return request<SessionDetail>(
+    `/api/public/sessions/${encodeURIComponent(sessionId)}?includeObservations=false&includeIo=false`,
+  );
 }
 
 export function listUsers(params: UserListParams = {}): Promise<Paged<UserRow>> {

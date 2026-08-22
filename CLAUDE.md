@@ -246,6 +246,7 @@ pnpm run svc:logs             # 查看服务日志
 ### 全局 / Server
 
 - `LITE_SERVER_PORT`：Server 端口（生产默认 23332；开发统一用 23432，root `dev`/`dev:server` 脚本与 `vite.config.ts` 代理已按此约定，勿混用）。
+- `LITE_LARGE_RESPONSE_THRESHOLD_BYTES`：API 大响应 warning 阈值，默认 1 MiB；日志只记录 method/path/status/bytes/duration/project/cache，不记录 query、鉴权或正文。
 - `LANGFUSE_MODE`：运行模式（固定 `lite`，server 启动时自动设置）。
 - `PERIFUSE_HOME`：全局数据目录（默认 `~/.peri-fuse`），所有 SQLite 数据库、salt、encryption key 存放于此。
 - `DATABASE_URL`：Prisma SQLite 路径（默认 `<PERIFUSE_HOME>/langfuse.db`）。

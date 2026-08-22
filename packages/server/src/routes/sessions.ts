@@ -45,6 +45,16 @@ const GetSessionsQuery = z.object({
   orderBy: z.string().optional(),
 });
 
+const booleanQuery = z
+  .enum(["true", "false"])
+  .optional()
+  .transform((value) => value !== "false");
+
+const GetSessionDetailQuery = z.object({
+  includeObservations: booleanQuery,
+  includeIo: booleanQuery,
+});
+
 // Allowlist of sortable columns -> SQL expression (aggregated alias in the
 // `sessions` CTE). Prevents SQL injection through the orderBy parameter.
 const ORDER_COLUMNS: Record<string, string> = {
@@ -281,12 +291,18 @@ app.get("/api/public/sessions/:sessionId", authMiddleware, responseCache(2_000),
   const auth = c.get("auth");
   const projectId = auth.scope.projectId;
   const sessionId = c.req.param("sessionId");
+  const parsed = GetSessionDetailQuery.safeParse(c.req.query());
+  if (!parsed.success) {
+    return c.json({ message: "Invalid request data", error: parsed.error.issues }, 400);
+  }
+  const { includeObservations, includeIo } = parsed.data;
 
   const db = getTelemetryDB();
 
   const traceRows = await db.query<Record<string, unknown>>({
     query: `
-      SELECT id, name, timestamp, user_id, input, output, environment
+      SELECT id, name, timestamp, user_id, environment
+             ${includeIo ? ", input, output" : ""}
       FROM traces
       WHERE project_id = @projectId
         AND session_id = @sessionId
@@ -350,7 +366,9 @@ app.get("/api/public/sessions/:sessionId", authMiddleware, responseCache(2_000),
   // populated.
   type ApiObservation = ReturnType<typeof transformDbToApiObservation>;
   const observationsByTraceId = new Map<string, ApiObservation[]>();
-  const batchedObs = await liteGetObservationsForTraces(projectId, traceIds, true);
+  const batchedObs = includeObservations
+    ? await liteGetObservationsForTraces(projectId, traceIds, includeIo)
+    : new Map();
   for (const [tid, records] of batchedObs) {
     observationsByTraceId.set(
       tid,
@@ -381,8 +399,8 @@ app.get("/api/public/sessions/:sessionId", authMiddleware, responseCache(2_000),
   let totalCost = 0;
   const traces = traceRows.map((t) => {
     const metrics = aggregateTraceMetrics(String(t.id), obsByTrace.get(String(t.id)) ?? [], {
-      input: parseJsonValue(t.input),
-      output: parseJsonValue(t.output),
+      input: includeIo ? parseJsonValue(t.input) : null,
+      output: includeIo ? parseJsonValue(t.output) : null,
       metadata: null,
     });
     totalCost += metrics.calculatedTotalCost ?? 0;
@@ -391,8 +409,8 @@ app.get("/api/public/sessions/:sessionId", authMiddleware, responseCache(2_000),
       name: t.name,
       timestamp: toIso(t.timestamp),
       userId: t.user_id ?? null,
-      input: metrics.input,
-      output: metrics.output,
+      input: includeIo ? metrics.input : null,
+      output: includeIo ? metrics.output : null,
       latency: metrics.latency,
       totalCost: metrics.calculatedTotalCost,
       promptTokens: metrics.promptTokens,
@@ -410,7 +428,7 @@ app.get("/api/public/sessions/:sessionId", authMiddleware, responseCache(2_000),
         comment: s.comment,
         source: s.source,
       })),
-      observations: observationsByTraceId.get(String(t.id)) ?? [],
+      observations: includeObservations ? (observationsByTraceId.get(String(t.id)) ?? []) : [],
     };
   });
 

@@ -114,6 +114,7 @@ app.get("/api/public/v2/observations", authMiddleware, responseCache(2_000), asy
     toStartTime: q.toStartTime ?? undefined,
     version: q.version ?? undefined,
     advancedFilters: q.filter,
+    fields,
   });
 
   const hasMore = records.length > limit;

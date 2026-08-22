@@ -16,6 +16,7 @@ import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { LiteServerEnv } from "../auth";
 import observationsV2Routes from "../routes/observations-v2";
+import { buildObservationsV2Select } from "../shaping/observations-v2";
 import { apiPost, basicAuth } from "./helpers";
 import { TEST_PROJECT_ID } from "./test-db-paths";
 
@@ -219,6 +220,24 @@ describe("GET /api/public/v2/observations", () => {
   });
 
   describe("field groups", () => {
+    it("does not select large IO or metadata columns for lightweight pages", () => {
+      const sql = buildObservationsV2Select(new Set(["core", "basic", "usage"]));
+
+      expect(sql).not.toContain("o.input");
+      expect(sql).not.toContain("o.output");
+      expect(sql).not.toContain("o.metadata");
+      expect(sql).toContain("o.usage_details");
+      expect(sql).toContain("o.id");
+    });
+
+    it("selects IO and metadata only when explicitly requested", () => {
+      const sql = buildObservationsV2Select(new Set(["core", "io", "metadata"]));
+
+      expect(sql).toContain("o.input");
+      expect(sql).toContain("o.output");
+      expect(sql).toContain("o.metadata");
+    });
+
     it("defaults to core + basic", async () => {
       const res = await v2Get<any>(`/api/public/v2/observations?limit=100&traceId=${traceId}`);
       const row = res.body.data.find((d: any) => d.id === root1);

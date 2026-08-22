@@ -24,6 +24,8 @@ const MAX_MSG_CHARS = 140;
 const MAX_SNIPPET_CHARS = 260;
 const MAX_ANSWER_CHARS = 400;
 
+type ExtractedMessage = NonNullable<ReturnType<typeof extractMessages>>[number];
+
 const ROLE_TEXT: Record<string, string> = {
   system: "text-fg-tertiary",
   user: "text-brand",
@@ -47,7 +49,7 @@ function toolCallsText(calls: unknown): string {
     .join(" → ");
 }
 
-function MessageLine({ message }: { message: ReturnType<typeof extractMessages>[number] }) {
+function MessageLine({ message }: { message: ExtractedMessage }) {
   const text = contentToText(message.content);
   const line = message.toolCalls ? toolCallsText(message.toolCalls) : text;
   return (
@@ -188,7 +190,7 @@ export function ObservationPreview({ observation: o }: { observation: Observatio
 
   const answer = useMemo(
     () => (isGeneration ? extractAnswer(parseMaybeString(o.output)) : null),
-    [o.output, isGeneration, extractAnswer],
+    [o.output, isGeneration],
   );
 
   const visible = messages ? messages.slice(-MAX_MESSAGES) : [];

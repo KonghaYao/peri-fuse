@@ -276,6 +276,7 @@ app.get("/api/public/traces/:traceId", authMiddleware, responseCache(2_000), asy
     scores: includeScores ? validatedScores : [],
     latency: includeMetrics ? (latencyMs !== undefined ? latencyMs / 1000 : 0) : -1,
     observations: includeObservations ? outObservations : [],
+    observationCount: includeMetrics ? observations.length : -1,
     htmlPath: `/project/${auth.scope.projectId}/traces/${traceId}`,
     totalCost: includeMetrics
       ? outObservations

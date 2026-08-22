@@ -8,8 +8,15 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowUpRight, ChartNoAxesCombined, ChevronRight, ListTree, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  ChartNoAxesCombined,
+  ChevronRight,
+  ListTree,
+  Users,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ObservationDetail } from "@/shared/components/observation-detail";
 import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
@@ -21,9 +28,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Separator } from "@/shared/components/ui/separator";
 import { Skeleton } from "@/shared/components/ui/skeleton";
+import { useObservationDetailQuery, useTraceObservationsQuery } from "@/shared/hooks/queries";
 import { getSession } from "@/shared/lib/api";
 import { formatDateTime, formatIntervalSeconds, formatTokens } from "@/shared/lib/format";
-import type { SessionTrace } from "@/shared/lib/types";
+import type { Observation, SessionTrace } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
@@ -86,10 +94,65 @@ function TraceRootRow({
   );
 }
 
+function TraceObservations({
+  traceId,
+  expanded,
+  omitNoise,
+  selectedId,
+  onSelect,
+  onLoaded,
+}: {
+  traceId: string;
+  expanded: boolean;
+  omitNoise: boolean;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onLoaded: (traceId: string, observations: Observation[]) => void;
+}) {
+  const query = useTraceObservationsQuery(traceId, expanded);
+  const observations = useMemo(
+    () => query.data?.pages.flatMap((page) => page.data) ?? [],
+    [query.data],
+  );
+  const tree = useMemo(() => buildTree(observations, { omitNoise }), [observations, omitNoise]);
+
+  useEffect(() => onLoaded(traceId, observations), [onLoaded, observations, traceId]);
+
+  if (!expanded) return null;
+  if (query.isLoading) return <Skeleton className="ml-6 h-20 w-[calc(100%-1.5rem)]" />;
+  if (query.error) return <ErrorState error={query.error} />;
+
+  return (
+    <>
+      {tree.map((node) => (
+        <ObservationNode
+          key={node.observation.id}
+          node={node}
+          depth={1}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+      ))}
+      {query.hasNextPage && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-6 mt-1"
+          disabled={query.isFetchingNextPage}
+          onClick={() => query.fetchNextPage()}
+        >
+          {query.isFetchingNextPage ? "Loading…" : "Load more observations"}
+        </Button>
+      )}
+    </>
+  );
+}
+
 export function SessionDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [expandedTraceIds, setExpandedTraceIds] = useState<Set<string>>(new Set());
+  const [loadedByTrace, setLoadedByTrace] = useState<Map<string, Observation[]>>(new Map());
   const [timelineOpen, setTimelineOpen] = useState(false);
 
   const query = useQuery({
@@ -101,27 +164,35 @@ export function SessionDetailPage() {
   const session = query.data;
 
   const [omitNoise, setOmitNoise] = useState(true);
-  const trees = useMemo(
-    () => (session?.traces ?? []).map((t) => buildTree(t.observations, { omitNoise })),
-    [session, omitNoise],
+  const selectedQuery = useObservationDetailQuery(selectedId);
+  const handleLoaded = useMemo(
+    () => (traceId: string, observations: Observation[]) => {
+      setLoadedByTrace((previous) => {
+        if (previous.get(traceId) === observations) return previous;
+        const next = new Map(previous);
+        next.set(traceId, observations);
+        return next;
+      });
+    },
+    [],
   );
 
   // The selected observation and the trace it belongs to (for its scores).
   const selected = useMemo(() => {
     if (!selectedId || !session) return null;
     for (const trace of session.traces) {
-      const observation = trace.observations.find((o) => o.id === selectedId);
+      const observation = loadedByTrace.get(trace.id)?.find((o) => o.id === selectedId);
       if (observation) return { observation, trace };
     }
     return null;
-  }, [selectedId, session]);
+  }, [loadedByTrace, selectedId, session]);
 
   const selectedScores = selected
     ? selected.trace.scores.filter((s) => s.observationId === selected.observation.id)
     : [];
 
   const toggleTrace = (id: string) =>
-    setCollapsed((prev) => {
+    setExpandedTraceIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
@@ -130,6 +201,16 @@ export function SessionDetailPage() {
       }
       return next;
     });
+
+  const sessionView = session
+    ? {
+        ...session,
+        traces: session.traces.map((trace) => ({
+          ...trace,
+          observations: loadedByTrace.get(trace.id) ?? [],
+        })),
+      }
+    : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -222,25 +303,23 @@ export function SessionDetailPage() {
             ) : (
               <ScrollArea className="h-full">
                 {session?.traces.map((trace, i) => {
-                  const isCollapsed = collapsed.has(trace.id);
+                  const expanded = expandedTraceIds.has(trace.id);
                   return (
                     <div key={trace.id}>
                       {i > 0 && <Separator className="my-2" />}
                       <TraceRootRow
                         trace={trace}
-                        expanded={!isCollapsed}
+                        expanded={expanded}
                         onToggle={() => toggleTrace(trace.id)}
                       />
-                      {!isCollapsed &&
-                        (trees[i] ?? []).map((node) => (
-                          <ObservationNode
-                            key={node.observation.id}
-                            node={node}
-                            depth={1}
-                            selectedId={selectedId}
-                            onSelect={setSelectedId}
-                          />
-                        ))}
+                      <TraceObservations
+                        traceId={trace.id}
+                        expanded={expanded}
+                        omitNoise={omitNoise}
+                        selectedId={selectedId}
+                        onSelect={setSelectedId}
+                        onLoaded={handleLoaded}
+                      />
                     </div>
                   );
                 })}
@@ -251,8 +330,12 @@ export function SessionDetailPage() {
 
         <Card className="m-4 flex flex-1 flex-col overflow-hidden">
           <CardContent className="min-h-0 flex-1 overflow-y-auto p-4 pt-6">
-            {selected ? (
-              <ObservationDetail observation={selected.observation} scores={selectedScores} />
+            {selectedQuery.isLoading ? (
+              <Skeleton className="h-64 w-full" />
+            ) : selectedQuery.error ? (
+              <ErrorState error={selectedQuery.error} />
+            ) : selectedQuery.data && selected ? (
+              <ObservationDetail observation={selectedQuery.data} scores={selectedScores} />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 Select an observation to view its details.
@@ -262,9 +345,9 @@ export function SessionDetailPage() {
         </Card>
       </div>
 
-      {session && (
+      {sessionView && (
         <ObservationTimelineDialog
-          traces={session.traces}
+          traces={sessionView.traces}
           open={timelineOpen}
           onOpenChange={setTimelineOpen}
           omitNoise={omitNoise}

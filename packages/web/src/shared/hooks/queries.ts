@@ -7,21 +7,30 @@
  * previously used.
  */
 
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   activateProject,
   createProject,
   createProjectKey,
   deleteProjectKey,
   getDashboard,
+  getObservationDetail,
   getSession,
-  getTrace,
+  getTraceIo,
+  getTraceShell,
   getTracesMetrics,
   listObservations,
   listProjectKeys,
   listProjects,
   listScores,
   listSessions,
+  listTraceObservationSummaries,
   listTraces,
   listUsers,
 } from "@/shared/lib/api";
@@ -43,6 +52,9 @@ export const queryKeys = {
   traces: (params: TraceListParams) => ["traces", params] as const,
   tracesMetrics: (ids: string) => ["traces-metrics", ids] as const,
   trace: (id: string) => ["trace", id] as const,
+  traceIo: (id: string) => ["trace-io", id] as const,
+  traceObservations: (id: string) => ["trace-observations", id] as const,
+  observationDetail: (id: string) => ["observation-detail", id] as const,
   sessions: (params: SessionListParams) => ["sessions", params] as const,
   session: (id: string) => ["session", id] as const,
   users: (params: UserListParams) => ["users", params] as const,
@@ -82,8 +94,34 @@ export function useTracesMetricsQuery(traceIds: string[]) {
 export function useTraceQuery(traceId: string | undefined) {
   return useQuery({
     queryKey: queryKeys.trace(traceId ?? ""),
-    queryFn: () => getTrace(traceId!),
+    queryFn: () => getTraceShell(traceId!),
     enabled: Boolean(traceId),
+  });
+}
+
+export function useTraceIoQuery(traceId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.traceIo(traceId ?? ""),
+    queryFn: () => getTraceIo(traceId!),
+    enabled: Boolean(traceId) && enabled,
+  });
+}
+
+export function useTraceObservationsQuery(traceId: string | undefined, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.traceObservations(traceId ?? ""),
+    queryFn: ({ pageParam }) => listTraceObservationSummaries(traceId!, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.meta.cursor ?? undefined,
+    enabled: Boolean(traceId) && enabled,
+  });
+}
+
+export function useObservationDetailQuery(observationId: string | null | undefined) {
+  return useQuery({
+    queryKey: queryKeys.observationDetail(observationId ?? ""),
+    queryFn: () => getObservationDetail(observationId!),
+    enabled: Boolean(observationId),
   });
 }
 

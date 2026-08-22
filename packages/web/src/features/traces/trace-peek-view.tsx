@@ -37,7 +37,12 @@ import { Button } from "@/shared/components/ui/button";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Separator } from "@/shared/components/ui/separator";
 import { Skeleton } from "@/shared/components/ui/skeleton";
-import { useTraceQuery } from "@/shared/hooks/queries";
+import {
+  useObservationDetailQuery,
+  useTraceIoQuery,
+  useTraceObservationsQuery,
+  useTraceQuery,
+} from "@/shared/hooks/queries";
 import { formatLatency, formatTokens } from "@/shared/lib/format";
 import { cn } from "@/shared/lib/utils";
 
@@ -45,26 +50,34 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
   const query = useTraceQuery(traceId);
   const trace = query.data;
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
   const [omitNoise, setOmitNoise] = useState(true);
   const [timelineOpen, setTimelineOpen] = useState(false);
-  const tree = useMemo(
-    () => buildTree(trace?.observations ?? [], { omitNoise }),
-    [trace, omitNoise],
-  );
+  const observationsQuery = useTraceObservationsQuery(traceId);
+  const observations = observationsQuery.data?.pages.flatMap((page) => page.data) ?? [];
+  const traceIoQuery = useTraceIoQuery(traceId, selectedId === null);
+  const selectedQuery = useObservationDetailQuery(selectedId);
+  const tree = useMemo(() => buildTree(observations, { omitNoise }), [observations, omitNoise]);
 
   const copyId = () => {
     navigator.clipboard.writeText(traceId);
     toast.success("Trace ID copied");
   };
 
-  const totalTokens = trace?.observations.reduce((acc, o) => acc + (o.totalTokens || 0), 0) ?? 0;
-  const selected = selectedId
-    ? (trace?.observations.find((o) => o.id === selectedId) ?? null)
-    : null;
+  const totalTokens = observations.reduce((acc, o) => acc + (o.totalTokens || 0), 0);
+  const selected = selectedQuery.data ?? null;
   const selectedScores = selected
     ? (trace?.scores.filter((s) => s.observationId === selected.id) ?? [])
     : [];
+  const traceView = trace
+    ? {
+        ...trace,
+        input: traceIoQuery.data?.input,
+        output: traceIoQuery.data?.output,
+        metadata: traceIoQuery.data?.metadata,
+        observations,
+      }
+    : null;
 
   return (
     <aside className="flex h-full w-[760px] max-w-[85vw] shrink-0 flex-col border-l border-border bg-surface-raised animate-[spectra-slide-in-right_250ms_cubic-bezier(0.32,0.72,0,1)]">
@@ -148,7 +161,11 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
               <StatChip
                 icon={Layers}
                 label="Observations"
-                value={String(trace.observations.length)}
+                value={
+                  trace.observationCount >= 0
+                    ? `${observations.length} / ${trace.observationCount}`
+                    : String(observations.length)
+                }
               />
               <StatChip icon={Cpu} label="Tokens" value={formatTokens(totalTokens)} />
             </div>
@@ -191,14 +208,27 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
                       key={node.observation.id}
                       node={node}
                       depth={1}
-                      selectedId={selectedId}
+                      selectedId={selectedId ?? null}
                       onSelect={setSelectedId}
                     />
                   ))}
                   {tree.length === 0 && (
                     <p className="px-2 py-4 text-sm text-fg-tertiary">
-                      No observations in this trace.
+                      {observationsQuery.isLoading
+                        ? "Loading observations…"
+                        : "No observations in this trace."}
                     </p>
+                  )}
+                  {observationsQuery.hasNextPage && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 w-full"
+                      disabled={observationsQuery.isFetchingNextPage}
+                      onClick={() => observationsQuery.fetchNextPage()}
+                    >
+                      {observationsQuery.isFetchingNextPage ? "Loading…" : "Load more observations"}
+                    </Button>
                   )}
                 </div>
               </ScrollArea>
@@ -207,11 +237,35 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
             {/* Detail pane — follows the tree selection */}
             <ScrollArea className="min-h-0 min-w-0 flex-1">
               <div className="min-w-0 p-4">
-                {selected ? (
+                {selectedId === undefined ? (
+                  <div className="flex h-40 items-center justify-center text-sm text-fg-tertiary">
+                    Select the trace root or an observation to load its details.
+                  </div>
+                ) : selectedQuery.isLoading ? (
+                  <Skeleton className="h-52 w-full" />
+                ) : selectedQuery.error ? (
+                  <p className="text-sm text-danger">
+                    {selectedQuery.error instanceof Error
+                      ? selectedQuery.error.message
+                      : "Failed to load observation"}
+                  </p>
+                ) : selected ? (
                   <ObservationDetail observation={selected} scores={selectedScores} />
+                ) : traceIoQuery.isLoading ? (
+                  <Skeleton className="h-52 w-full" />
+                ) : traceIoQuery.error ? (
+                  <p className="text-sm text-danger">
+                    {traceIoQuery.error instanceof Error
+                      ? traceIoQuery.error.message
+                      : "Failed to load trace IO"}
+                  </p>
                 ) : (
                   <div className="space-y-4">
-                    <IoTabs input={trace.input} output={trace.output} metadata={trace.metadata} />
+                    <IoTabs
+                      input={traceView?.input}
+                      output={traceView?.output}
+                      metadata={traceView?.metadata}
+                    />
                     <Separator />
                     <div>
                       <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-fg-primary">
@@ -228,9 +282,9 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
         </>
       ) : null}
 
-      {trace && (
+      {traceView && (
         <ObservationTimelineDialog
-          trace={trace}
+          trace={traceView}
           open={timelineOpen}
           onOpenChange={setTimelineOpen}
           omitNoise={omitNoise}

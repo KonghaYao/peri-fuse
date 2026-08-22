@@ -35,7 +35,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { Separator } from "@/shared/components/ui/separator";
 import { Skeleton } from "@/shared/components/ui/skeleton";
-import { useTraceQuery } from "@/shared/hooks/queries";
+import {
+  useObservationDetailQuery,
+  useTraceIoQuery,
+  useTraceObservationsQuery,
+  useTraceQuery,
+} from "@/shared/hooks/queries";
 import { formatLatency, formatTokens } from "@/shared/lib/format";
 import type { TraceWithDetails } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
@@ -95,27 +100,33 @@ function TraceDetailSkeleton() {
 
 export function TraceDetailPage() {
   const { traceId } = useParams<{ traceId: string }>();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
   const [timelineOpen, setTimelineOpen] = useState(false);
 
   const query = useTraceQuery(traceId);
   const trace = query.data;
+  const observationsQuery = useTraceObservationsQuery(traceId);
+  const observations = observationsQuery.data?.pages.flatMap((page) => page.data) ?? [];
+  const traceIoQuery = useTraceIoQuery(traceId, selectedId === null);
+  const selectedQuery = useObservationDetailQuery(selectedId);
 
   const [omitNoise, setOmitNoise] = useState(true);
-  const tree = useMemo(
-    () => buildTree(trace?.observations ?? [], { omitNoise }),
-    [trace, omitNoise],
-  );
+  const tree = useMemo(() => buildTree(observations, { omitNoise }), [observations, omitNoise]);
 
   if (query.isLoading) return <TraceDetailSkeleton />;
   if (query.error) return <ErrorState error={query.error} />;
   if (!trace) return null;
 
-  const selected = selectedId
-    ? (trace.observations.find((o) => o.id === selectedId) ?? null)
-    : null;
+  const selected = selectedQuery.data ?? null;
 
-  const totalTokens = trace.observations.reduce((acc, o) => acc + (o.totalTokens || 0), 0);
+  const totalTokens = observations.reduce((acc, o) => acc + (o.totalTokens || 0), 0);
+  const traceView = {
+    ...trace,
+    input: traceIoQuery.data?.input,
+    output: traceIoQuery.data?.output,
+    metadata: traceIoQuery.data?.metadata,
+    observations,
+  };
 
   // Scores for the selected observation (trace-level scores shown on Trace).
   const selectedScores = selected
@@ -171,7 +182,15 @@ export function TraceDetailPage() {
 
         <div className="mt-3 flex flex-wrap gap-2">
           <StatChip icon={Clock} label="Latency" value={formatLatency(trace.latency)} />
-          <StatChip icon={Layers} label="Observations" value={String(trace.observations.length)} />
+          <StatChip
+            icon={Layers}
+            label="Observations"
+            value={
+              trace.observationCount >= 0
+                ? `${observations.length} / ${trace.observationCount}`
+                : String(observations.length)
+            }
+          />
           <StatChip icon={Cpu} label="Tokens" value={formatTokens(totalTokens)} />
           <StatChip icon={Star} label="Scores" value={String(trace.scores.length)} />
           <Button
@@ -219,12 +238,27 @@ export function TraceDetailPage() {
                   key={node.observation.id}
                   node={node}
                   depth={1}
-                  selectedId={selectedId}
+                  selectedId={selectedId ?? null}
                   onSelect={setSelectedId}
                 />
               ))}
               {tree.length === 0 && (
-                <p className="px-2 py-4 text-sm text-fg-tertiary">No observations in this trace.</p>
+                <p className="px-2 py-4 text-sm text-fg-tertiary">
+                  {observationsQuery.isLoading
+                    ? "Loading observations…"
+                    : "No observations in this trace."}
+                </p>
+              )}
+              {observationsQuery.hasNextPage && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 w-full"
+                  disabled={observationsQuery.isFetchingNextPage}
+                  onClick={() => observationsQuery.fetchNextPage()}
+                >
+                  {observationsQuery.isFetchingNextPage ? "Loading…" : "Load more observations"}
+                </Button>
               )}
             </ScrollArea>
           </CardContent>
@@ -232,16 +266,32 @@ export function TraceDetailPage() {
 
         <Card className="m-4 flex flex-1 flex-col overflow-hidden">
           <CardContent className="min-h-0 flex-1 overflow-y-auto p-4 pt-6">
-            {selected ? (
+            {selectedId === undefined ? (
+              <div className="flex h-full items-center justify-center text-sm text-fg-tertiary">
+                Select the trace root or an observation to load its details.
+              </div>
+            ) : selectedQuery.isLoading ? (
+              <Skeleton className="h-64 w-full" />
+            ) : selectedQuery.error ? (
+              <ErrorState error={selectedQuery.error} />
+            ) : selected ? (
               <ObservationDetail observation={selected} scores={selectedScores} />
+            ) : traceIoQuery.isLoading ? (
+              <Skeleton className="h-64 w-full" />
+            ) : traceIoQuery.error ? (
+              <ErrorState error={traceIoQuery.error} />
             ) : (
-              <TraceDetailPanel trace={trace} />
+              <TraceDetailPanel trace={traceView} />
             )}
           </CardContent>
         </Card>
       </div>
 
-      <ObservationTimelineDialog trace={trace} open={timelineOpen} onOpenChange={setTimelineOpen} />
+      <ObservationTimelineDialog
+        trace={traceView}
+        open={timelineOpen}
+        onOpenChange={setTimelineOpen}
+      />
     </div>
   );
 }
