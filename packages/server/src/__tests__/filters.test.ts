@@ -79,6 +79,9 @@ describe("public API filters", () => {
             traceId: traceA,
             name: `f-span-${runId}`,
             startTime: iso,
+            input: { prompt: "large detail stays behind the detail endpoint" },
+            output: { result: "not needed in the observations table" },
+            metadata: { privateContext: "not part of a list summary" },
           },
         },
         {
@@ -137,6 +140,23 @@ describe("public API filters", () => {
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].type).toBe("SPAN");
+    });
+
+    it("returns a lightweight summary only when explicitly requested", async () => {
+      const res = await apiGet(
+        `/api/public/observations?traceId=${traceA}&name=f-span-${runId}&fields=summary`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).toMatchObject({
+        id: `f-span-${runId}`,
+        traceId: traceA,
+        name: `f-span-${runId}`,
+        type: "SPAN",
+      });
+      expect(res.body.data[0]).not.toHaveProperty("input");
+      expect(res.body.data[0]).not.toHaveProperty("output");
+      expect(res.body.data[0]).not.toHaveProperty("metadata");
     });
 
     it("filters by level", async () => {

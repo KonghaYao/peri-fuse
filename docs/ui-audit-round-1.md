@@ -29,9 +29,11 @@ Scores、Settings。模拟筛选、分页、详情下钻、空态和返回导航
    会过滤没有 traceId 的 session/unlinked score，导致“趋势有数据、列表为空”。
 3. **Traces 默认信息密度过高**：Input、Output、Metadata、Tags 与 cache 明细同时展开，主任务
    （定位异常 trace）被挤压；原始浏览器语义树约 147k+ 字符，读屏与浏览器处理负担明显。
-4. **渐进式下钻总体成立**：Traces、Errors、Sessions 都将完整 IO 延迟到用户选择具体节点后，
-   没有在首屏直接展开完整 observation IO。
-5. **时间与详情能力仍不完全一致**：Sessions/Users 缺时间窗口；Observations/Scores 的下钻离开
+4. **Observations 列表仍携带完整 IO**：服务停止时的大响应日志记录 25 行首屏为
+   `1,760,021 B`，列表实际只展示名称、类型、级别、时间、模型、token 和 trace。
+5. **渐进式下钻总体成立**：Traces、Errors、Sessions 都将完整 IO 延迟到用户选择具体节点后，
+   但 Observations 列表原先是例外。
+6. **时间与详情能力仍不完全一致**：Sessions/Users 缺时间窗口；Observations/Scores 的下钻离开
    当前列表上下文，后续可统一成 peek 模式。
 
 ## 第一批已执行改进
@@ -49,6 +51,8 @@ Scores、Settings。模拟筛选、分页、详情下钻、空态和返回导航
   显示 `Unlinked`，有 trace 时仍保留下钻链接。
 - Traces 默认隐藏 Input、Output、Metadata、Tags、Cached Tokens 和 Cache Hit Rate；高级列仍可在
   Columns 中按需打开。复测时语义树从约 147k+ 字符降到 25,386 字符，且不改变 API 兼容契约。
+- Observations 列表显式请求 `fields=summary`；未传该参数的 v1 SDK 请求仍返回完整兼容响应。
+  真实 25 行首屏从 `1,760,021 B` 降到 `9,380 B`，减少约 99.47%，完整 IO 留在详情路径。
 
 ## 后续候选改进
 
@@ -60,6 +64,8 @@ Scores、Settings。模拟筛选、分页、详情下钻、空态和返回导航
 
 - `pnpm exec biome check`（本轮改动的 Web 文件）：通过。
 - `pnpm --filter @peri-fuse/web run build`：通过。
+- `pnpm --filter @peri-fuse/server run typecheck`：通过。
+- `pnpm --filter @peri-fuse/server run test`：22 个文件、200 项测试通过，包含 summary 契约测试。
 - `pnpm --filter @peri-fuse/web run typecheck`：未通过；报错全部来自
   `react18-json-view` 的 React 19 / SVG 类型声明（`node_modules`），本轮文件没有新增诊断。
 - 浏览器逐页交互与修复后复测：通过；为激活 Default Project，按用户授权创建了一个持久

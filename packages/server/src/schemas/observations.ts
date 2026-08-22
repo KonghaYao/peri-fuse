@@ -28,6 +28,8 @@ const ObservationType = z.enum([
 // GET /api/public/observations
 export const GetObservationsV1Query = z.object({
   ...publicApiPaginationZod,
+  // Lite UI extension. Omitted by SDK clients, preserving the full v1 response.
+  fields: z.enum(["summary"]).optional(),
   type: ObservationType.nullish(),
   name: z.string().nullish(),
   userId: z.string().nullish(),

@@ -22,6 +22,39 @@ import {
 
 const app = new Hono<LiteServerEnv>();
 
+function toObservationSummary(observation: ReturnType<typeof transformDbToApiObservation>) {
+  const {
+    id,
+    traceId,
+    parentObservationId,
+    type,
+    name,
+    startTime,
+    endTime,
+    level,
+    statusMessage,
+    model,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+  } = observation;
+  return {
+    id,
+    traceId,
+    parentObservationId,
+    type,
+    name,
+    startTime,
+    endTime,
+    level,
+    statusMessage,
+    model,
+    promptTokens,
+    completionTokens,
+    totalTokens,
+  };
+}
+
 app.get("/api/public/observations", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
 
@@ -72,22 +105,26 @@ app.get("/api/public/observations", authMiddleware, responseCache(2_000), async 
 
   const finalCount = count ? count : 0;
 
+  const data = items
+    .map((i) => {
+      const model = models.find((m) => m.id === i.internalModelId);
+      const inputPrice = model?.prices.find((p) => p.usageType === "input")?.price;
+      const outputPrice = model?.prices.find((p) => p.usageType === "output")?.price;
+      const totalPrice = model?.prices.find((p) => p.usageType === "total")?.price;
+      return {
+        ...i,
+        modelId: model?.id ?? null,
+        inputPrice: inputPrice != null ? new Decimal(inputPrice) : null,
+        outputPrice: outputPrice != null ? new Decimal(outputPrice) : null,
+        totalPrice: totalPrice != null ? new Decimal(totalPrice) : null,
+      };
+    })
+    .map(transformDbToApiObservation);
+
   return c.json({
-    data: items
-      .map((i) => {
-        const model = models.find((m) => m.id === i.internalModelId);
-        const inputPrice = model?.prices.find((p) => p.usageType === "input")?.price;
-        const outputPrice = model?.prices.find((p) => p.usageType === "output")?.price;
-        const totalPrice = model?.prices.find((p) => p.usageType === "total")?.price;
-        return {
-          ...i,
-          modelId: model?.id ?? null,
-          inputPrice: inputPrice != null ? new Decimal(inputPrice) : null,
-          outputPrice: outputPrice != null ? new Decimal(outputPrice) : null,
-          totalPrice: totalPrice != null ? new Decimal(totalPrice) : null,
-        };
-      })
-      .map(transformDbToApiObservation),
+    // Legacy SDK calls still receive the complete contract. The Lite list asks
+    // for summary explicitly so large IO/metadata stays behind the detail path.
+    data: query.fields === "summary" ? data.map(toObservationSummary) : data,
     meta: {
       page: query.page,
       limit: query.limit,

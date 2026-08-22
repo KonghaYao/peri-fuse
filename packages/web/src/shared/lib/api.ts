@@ -224,7 +224,9 @@ export async function getObservationDetail(observationId: string): Promise<Obser
 }
 
 export function listObservations(params: ObservationListParams = {}): Promise<Paged<Observation>> {
-  return request<Paged<Observation>>(`/api/public/observations${toQueryString({ ...params })}`);
+  return request<Paged<Observation>>(
+    `/api/public/observations${toQueryString({ ...params, fields: "summary" })}`,
+  );
 }
 
 export function listScores(params: ScoreListParams = {}): Promise<Paged<Score>> {
