@@ -146,6 +146,9 @@ export function ErrorsPage() {
           value={search}
           onCommit={(value) => updateFilter("search", value)}
         />
+        <Button size="sm" variant="secondary" onClick={() => searchRef.current?.commit()}>
+          <Search className="h-3.5 w-3.5" /> Search
+        </Button>
         <FilterSelect
           placeholder="Type"
           allLabel="All types"

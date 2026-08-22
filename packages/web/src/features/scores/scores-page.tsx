@@ -1,7 +1,8 @@
-import { Search } from "lucide-react";
+import { Globe, Search } from "lucide-react";
 import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
+import { DateFilterInput } from "@/shared/components/date-filter-input";
 import { FilterInput, type FilterInputHandle } from "@/shared/components/filter-input";
 import { FilterSelect } from "@/shared/components/filter-select";
 import { Pagination } from "@/shared/components/pagination";
@@ -23,7 +24,14 @@ import type { Score } from "@/shared/lib/types";
 
 const PAGE_SIZE = 25;
 
-type ScoreFilters = { name?: string; source?: string; dataType?: string };
+type ScoreFilters = {
+  name?: string;
+  source?: string;
+  dataType?: string;
+  environment?: string;
+  fromTimestamp?: string;
+  toTimestamp?: string;
+};
 
 function scoreDisplay(s: Score): string {
   if (s.stringValue !== null && s.stringValue !== undefined) return s.stringValue;
@@ -37,7 +45,7 @@ export function ScoresPage() {
   const nameFilterRef = useRef<FilterInputHandle>(null);
 
   const tableState = useTableState<ScoreFilters>({
-    filterKeys: ["name", "source", "dataType"],
+    filterKeys: ["name", "source", "dataType", "environment", "fromTimestamp", "toTimestamp"],
     defaultSort: "timestamp.desc",
   });
 
@@ -75,6 +83,29 @@ export function ScoresPage() {
             { value: "EVAL", label: "EVAL" },
             { value: "ANNOTATION", label: "ANNOTATION" },
           ]}
+        />
+        <FilterInput
+          className="w-44"
+          placeholder="Environment…"
+          icon={Globe}
+          value={tableState.filters.environment}
+          onCommit={(v) => tableState.setFilter("environment", v)}
+        />
+        <DateFilterInput
+          className="w-36"
+          value={tableState.filters.fromTimestamp}
+          onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
+          placeholder="From date…"
+          title="Score start date"
+          boundary="start"
+        />
+        <DateFilterInput
+          className="w-36"
+          value={tableState.filters.toTimestamp}
+          onCommit={(v) => tableState.setFilter("toTimestamp", v)}
+          placeholder="To date…"
+          title="Score end date"
+          boundary="end"
         />
         <FilterSelect
           placeholder="Data type"

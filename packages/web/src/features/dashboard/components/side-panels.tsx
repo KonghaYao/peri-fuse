@@ -178,6 +178,12 @@ export function RecentErrorsPanel({ data }: { data: DashboardRecentError[] }) {
           </li>
         ))}
       </ul>
+      <Link
+        to="/errors"
+        className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-danger hover:underline"
+      >
+        Investigate all errors <ArrowUpRight className="h-3 w-3" />
+      </Link>
     </ChartCard>
   );
 }

@@ -1,4 +1,4 @@
-import { Copy, KeyRound, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, KeyRound, Loader2, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { PageHeader } from "@/shared/components/state";
@@ -30,6 +30,9 @@ export function SettingsPage() {
   const ctx = useProjectContext();
   const [newKey, setNewKey] = useState<CreatedKey | null>(null);
   const [copied, setCopied] = useState("");
+  const [deleteCandidate, setDeleteCandidate] = useState<{ id: string; publicKey: string } | null>(
+    null,
+  );
 
   const keysQuery = useProjectKeysQuery(ctx?.projectId);
   const createKey = useCreateKeyMutation(ctx?.projectId ?? "");
@@ -128,16 +131,7 @@ export function SettingsPage() {
                           variant="ghost"
                           size="sm"
                           title="Delete key"
-                          onClick={() =>
-                            deleteKey.mutate(k.id, {
-                              onSuccess: () => toast.success("API key deleted"),
-                              onError: (err) =>
-                                toast.error(
-                                  "Failed to delete key",
-                                  err instanceof Error ? err.message : undefined,
-                                ),
-                            })
-                          }
+                          onClick={() => setDeleteCandidate({ id: k.id, publicKey: k.publicKey })}
                         >
                           <Trash2 className="h-3.5 w-3.5 text-danger" />
                         </Button>
@@ -197,6 +191,50 @@ export function SettingsPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteCandidate} onOpenChange={(open) => !open && setDeleteCandidate(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-danger" /> Delete API key?
+            </DialogTitle>
+            <DialogDescription>
+              Requests using this key will stop working immediately. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteCandidate && (
+            <div className="rounded-md border border-line bg-surface-inset px-3 py-2 font-mono text-xs text-fg-secondary">
+              {deleteCandidate.publicKey}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setDeleteCandidate(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteKey.isPending}
+              onClick={() => {
+                if (!deleteCandidate) return;
+                deleteKey.mutate(deleteCandidate.id, {
+                  onSuccess: () => {
+                    setDeleteCandidate(null);
+                    toast.success("API key deleted");
+                  },
+                  onError: (err) =>
+                    toast.error(
+                      "Failed to delete key",
+                      err instanceof Error ? err.message : undefined,
+                    ),
+                });
+              }}
+            >
+              {deleteKey.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Delete key
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

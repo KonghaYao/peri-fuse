@@ -9,6 +9,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
 import { ErrorState, PageHeader } from "@/shared/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
@@ -70,13 +71,30 @@ function KpiCard({
 }
 
 export function DashboardPage() {
-  const [range, setRange] = useState<RangeKey>("30d");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [clock] = useState(() => Date.now());
+  const rangeParam = searchParams.get("range");
+  const range: RangeKey = RANGE_PRESETS.some((preset) => preset.key === rangeParam)
+    ? (rangeParam as RangeKey)
+    : "30d";
+
+  const setRange = (next: RangeKey) => {
+    setSearchParams(
+      (current) => {
+        const params = new URLSearchParams(current);
+        if (next === "30d") params.delete("range");
+        else params.set("range", next);
+        return params;
+      },
+      { replace: true },
+    );
+  };
 
   const params = useMemo<DashboardQueryParams>(() => {
     const preset = RANGE_PRESETS.find((p) => p.key === range);
     if (!preset?.hours) return {};
-    return { from: new Date(Date.now() - preset.hours * 3600_000).toISOString() };
-  }, [range]);
+    return { from: new Date(clock - preset.hours * 3600_000).toISOString() };
+  }, [clock, range]);
 
   const query = useDashboardQuery(params);
   const dashboard = query.data;

@@ -1,7 +1,8 @@
-import { Search } from "lucide-react";
+import { Globe, Search } from "lucide-react";
 import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
+import { DateFilterInput } from "@/shared/components/date-filter-input";
 import { FilterInput, type FilterInputHandle } from "@/shared/components/filter-input";
 import { FilterSelect } from "@/shared/components/filter-select";
 import { LevelBadge, ObservationTypeBadge } from "@/shared/components/observation-badges";
@@ -23,13 +24,20 @@ import type { Observation } from "@/shared/lib/types";
 
 const PAGE_SIZE = 25;
 
-type ObservationFilters = { name?: string; type?: string; level?: string };
+type ObservationFilters = {
+  name?: string;
+  type?: string;
+  level?: string;
+  environment?: string;
+  fromStartTime?: string;
+  toStartTime?: string;
+};
 
 export function ObservationsPage() {
   const nameFilterRef = useRef<FilterInputHandle>(null);
 
   const tableState = useTableState<ObservationFilters>({
-    filterKeys: ["name", "type", "level"],
+    filterKeys: ["name", "type", "level", "environment", "fromStartTime", "toStartTime"],
     defaultSort: "startTime.desc",
   });
 
@@ -67,6 +75,29 @@ export function ObservationsPage() {
             { value: "GENERATION", label: "GENERATION" },
             { value: "EVENT", label: "EVENT" },
           ]}
+        />
+        <FilterInput
+          className="w-44"
+          placeholder="Environment…"
+          icon={Globe}
+          value={tableState.filters.environment}
+          onCommit={(v) => tableState.setFilter("environment", v)}
+        />
+        <DateFilterInput
+          className="w-36"
+          value={tableState.filters.fromStartTime}
+          onCommit={(v) => tableState.setFilter("fromStartTime", v)}
+          placeholder="From date…"
+          title="Observation start date"
+          boundary="start"
+        />
+        <DateFilterInput
+          className="w-36"
+          value={tableState.filters.toStartTime}
+          onCommit={(v) => tableState.setFilter("toStartTime", v)}
+          placeholder="To date…"
+          title="Observation end date"
+          boundary="end"
         />
         <FilterSelect
           placeholder="Level"
