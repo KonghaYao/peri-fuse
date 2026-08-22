@@ -136,6 +136,7 @@ const columns: ColumnDef<TracesTableRow, unknown>[] = [
     header: "Input",
     id: "input",
     enableSorting: false,
+    meta: { defaultHidden: true },
     cell: ({ row }) =>
       row.original.levelCounts === null && row.original.input === null ? (
         <Skeleton className="h-4 w-3/4" />
@@ -148,6 +149,7 @@ const columns: ColumnDef<TracesTableRow, unknown>[] = [
     header: "Output",
     id: "output",
     enableSorting: false,
+    meta: { defaultHidden: true },
     cell: ({ row }) =>
       row.original.levelCounts === null && row.original.output === null ? (
         <Skeleton className="h-4 w-3/4" />
@@ -229,6 +231,7 @@ const columns: ColumnDef<TracesTableRow, unknown>[] = [
     id: "tags",
     header: "Tags",
     enableSorting: false,
+    meta: { defaultHidden: true },
     cell: ({ row }) => {
       const traceTags = row.original.tags;
       return (
@@ -251,6 +254,7 @@ const columns: ColumnDef<TracesTableRow, unknown>[] = [
     header: "Metadata",
     id: "metadata",
     enableSorting: false,
+    meta: { defaultHidden: true },
     cell: ({ row }) =>
       row.original.levelCounts === null && row.original.metadata === null ? (
         <Skeleton className="h-4 w-3/4" />
@@ -391,6 +395,7 @@ const columns: ColumnDef<TracesTableRow, unknown>[] = [
         id: "cachedTokens",
         header: "Cached Tokens",
         accessorFn: (row) => row.cachedTokens,
+        meta: { defaultHidden: true },
         enableSorting: false,
         cell: ({ row }) => {
           const value = row.original.cachedTokens;
@@ -403,6 +408,7 @@ const columns: ColumnDef<TracesTableRow, unknown>[] = [
         id: "cacheHitRate",
         header: "Cache Hit Rate",
         accessorFn: (row) => row.cacheHitRate,
+        meta: { defaultHidden: true },
         enableSorting: false,
         cell: ({ row }) => {
           const value = row.original.cacheHitRate;

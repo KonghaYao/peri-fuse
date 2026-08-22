@@ -43,6 +43,7 @@ function scoreDisplay(s: Score): string {
 
 export function ScoresPage() {
   const nameFilterRef = useRef<FilterInputHandle>(null);
+  const environmentFilterRef = useRef<FilterInputHandle>(null);
 
   const tableState = useTableState<ScoreFilters>({
     filterKeys: ["name", "source", "dataType", "environment", "fromTimestamp", "toTimestamp"],
@@ -85,6 +86,7 @@ export function ScoresPage() {
           ]}
         />
         <FilterInput
+          ref={environmentFilterRef}
           className="w-44"
           placeholder="Environment…"
           icon={Globe}
@@ -118,7 +120,14 @@ export function ScoresPage() {
             { value: "BOOLEAN", label: "BOOLEAN" },
           ]}
         />
-        <Button size="sm" variant="secondary" onClick={() => nameFilterRef.current?.commit()}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            nameFilterRef.current?.commit();
+            environmentFilterRef.current?.commit();
+          }}
+        >
           <Search className="h-4 w-4" />
           Search
         </Button>
@@ -169,13 +178,17 @@ export function ScoresPage() {
                       {formatDateTime(s.timestamp)}
                     </TableCell>
                     <TableCell className="max-w-[120px]">
-                      <Link
-                        to={`/traces/${encodeURIComponent(s.traceId)}`}
-                        className="font-mono text-xs text-primary hover:underline"
-                        title={s.traceId}
-                      >
-                        {s.traceId.slice(0, 8)}…
-                      </Link>
+                      {s.traceId ? (
+                        <Link
+                          to={`/traces/${encodeURIComponent(s.traceId)}`}
+                          className="font-mono text-xs text-primary hover:underline"
+                          title={s.traceId}
+                        >
+                          {s.traceId.slice(0, 8)}…
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">Unlinked</span>
+                      )}
                     </TableCell>
                     <TableCell className="max-w-[240px] truncate text-muted-foreground">
                       {s.comment ?? "—"}

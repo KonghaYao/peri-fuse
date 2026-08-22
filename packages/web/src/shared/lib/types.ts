@@ -132,7 +132,7 @@ export type CursorPage<T> = {
 
 export type Score = {
   id: string;
-  traceId: string;
+  traceId: string | null;
   observationId: string | null;
   name: string;
   value: number | null;

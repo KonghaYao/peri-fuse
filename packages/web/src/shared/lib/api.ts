@@ -228,7 +228,7 @@ export function listObservations(params: ObservationListParams = {}): Promise<Pa
 }
 
 export function listScores(params: ScoreListParams = {}): Promise<Paged<Score>> {
-  return request<Paged<Score>>(`/api/public/scores${toQueryString({ ...params })}`);
+  return request<Paged<Score>>(`/api/public/v2/scores${toQueryString({ ...params })}`);
 }
 
 export function getDashboard(params: DashboardQueryParams = {}): Promise<Dashboard> {

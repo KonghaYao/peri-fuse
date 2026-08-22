@@ -35,6 +35,7 @@ type ObservationFilters = {
 
 export function ObservationsPage() {
   const nameFilterRef = useRef<FilterInputHandle>(null);
+  const environmentFilterRef = useRef<FilterInputHandle>(null);
 
   const tableState = useTableState<ObservationFilters>({
     filterKeys: ["name", "type", "level", "environment", "fromStartTime", "toStartTime"],
@@ -77,6 +78,7 @@ export function ObservationsPage() {
           ]}
         />
         <FilterInput
+          ref={environmentFilterRef}
           className="w-44"
           placeholder="Environment…"
           icon={Globe}
@@ -111,7 +113,14 @@ export function ObservationsPage() {
             { value: "ERROR", label: "ERROR" },
           ]}
         />
-        <Button size="sm" variant="secondary" onClick={() => nameFilterRef.current?.commit()}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            nameFilterRef.current?.commit();
+            environmentFilterRef.current?.commit();
+          }}
+        >
           <Search className="h-4 w-4" />
           Search
         </Button>

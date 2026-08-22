@@ -1,6 +1,6 @@
 # Lite Web UI 第一轮走查
 
-状态：进行中。源码证据与第一批低风险改进已完成；登录后浏览器证据与最终改进结论待补。
+状态：完成。已在本地大数据集上完成源码审计、浏览器逐页走查、改进与复测。
 
 ## 目标与范围
 
@@ -10,30 +10,29 @@ Scores、Settings。模拟筛选、分页、详情下钻、空态和返回导航
 
 ## 浏览器场景清单
 
-| 模块 | 场景 | 通过证据 |
+| 模块 | 场景 | 浏览器证据与结论 |
 | --- | --- | --- |
-| Dashboard | 切换 24h/7d/30d/All；从 Recent errors 下钻 | 范围与数据同步，返回后状态保留 |
-| Traces | 名称/用户/环境/日期筛选；列显隐；打开 peek；加载更多 | URL 状态、预览体积、详情按需加载正确 |
-| Errors | 范围/消息/类型/模型筛选；错误指纹；父节点调查 | 列表轻量、选择后才取 IO、路径可理解 |
-| Sessions | 用户/环境筛选；排序；进入 session；展开 trace | 状态保留、渐进 observation 加载正确 |
-| Users | 用户/环境筛选；点击用户进入预筛选 Traces | 筛选可恢复、跨模块参数传递正确 |
-| Observations | 名称/类型/级别筛选；分页；进入 Trace | 筛选与分页正确、错误记录易定位 |
-| Scores | 名称/来源/类型筛选；分页；进入 Trace | 值/类型语义清晰、筛选可恢复 |
-| Settings | key 列表、复制、创建/删除入口 | 密钥操作清晰且危险操作有确认 |
+| Dashboard | 切换时间范围；从 Recent errors 下钻 | 选择 7d 后 URL 为 `?range=7d`；Errors 入口存在，状态可分享。 |
+| Traces | 环境筛选；列显隐；打开 peek；选择 observation | URL 写入 `environment=default`；先展示 observation 树，选中节点后才出现 Input/Output/Metadata。 |
+| Errors | 7d 范围；错误指纹；打开错误并追溯父节点 | 指纹将 URL 写为 `search=provider_or_stream_failure`，35 条命中；详情有 Direct parent、Error evidence、Parent source 和 Open full trace。 |
+| Sessions | 列表进入 session；展开 trace | Session shell 先展示 trace，点击 trace 后才展开 observation 树，渐进路径成立。 |
+| Users | 用户筛选；进入预筛选 Traces | `userId=KonghaYao` 可恢复，点击用户进入同参数的 Traces。 |
+| Observations | 环境/日期筛选；分页 | 首次发现 Search 未提交 Environment；修复后 URL 为 `?environment=default`，Clear(1) 与 25 行分页同步。 |
+| Scores | 环境/日期筛选；未关联 score 展示 | 首次列表为空但 Dashboard 有 score trend；确认 v1 丢弃无 trace score，改 v2 后显示 `acc-session-score = 42` 和 `Unlinked`。 |
+| Settings | 查看 key；打开删除入口并取消 | 确认框展示具体 public key、立即失效与不可恢复提示；点击 Cancel，没有删除 key。 |
 
-## 源码阶段待证伪假设
+## 批判性结论
 
-1. **时间筛选不一致**：Traces 有起止日期，Dashboard/Errors 有预设范围；Observations 与
-   Scores 的 API 已支持时间字段但 UI 未暴露，Sessions/Users 连 API 参数也缺失。
-2. **状态可分享性不一致**：表格页使用 URL 状态，Dashboard 使用本地 state，刷新或分享会
-   丢失时间范围。
-3. **错误调查入口断裂**：Dashboard 展示 error rate 和 recent errors，但没有显著的
-   “查看全部错误”入口连接 Errors 工作台。
-4. **搜索提交方式不一致**：部分列表显式提供 Search 按钮，Sessions/Users/Errors 主要依赖
-   Enter；需要浏览器验证是否造成误解。
-5. **数据详情深度不一致**：Traces/Errors/Sessions 有侧栏或详情页，Observations/Scores 只能
-   跳到 Trace，用户可能无法保留当前列表上下文。
-6. **危险操作确认不足**：Settings 的删除 key 按钮直接触发 mutation，误点恢复成本高。
+1. **筛选提交语义不统一且曾产生错误结果**：Observations/Scores 的 Search 只提交 Name，
+   Environment 输入会被忽略；Sessions/Users 仍只依赖 Enter，没有显式提交动作。
+2. **同一数据在不同 API 版本下口径不一致**：Dashboard 统计所有项目 score，但旧 v1 列表
+   会过滤没有 traceId 的 session/unlinked score，导致“趋势有数据、列表为空”。
+3. **Traces 默认信息密度过高**：Input、Output、Metadata、Tags 与 cache 明细同时展开，主任务
+   （定位异常 trace）被挤压；原始浏览器语义树约 147k+ 字符，读屏与浏览器处理负担明显。
+4. **渐进式下钻总体成立**：Traces、Errors、Sessions 都将完整 IO 延迟到用户选择具体节点后，
+   没有在首屏直接展开完整 observation IO。
+5. **时间与详情能力仍不完全一致**：Sessions/Users 缺时间窗口；Observations/Scores 的下钻离开
+   当前列表上下文，后续可统一成 peek 模式。
 
 ## 第一批已执行改进
 
@@ -43,18 +42,25 @@ Scores、Settings。模拟筛选、分页、详情下钻、空态和返回导航
 - Errors 增加显式 Search 按钮，避免只能依赖 Enter 提交搜索。
 - Settings 删除 API key 改为二次确认，确认框展示将失效的 public key，并明确不可恢复。
 
-这些调整来自源码阶段可直接证实的问题。浏览器激活本地项目会创建持久 API key，属于凭据创建；
-在获得明确授权前不执行该动作，因此以下候选项仍需浏览器实测后排序。
+## 浏览器发现后执行的改进
 
-## 后续候选改进（待浏览器验证后排序）
+- Observations、Scores 的 Search 同时提交 Name 和 Environment；修复了输入值被静默忽略的问题。
+- Scores 列表切换到项目已支持的 v2 只读接口，展示 session/unlinked score；无 trace 的 score
+  显示 `Unlinked`，有 trace 时仍保留下钻链接。
+- Traces 默认隐藏 Input、Output、Metadata、Tags、Cached Tokens 和 Cache Hit Rate；高级列仍可在
+  Columns 中按需打开。复测时语义树从约 147k+ 字符降到 25,386 字符，且不改变 API 兼容契约。
+
+## 后续候选改进
 
 - 给 Sessions、Users 增加后端时间窗口与前端日期筛选。
 - 为 Observation/Score 提供保留列表上下文的详情预览或明确的下钻入口。
+- 将窄视口下自动换行的多条件工具栏改成明确的“常用筛选 + 更多筛选”结构。
 
 ## 当前验证结果
 
-- `pnpm exec biome check`（6 个改动的 Web 文件）：通过。
+- `pnpm exec biome check`（本轮改动的 Web 文件）：通过。
 - `pnpm --filter @peri-fuse/web run build`：通过。
 - `pnpm --filter @peri-fuse/web run typecheck`：未通过；报错全部来自
   `react18-json-view` 的 React 19 / SVG 类型声明（`node_modules`），本轮文件没有新增诊断。
-- 登录后的逐页浏览器交互：待授权激活本地项目后执行。
+- 浏览器逐页交互与修复后复测：通过；为激活 Default Project，按用户授权创建了一个持久
+  `web-ui` API key，未读取或输出 secret，未创建/删除其他业务数据。
