@@ -96,7 +96,7 @@ export interface ModelDeployment {
     type: string;
     isEnabled: boolean;
     status: string;
-  };
+  } | null;
 }
 
 export interface UsageSummary {

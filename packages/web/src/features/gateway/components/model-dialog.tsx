@@ -70,6 +70,7 @@ export function ModelDialog({
 }) {
   const providersQuery = useGwProvidersQuery();
   const isEdit = !!deployment;
+  const providerUnavailable = deployment?.provider === null;
 
   const form = useForm<ModelFormValues>({
     resolver: zodResolver(modelFormSchema),
@@ -81,6 +82,7 @@ export function ModelDialog({
       outputPrice: "",
     },
   });
+  const selectedProviderId = form.watch("providerId");
 
   useEffect(() => {
     if (open) {
@@ -88,7 +90,7 @@ export function ModelDialog({
         deployment
           ? {
               modelName: deployment.modelName,
-              providerId: deployment.providerId,
+              providerId: deployment.provider ? deployment.providerId : "",
               providerModel: deployment.providerModel,
               inputPrice:
                 deployment.modelInfo?.inputPrice != null
@@ -174,6 +176,12 @@ export function ModelDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  {providerUnavailable && !selectedProviderId && (
+                    <FormDescription className="text-warning">
+                      The original provider is unavailable. Select a provider from this project
+                      before saving.
+                    </FormDescription>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}

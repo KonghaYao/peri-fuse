@@ -1,11 +1,12 @@
 /**
  * Gateway Model Deployments management page.
  */
-import { Pencil, Plus, Power, Trash2 } from "lucide-react";
+import { AlertTriangle, Pencil, Plus, Power, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ModelDialog } from "@/features/gateway/components/model-dialog";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { toast } from "@/shared/components/toast";
+import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
 import {
@@ -115,10 +116,22 @@ function ModelsContent() {
                       {d.providerModel}
                     </td>
                     <td className="px-4 py-3 text-fg-secondary">
-                      {d.provider.name}
-                      <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-fg-tertiary">
-                        {d.provider.type}
-                      </span>
+                      {d.provider ? (
+                        <>
+                          {d.provider.name}
+                          <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-fg-tertiary">
+                            {d.provider.type}
+                          </span>
+                        </>
+                      ) : (
+                        <Badge
+                          variant="warning"
+                          title="Select a provider when editing this deployment"
+                        >
+                          <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" />
+                          Provider unavailable
+                        </Badge>
+                      )}
                     </td>
                     <td className="hidden px-4 py-3 text-xs text-fg-tertiary md:table-cell">
                       {d.modelInfo?.inputPrice != null || d.modelInfo?.outputPrice != null
