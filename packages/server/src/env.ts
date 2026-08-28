@@ -11,6 +11,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as dotenv from "dotenv";
+import { resolveLiteServerPort } from "./port";
 
 // Load .env from project root (dev convenience; the CLI daemon passes env
 // explicitly so this is a no-op in production). Walk up to find it.
@@ -79,6 +80,6 @@ if (!process.env.SALT) {
 }
 
 export const liteEnv = {
-  port: process.env.LITE_SERVER_PORT ? parseInt(process.env.LITE_SERVER_PORT, 10) : 23332,
+  port: resolveLiteServerPort(process.env.LITE_SERVER_PORT),
   salt: process.env.SALT,
 };

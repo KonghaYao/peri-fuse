@@ -71,6 +71,6 @@ EXPOSE 23332
 VOLUME ["/app/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD node -e "fetch('http://localhost:23332/api/public/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+    CMD ["node", "-e", "const { resolveLiteServerPort } = require('./packages/server/dist/port.js'); const port = resolveLiteServerPort(process.env.LITE_SERVER_PORT); fetch('http://127.0.0.1:' + port + '/api/public/health').then(r => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1));"]
 
 CMD ["node", "packages/server/dist/index.js"]

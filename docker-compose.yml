@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "23332:23332"
+      - "${LITE_SERVER_PORT:-23332}:${LITE_SERVER_PORT:-23332}"
 
     volumes:
       # 数据落到项目相对目录 ./data（首次启动自动创建）：
@@ -29,10 +29,11 @@ services:
 
     environment:
       LANGFUSE_MODE: lite
+      LITE_SERVER_PORT: "${LITE_SERVER_PORT:-23332}"
       # API key 哈希盐。留空则自动生成并持久化到卷内 .salt 文件；
       # 生产环境建议显式设置随机字符串（如 `openssl rand -hex 32`）。
       # 注意：首次启动后更改此值会使已有 API key 全部失效。
       SALT: ${SALT:-}
-      # 可选：覆盖端口 / 数据目录（与上方 ports / volumes 保持一致）
-      # LITE_SERVER_PORT: "23332"
+      # 可选：覆盖数据目录。端口可通过宿主环境或 .env 中的
+      # LITE_SERVER_PORT 覆盖，服务监听与端口映射会保持一致。
       # PERIFUSE_HOME: /app/data
