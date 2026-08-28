@@ -1,14 +1,23 @@
 /**
  * Gateway Model Deployments management page.
  */
-import { AlertTriangle, Pencil, Plus, Power, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, Loader2, Pencil, Plus, Power, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { ModelDialog } from "@/features/gateway/components/model-dialog";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { toast } from "@/shared/components/toast";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent } from "@/shared/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/shared/components/ui/dialog";
 import {
   useGwCreateModelMutation,
   useGwDeleteModelMutation,
@@ -25,6 +34,9 @@ function ModelsContent() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ModelDeployment | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ModelDeployment | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const deleteOpenerRef = useRef<HTMLButtonElement | null>(null);
 
   const deployments = modelsQuery.data ?? [];
 
@@ -62,9 +74,15 @@ function ModelsContent() {
     );
   };
 
-  const remove = (d: ModelDeployment) => {
-    deleteModel.mutate(d.id, {
-      onSuccess: () => toast.success("Deployment deleted"),
+  const confirmDelete = () => {
+    if (!deleteTarget || deleteModel.isPending) return;
+    const targetId = deleteTarget.id;
+    deleteModel.mutate(targetId, {
+      onSuccess: () => {
+        deleteOpenerRef.current = null;
+        setDeleteTarget(null);
+        toast.success("Deployment deleted");
+      },
       onError: (err) => toast.error("Delete failed", err.message),
     });
   };
@@ -76,6 +94,7 @@ function ModelsContent() {
     <div className="p-6">
       <div className="mb-4 flex justify-end">
         <Button
+          ref={addButtonRef}
           size="sm"
           onClick={() => {
             setEditing(null);
@@ -172,7 +191,15 @@ function ModelsContent() {
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button variant="ghost" size="sm" title="Delete" onClick={() => remove(d)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Delete"
+                          onClick={(event) => {
+                            deleteOpenerRef.current = event.currentTarget;
+                            setDeleteTarget(d);
+                          }}
+                        >
                           <Trash2 className="h-3.5 w-3.5 text-danger" />
                         </Button>
                       </div>
@@ -184,6 +211,70 @@ function ModelsContent() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteModel.isPending) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent
+          className="max-w-sm"
+          hideClose={deleteModel.isPending}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const opener = deleteOpenerRef.current;
+            if (opener?.isConnected) opener.focus();
+            else addButtonRef.current?.focus();
+            deleteOpenerRef.current = null;
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Delete deployment?</DialogTitle>
+            <DialogDescription>
+              This removes the model route and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <dl className="space-y-2 rounded-md border border-border bg-surface-inset p-3 text-sm">
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-fg-tertiary">Model Alias</dt>
+              <dd className="break-all text-right font-mono text-fg-primary">
+                {deleteTarget?.modelName || "(unnamed deployment)"}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-fg-tertiary">Provider Model</dt>
+              <dd className="break-all text-right font-mono text-fg-primary">
+                {deleteTarget?.providerModel || "(unknown provider model)"}
+              </dd>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <dt className="text-fg-tertiary">Provider</dt>
+              <dd className="break-all text-right text-fg-primary">
+                {deleteTarget?.provider?.name ?? "Provider unavailable"}
+              </dd>
+            </div>
+          </dl>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={deleteModel.isPending}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteModel.isPending}
+              onClick={confirmDelete}
+            >
+              {deleteModel.isPending && <Loader2 aria-hidden="true" className="animate-spin" />}
+              Delete deployment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ModelDialog
         open={dialogOpen}
