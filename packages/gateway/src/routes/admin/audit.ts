@@ -8,8 +8,20 @@ import type { GatewayEnv } from "../../app.js";
 import { auditLog } from "../../db/schema.js";
 import { getDb } from "../../db.js";
 import { parseAdminListQuery } from "./list-query.js";
+import { parseStoredJson } from "./safe-json.js";
 
 const audit = new Hono<GatewayEnv>();
+
+type AuditLogRow = typeof auditLog.$inferSelect;
+
+function serializeAuditLog(log: AuditLogRow) {
+  const meta = { projectId: log.projectId, entity: "AuditLog", id: log.id };
+  return {
+    ...log,
+    beforeValue: parseStoredJson(log.beforeValue, null, { ...meta, field: "beforeValue" }),
+    afterValue: parseStoredJson(log.afterValue, null, { ...meta, field: "afterValue" }),
+  };
+}
 
 // Query audit logs
 audit.get("/", async (c) => {
@@ -43,11 +55,7 @@ audit.get("/", async (c) => {
   ]);
 
   return c.json({
-    data: items.map((log) => ({
-      ...log,
-      beforeValue: log.beforeValue ? JSON.parse(log.beforeValue) : null,
-      afterValue: log.afterValue ? JSON.parse(log.afterValue) : null,
-    })),
+    data: items.map(serializeAuditLog),
     total: totalRow[0]?.value ?? 0,
   });
 });

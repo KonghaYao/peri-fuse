@@ -8,8 +8,39 @@ import type { GatewayEnv } from "../../app.js";
 import { errorLog, spendLog } from "../../db/schema.js";
 import { getDb } from "../../db.js";
 import { parseAdminListQuery } from "./list-query.js";
+import { parseStoredJson } from "./safe-json.js";
 
 const logs = new Hono<GatewayEnv>();
+
+type SpendLogRow = typeof spendLog.$inferSelect;
+type ErrorLogRow = typeof errorLog.$inferSelect;
+
+function serializeSpendLog(log: SpendLogRow) {
+  const meta = { projectId: log.projectId, entity: "SpendLog", id: log.id };
+  return {
+    ...log,
+    metadata: parseStoredJson(log.metadata, {}, { ...meta, field: "metadata" }),
+    requestTags: parseStoredJson(log.requestTags, [], { ...meta, field: "requestTags" }),
+    messages: parseStoredJson(log.messages, null, { ...meta, field: "messages" }),
+    response: parseStoredJson(log.response, null, { ...meta, field: "response" }),
+  };
+}
+
+function serializeErrorLog(log: ErrorLogRow) {
+  return {
+    ...log,
+    requestKwargs: parseStoredJson(
+      log.requestKwargs,
+      {},
+      {
+        projectId: log.projectId,
+        entity: "ErrorLog",
+        id: log.id,
+        field: "requestKwargs",
+      },
+    ),
+  };
+}
 
 // Query spend logs (request logs)
 logs.get("/requests", async (c) => {
@@ -45,13 +76,7 @@ logs.get("/requests", async (c) => {
   ]);
 
   return c.json({
-    data: items.map((log) => ({
-      ...log,
-      metadata: JSON.parse(log.metadata),
-      requestTags: JSON.parse(log.requestTags),
-      messages: log.messages ? JSON.parse(log.messages) : null,
-      response: log.response ? JSON.parse(log.response) : null,
-    })),
+    data: items.map(serializeSpendLog),
     total: totalRow[0]?.value ?? 0,
     limit,
     offset,
@@ -70,13 +95,7 @@ logs.get("/requests/:id", async (c) => {
     return c.json({ error: { message: "Log not found" } }, 404);
   }
 
-  return c.json({
-    ...log,
-    metadata: JSON.parse(log.metadata),
-    requestTags: JSON.parse(log.requestTags),
-    messages: log.messages ? JSON.parse(log.messages) : null,
-    response: log.response ? JSON.parse(log.response) : null,
-  });
+  return c.json(serializeSpendLog(log));
 });
 
 // Query error logs
@@ -110,10 +129,7 @@ logs.get("/errors", async (c) => {
   ]);
 
   return c.json({
-    data: items.map((log) => ({
-      ...log,
-      requestKwargs: JSON.parse(log.requestKwargs),
-    })),
+    data: items.map(serializeErrorLog),
     total: totalRow[0]?.value ?? 0,
   });
 });
