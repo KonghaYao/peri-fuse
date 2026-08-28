@@ -11,6 +11,15 @@ import { generateId } from "../../utils/id.js";
 
 const providers = new Hono<GatewayEnv>();
 
+function serializeProvider<T extends { apiKeyEncrypted: string | null }>(
+  item: T,
+): Omit<T, "apiKeyEncrypted"> & { apiKeyEncrypted: string | null } {
+  return {
+    ...item,
+    apiKeyEncrypted: item.apiKeyEncrypted ? "***encrypted***" : null,
+  };
+}
+
 // List all providers for the current project
 providers.get("/", async (c) => {
   const db = getDb();
@@ -27,8 +36,7 @@ providers.get("/", async (c) => {
 
   // Strip encrypted keys from response
   const safe = items.map((p) => ({
-    ...p,
-    apiKeyEncrypted: p.apiKeyEncrypted ? "***encrypted***" : null,
+    ...serializeProvider(p),
     deploymentCount: p.deployments.length,
     deployments: undefined,
   }));
@@ -49,10 +57,7 @@ providers.get("/:id", async (c) => {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
 
-  return c.json({
-    ...found,
-    apiKeyEncrypted: found.apiKeyEncrypted ? "***encrypted***" : null,
-  });
+  return c.json(serializeProvider(found));
 });
 
 // Create provider
@@ -104,7 +109,7 @@ providers.post("/", async (c) => {
     changedBy: "admin",
   });
 
-  return c.json(created, 201);
+  return c.json(serializeProvider(created), 201);
 });
 
 // Update provider
@@ -163,7 +168,7 @@ providers.put("/:id", async (c) => {
     changedBy: "admin",
   });
 
-  return c.json(updated);
+  return c.json(serializeProvider(updated));
 });
 
 // Delete provider
