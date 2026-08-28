@@ -1,19 +1,81 @@
 /**
  * Admin API — Usage statistics queries (project-scoped).
  */
+
+import { and, desc, eq, gte, lte, type SQL, sum } from "drizzle-orm";
 import { Hono } from "hono";
-import { and, desc, eq, gte, lte, sum, type SQL } from "drizzle-orm";
 import type { GatewayEnv } from "../../app.js";
-import { getDb } from "../../db.js";
 import { dailySpend } from "../../db/schema.js";
+import { getDb } from "../../db.js";
 
 const usage = new Hono<GatewayEnv>();
+const MAX_DAILY_USAGE_LIMIT = 200;
+
+interface DailyUsageQuery {
+  startDate?: string;
+  endDate?: string;
+  apiKey?: string;
+  model?: string;
+  provider?: string;
+  limit: number;
+}
+
+function parseDailyLimit(value: string | undefined): number | null {
+  if (value === undefined) return 100;
+  if (!/^[1-9]\d*$/.test(value)) return null;
+
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed <= MAX_DAILY_USAGE_LIMIT ? parsed : null;
+}
+
+function isStrictUtcDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function parseDailyUsageQuery(
+  raw: Record<string, string>,
+): { ok: true; value: DailyUsageQuery } | { ok: false; message: string } {
+  const limit = parseDailyLimit(raw.limit);
+  if (limit === null) {
+    return { ok: false, message: "limit must be an integer between 1 and 200" };
+  }
+
+  if (raw.startDate !== undefined && !isStrictUtcDate(raw.startDate)) {
+    return { ok: false, message: "startDate must be a valid date in YYYY-MM-DD format" };
+  }
+  if (raw.endDate !== undefined && !isStrictUtcDate(raw.endDate)) {
+    return { ok: false, message: "endDate must be a valid date in YYYY-MM-DD format" };
+  }
+  if (raw.startDate !== undefined && raw.endDate !== undefined && raw.startDate > raw.endDate) {
+    return { ok: false, message: "startDate must be on or before endDate" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      startDate: raw.startDate,
+      endDate: raw.endDate,
+      apiKey: raw.apiKey || undefined,
+      model: raw.model || undefined,
+      provider: raw.provider || undefined,
+      limit,
+    },
+  };
+}
 
 // Get daily spend summary with optional filters
 usage.get("/daily", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const { startDate, endDate, apiKey, model, provider, limit } = c.req.query();
+  const parsed = parseDailyUsageQuery(c.req.query());
+
+  if (!parsed.ok) {
+    return c.json({ error: { message: parsed.message } }, 400);
+  }
+  const { startDate, endDate, apiKey, model, provider, limit } = parsed.value;
 
   const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
   if (startDate) conditions.push(gte(dailySpend.date, startDate));
@@ -28,7 +90,7 @@ usage.get("/daily", async (c) => {
     .from(dailySpend)
     .where(where)
     .orderBy(desc(dailySpend.date))
-    .limit(limit ? parseInt(limit, 10) : 100);
+    .limit(limit);
 
   return c.json({ data: items });
 });
