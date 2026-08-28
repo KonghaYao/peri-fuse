@@ -1,11 +1,13 @@
 /**
  * Admin API — Audit log queries (project-scoped).
  */
-import { Hono } from "hono";
+
 import { and, count, desc, eq, gte, lte, type SQL } from "drizzle-orm";
+import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
-import { getDb } from "../../db.js";
 import { auditLog } from "../../db/schema.js";
+import { getDb } from "../../db.js";
+import { parseAdminListQuery } from "./list-query.js";
 
 const audit = new Hono<GatewayEnv>();
 
@@ -13,7 +15,13 @@ const audit = new Hono<GatewayEnv>();
 audit.get("/", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const { tableName, objectId, action, startDate, endDate, limit, offset } = c.req.query();
+  const rawQuery = c.req.query();
+  const parsedQuery = parseAdminListQuery(rawQuery);
+  if (!parsedQuery.ok) {
+    return c.json({ error: { message: parsedQuery.message } }, 400);
+  }
+  const { limit, offset, startDate, endDate } = parsedQuery.value;
+  const { tableName, objectId, action } = rawQuery;
 
   const conditions: SQL[] = [eq(auditLog.projectId, projectId)];
   if (tableName) conditions.push(eq(auditLog.tableName, tableName));
@@ -23,17 +31,14 @@ audit.get("/", async (c) => {
   if (endDate) conditions.push(lte(auditLog.createdAt, new Date(endDate).toISOString()));
   const where = and(...conditions);
 
-  const limitNum = limit ? parseInt(limit, 10) : 50;
-  const offsetNum = offset ? parseInt(offset, 10) : 0;
-
   const [items, totalRow] = await Promise.all([
     db
       .select()
       .from(auditLog)
       .where(where)
       .orderBy(desc(auditLog.createdAt))
-      .limit(limitNum)
-      .offset(offsetNum),
+      .limit(limit)
+      .offset(offset),
     db.select({ value: count() }).from(auditLog).where(where),
   ]);
 

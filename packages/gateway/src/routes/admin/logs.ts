@@ -1,11 +1,13 @@
 /**
  * Admin API — Request logs and error logs queries (project-scoped).
  */
-import { Hono } from "hono";
+
 import { and, count, desc, eq, gte, lte, type SQL } from "drizzle-orm";
+import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
-import { getDb } from "../../db.js";
 import { errorLog, spendLog } from "../../db/schema.js";
+import { getDb } from "../../db.js";
+import { parseAdminListQuery } from "./list-query.js";
 
 const logs = new Hono<GatewayEnv>();
 
@@ -13,7 +15,13 @@ const logs = new Hono<GatewayEnv>();
 logs.get("/requests", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const { apiKey, model, provider, status, startDate, endDate, limit, offset, sessionId } = c.req.query();
+  const rawQuery = c.req.query();
+  const parsedQuery = parseAdminListQuery(rawQuery);
+  if (!parsedQuery.ok) {
+    return c.json({ error: { message: parsedQuery.message } }, 400);
+  }
+  const { limit, offset, startDate, endDate } = parsedQuery.value;
+  const { apiKey, model, provider, status, sessionId } = rawQuery;
 
   const conditions: SQL[] = [eq(spendLog.projectId, projectId)];
   if (apiKey) conditions.push(eq(spendLog.apiKey, apiKey));
@@ -25,17 +33,14 @@ logs.get("/requests", async (c) => {
   if (endDate) conditions.push(lte(spendLog.startTime, new Date(endDate).toISOString()));
   const where = and(...conditions);
 
-  const limitNum = limit ? parseInt(limit, 10) : 50;
-  const offsetNum = offset ? parseInt(offset, 10) : 0;
-
   const [items, totalRow] = await Promise.all([
     db
       .select()
       .from(spendLog)
       .where(where)
       .orderBy(desc(spendLog.startTime))
-      .limit(limitNum)
-      .offset(offsetNum),
+      .limit(limit)
+      .offset(offset),
     db.select({ value: count() }).from(spendLog).where(where),
   ]);
 
@@ -48,8 +53,8 @@ logs.get("/requests", async (c) => {
       response: log.response ? JSON.parse(log.response) : null,
     })),
     total: totalRow[0]?.value ?? 0,
-    limit: limitNum,
-    offset: offsetNum,
+    limit,
+    offset,
   });
 });
 
@@ -78,7 +83,13 @@ logs.get("/requests/:id", async (c) => {
 logs.get("/errors", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const { modelGroup, exceptionType, startDate, endDate, limit, offset } = c.req.query();
+  const rawQuery = c.req.query();
+  const parsedQuery = parseAdminListQuery(rawQuery);
+  if (!parsedQuery.ok) {
+    return c.json({ error: { message: parsedQuery.message } }, 400);
+  }
+  const { limit, offset, startDate, endDate } = parsedQuery.value;
+  const { modelGroup, exceptionType } = rawQuery;
 
   const conditions: SQL[] = [eq(errorLog.projectId, projectId)];
   if (modelGroup) conditions.push(eq(errorLog.modelGroup, modelGroup));
@@ -87,17 +98,14 @@ logs.get("/errors", async (c) => {
   if (endDate) conditions.push(lte(errorLog.startTime, new Date(endDate).toISOString()));
   const where = and(...conditions);
 
-  const limitNum = limit ? parseInt(limit, 10) : 50;
-  const offsetNum = offset ? parseInt(offset, 10) : 0;
-
   const [items, totalRow] = await Promise.all([
     db
       .select()
       .from(errorLog)
       .where(where)
       .orderBy(desc(errorLog.startTime))
-      .limit(limitNum)
-      .offset(offsetNum),
+      .limit(limit)
+      .offset(offset),
     db.select({ value: count() }).from(errorLog).where(where),
   ]);
 
