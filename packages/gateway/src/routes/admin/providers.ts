@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
 import { auditLog, credential, modelDeployment, provider } from "../../db/schema.js";
 import { getDb } from "../../db.js";
+import { nextBudgetResetAt } from "../../spend/budget-period.js";
 import { encrypt } from "../../utils/crypto.js";
 import { generateId } from "../../utils/id.js";
 
@@ -75,6 +76,19 @@ providers.post("/", async (c) => {
     }
   }
 
+  const budgetResetAt =
+    body.budgetPeriod == null ? null : nextBudgetResetAt(body.budgetPeriod, new Date());
+  if (body.budgetPeriod != null && budgetResetAt === null) {
+    return c.json(
+      {
+        error: {
+          message: "Provider budget period must be a positive integer followed by m, h, or d",
+        },
+      },
+      400,
+    );
+  }
+
   const data: any = {
     id: generateId(),
     projectId,
@@ -84,16 +98,12 @@ providers.post("/", async (c) => {
     isEnabled: body.isEnabled ?? true,
     budgetLimit: body.budgetLimit ?? null,
     budgetPeriod: body.budgetPeriod ?? null,
+    budgetResetAt,
     credentialId: body.credentialId ?? null,
   };
 
   if (body.apiKey) {
     data.apiKeyEncrypted = encrypt(body.apiKey);
-  }
-
-  // Calculate initial budgetResetAt
-  if (data.budgetPeriod) {
-    data.budgetResetAt = computeNextReset(data.budgetPeriod);
   }
 
   const [created] = await db.insert(provider).values(data).returning();
@@ -142,8 +152,20 @@ providers.put("/:id", async (c) => {
   if (body.isEnabled !== undefined) data.isEnabled = body.isEnabled;
   if (body.budgetLimit !== undefined) data.budgetLimit = body.budgetLimit;
   if (body.budgetPeriod !== undefined) {
+    const budgetResetAt =
+      body.budgetPeriod === null ? null : nextBudgetResetAt(body.budgetPeriod, new Date());
+    if (body.budgetPeriod !== null && budgetResetAt === null) {
+      return c.json(
+        {
+          error: {
+            message: "Provider budget period must be a positive integer followed by m, h, or d",
+          },
+        },
+        400,
+      );
+    }
     data.budgetPeriod = body.budgetPeriod;
-    data.budgetResetAt = body.budgetPeriod ? computeNextReset(body.budgetPeriod) : null;
+    data.budgetResetAt = budgetResetAt;
   }
   if (body.credentialId !== undefined) data.credentialId = body.credentialId;
   if (body.apiKey) {
@@ -224,25 +246,5 @@ providers.delete("/:id", async (c) => {
 
   return c.json({ success: true });
 });
-
-function computeNextReset(period: string): string {
-  const match = period.match(/^(\d+)([dhm])$/);
-  if (!match) return new Date(Date.now() + 86400000).toISOString();
-  const value = parseInt(match[1], 10);
-  const unit = match[2];
-  let ms = 0;
-  switch (unit) {
-    case "d":
-      ms = value * 86400000;
-      break;
-    case "h":
-      ms = value * 3600000;
-      break;
-    case "m":
-      ms = value * 60000;
-      break;
-  }
-  return new Date(Date.now() + ms).toISOString();
-}
 
 export default providers;

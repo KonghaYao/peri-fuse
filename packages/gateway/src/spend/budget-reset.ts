@@ -2,76 +2,79 @@
  * Budget reset scheduler.
  * Periodically checks and resets budgets whose duration has elapsed.
  */
-import { and, eq, isNotNull, lte } from "drizzle-orm";
-import { getDb } from "../db.js";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { apiKey, budget, provider } from "../db/schema.js";
+import { getDb } from "../db.js";
+import { nextBudgetResetAt } from "./budget-period.js";
 
 let resetTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
- * Parse a duration string like "1d", "7d", "30d" into milliseconds.
+ * Run one deterministic budget reset pass.
+ * Invalid historical periods are disabled without logging their raw values.
  */
-function parseDuration(duration: string): number | null {
-  const match = duration.match(/^(\d+)([dhm])$/);
-  if (!match) return null;
-  const value = parseInt(match[1], 10);
-  const unit = match[2];
-  switch (unit) {
-    case "d": return value * 24 * 60 * 60 * 1000;
-    case "h": return value * 60 * 60 * 1000;
-    case "m": return value * 60 * 1000;
-    default: return null;
-  }
-}
-
-/**
- * Reset budgets and provider spends whose reset time has passed.
- */
-async function performReset(): Promise<void> {
+export async function runBudgetReset(now = new Date()): Promise<void> {
   const db = getDb();
-  const nowIso = new Date().toISOString();
+  const nowIso = now.toISOString();
 
-  // Reset Budget entries
-  const expiredBudgets = await db
-    .select()
-    .from(budget)
-    .where(and(lte(budget.resetAt, nowIso), isNotNull(budget.duration)));
+  const configuredBudgets = await db.select().from(budget).where(isNotNull(budget.duration));
 
-  for (const b of expiredBudgets) {
-    const durationMs = parseDuration(b.duration!);
-    if (!durationMs) continue;
+  for (const b of configuredBudgets) {
+    const nextReset = nextBudgetResetAt(b.duration!, now);
+    if (nextReset === null) {
+      db.update(budget)
+        .set({ duration: null, resetAt: null })
+        .where(and(eq(budget.id, b.id), eq(budget.projectId, b.projectId)))
+        .run();
+      console.warn(
+        `[budget-reset] Disabled invalid Budget period for project ${b.projectId}, budget ${b.id}`,
+      );
+      continue;
+    }
+    if (!b.resetAt || b.resetAt > nowIso) continue;
 
-    const nextReset = new Date(Date.now() + durationMs).toISOString();
-
-    // Reset spend on all keys with this budget
-    await db.update(apiKey).set({ spend: 0 }).where(eq(apiKey.budgetId, b.id));
-
-    await db.update(budget).set({ resetAt: nextReset }).where(eq(budget.id, b.id));
+    db.transaction((tx) => {
+      tx.update(apiKey)
+        .set({ spend: 0 })
+        .where(and(eq(apiKey.budgetId, b.id), eq(apiKey.projectId, b.projectId)))
+        .run();
+      tx.update(budget)
+        .set({ resetAt: nextReset })
+        .where(and(eq(budget.id, b.id), eq(budget.projectId, b.projectId)))
+        .run();
+    });
   }
 
-  // Reset Provider budget spends
-  const expiredProviders = await db
+  const configuredProviders = await db
     .select()
     .from(provider)
-    .where(and(lte(provider.budgetResetAt, nowIso), isNotNull(provider.budgetPeriod)));
+    .where(isNotNull(provider.budgetPeriod));
 
-  for (const p of expiredProviders) {
-    const durationMs = parseDuration(p.budgetPeriod!);
-    if (!durationMs) continue;
-
-    const nextReset = new Date(Date.now() + durationMs).toISOString();
+  for (const p of configuredProviders) {
+    const nextReset = nextBudgetResetAt(p.budgetPeriod!, now);
+    if (nextReset === null) {
+      db.update(provider)
+        .set({ budgetPeriod: null, budgetResetAt: null })
+        .where(and(eq(provider.id, p.id), eq(provider.projectId, p.projectId)))
+        .run();
+      console.warn(
+        `[budget-reset] Disabled invalid Provider period for project ${p.projectId}, provider ${p.id}`,
+      );
+      continue;
+    }
+    if (!p.budgetResetAt || p.budgetResetAt > nowIso) continue;
 
     await db
       .update(provider)
       .set({ budgetSpend: 0, budgetResetAt: nextReset })
-      .where(eq(provider.id, p.id));
+      .where(and(eq(provider.id, p.id), eq(provider.projectId, p.projectId)));
   }
 }
 
 export function startBudgetReset(): void {
   if (resetTimer) return;
   resetTimer = setInterval(() => {
-    performReset().catch((err) => console.error("[budget-reset] error:", err));
+    runBudgetReset().catch((err) => console.error("[budget-reset] error:", err));
   }, 60_000); // Check every minute
   if (resetTimer.unref) resetTimer.unref();
 }

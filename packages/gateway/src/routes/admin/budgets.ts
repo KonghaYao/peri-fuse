@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
 import { apiKey, auditLog, budget } from "../../db/schema.js";
 import { getDb } from "../../db.js";
+import { nextBudgetResetAt } from "../../spend/budget-period.js";
 import { generateId } from "../../utils/id.js";
 
 const budgets = new Hono<GatewayEnv>();
@@ -65,6 +66,18 @@ budgets.post("/", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
   const body = await c.req.json();
+  const resetAt = body.duration == null ? null : nextBudgetResetAt(body.duration, new Date());
+
+  if (body.duration != null && resetAt === null) {
+    return c.json(
+      {
+        error: {
+          message: "Budget duration must be a positive integer followed by m, h, or d",
+        },
+      },
+      400,
+    );
+  }
 
   const [created] = await db
     .insert(budget)
@@ -77,7 +90,7 @@ budgets.post("/", async (c) => {
       tpmLimit: body.tpmLimit ?? null,
       rpmLimit: body.rpmLimit ?? null,
       duration: body.duration ?? null,
-      resetAt: body.duration ? computeNextReset(body.duration) : null,
+      resetAt,
       modelMaxBudget: body.modelMaxBudget ? JSON.stringify(body.modelMaxBudget) : null,
     })
     .returning();
@@ -116,8 +129,19 @@ budgets.put("/:id", async (c) => {
   if (body.tpmLimit !== undefined) data.tpmLimit = body.tpmLimit;
   if (body.rpmLimit !== undefined) data.rpmLimit = body.rpmLimit;
   if (body.duration !== undefined) {
+    const resetAt = body.duration === null ? null : nextBudgetResetAt(body.duration, new Date());
+    if (body.duration !== null && resetAt === null) {
+      return c.json(
+        {
+          error: {
+            message: "Budget duration must be a positive integer followed by m, h, or d",
+          },
+        },
+        400,
+      );
+    }
     data.duration = body.duration;
-    data.resetAt = body.duration ? computeNextReset(body.duration) : null;
+    data.resetAt = resetAt;
   }
   if (body.modelMaxBudget !== undefined) {
     data.modelMaxBudget = body.modelMaxBudget ? JSON.stringify(body.modelMaxBudget) : null;
@@ -200,25 +224,5 @@ budgets.delete("/:id", async (c) => {
 
   return c.json({ success: true });
 });
-
-function computeNextReset(duration: string): string {
-  const match = duration.match(/^(\d+)([dhm])$/);
-  if (!match) return new Date(Date.now() + 86400000).toISOString();
-  const value = parseInt(match[1], 10);
-  const unit = match[2];
-  let ms = 0;
-  switch (unit) {
-    case "d":
-      ms = value * 86400000;
-      break;
-    case "h":
-      ms = value * 3600000;
-      break;
-    case "m":
-      ms = value * 60000;
-      break;
-  }
-  return new Date(Date.now() + ms).toISOString();
-}
 
 export default budgets;
