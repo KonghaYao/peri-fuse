@@ -7,7 +7,16 @@
  * mutations + toast); only the presentation is redesigned.
  */
 
-import { Activity, ChevronRight, Database, FolderPlus, Gauge, Loader2, Star } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  ChevronRight,
+  Database,
+  FolderPlus,
+  Gauge,
+  Loader2,
+  Star,
+} from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/shared/components/toast";
@@ -49,6 +58,8 @@ export function OnboardingPage() {
   const activateProject = useActivateProjectMutation();
 
   const projects = projectsQuery.data ?? [];
+  const hasCachedProjects = projectsQuery.data !== undefined;
+  const projectError = projectsQuery.error;
 
   const enterProject = (projectId: string) => {
     activateProject.mutate(projectId, {
@@ -132,42 +143,79 @@ export function OnboardingPage() {
               <span className="h-px flex-1 bg-border" />
             </div>
 
-            {projectsQuery.isLoading ? (
+            {projectsQuery.isLoading && !projectError && !hasCachedProjects ? (
               <div className="space-y-2">
                 {Array.from({ length: 2 }).map((_, i) => (
                   <Skeleton key={i} className="h-12 w-full" />
                 ))}
               </div>
-            ) : projects.length === 0 ? (
-              <p className="py-2 text-center text-sm text-fg-tertiary">
-                No projects yet — create your first one above.
-              </p>
             ) : (
-              <div className="space-y-1.5">
-                {projects.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => enterProject(p.id)}
-                    className="group flex w-full items-center gap-3 rounded-md border border-line px-3.5 py-2.5 text-left transition-colors duration-150 hover:border-line-strong hover:bg-surface-overlay/60 disabled:opacity-60"
+              <div className="space-y-2">
+                {/* Keep this full-width retry state local to the create-first onboarding layout. */}
+                {projectError && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-subtle p-3"
                   >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-subtle text-brand">
-                      <Database className="h-4 w-4" />
-                    </div>
+                    <AlertCircle
+                      aria-hidden="true"
+                      className="mt-0.5 h-4 w-4 shrink-0 text-danger"
+                    />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-fg-primary">{p.name}</p>
-                      <p className="truncate text-xs text-fg-tertiary">
-                        {p.orgName} · {p.keyCount} key{p.keyCount !== 1 ? "s" : ""}
+                      <p className="text-sm font-medium text-danger">Couldn&apos;t load projects</p>
+                      <p className="break-words text-xs text-fg-secondary">
+                        {projectError instanceof Error ? projectError.message : "Please try again."}
                       </p>
                     </div>
-                    {activateProject.isPending && activateProject.variables === p.id ? (
-                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fg-tertiary" />
-                    ) : (
-                      <ChevronRight className="h-4 w-4 shrink-0 text-fg-tertiary transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-fg-primary" />
-                    )}
-                  </button>
-                ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={projectsQuery.isFetching}
+                      onClick={() => void projectsQuery.refetch()}
+                    >
+                      {projectsQuery.isFetching && (
+                        <Loader2 aria-hidden="true" className="animate-spin" />
+                      )}
+                      Retry
+                    </Button>
+                  </div>
+                )}
+
+                {hasCachedProjects &&
+                  (projects.length === 0 ? (
+                    <p className="py-2 text-center text-sm text-fg-tertiary">
+                      No projects yet — create your first one above.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {projects.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => enterProject(p.id)}
+                          className="group flex w-full items-center gap-3 rounded-md border border-line px-3.5 py-2.5 text-left transition-colors duration-150 hover:border-line-strong hover:bg-surface-overlay/60 disabled:opacity-60"
+                        >
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-subtle text-brand">
+                            <Database className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-fg-primary">{p.name}</p>
+                            <p className="truncate text-xs text-fg-tertiary">
+                              {p.orgName} · {p.keyCount} key{p.keyCount !== 1 ? "s" : ""}
+                            </p>
+                          </div>
+                          {activateProject.isPending && activateProject.variables === p.id ? (
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-fg-tertiary" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 shrink-0 text-fg-tertiary transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-fg-primary" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
               </div>
             )}
           </CardContent>

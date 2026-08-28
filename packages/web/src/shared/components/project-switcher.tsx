@@ -5,10 +5,11 @@
  * two-line layout). When the sidebar is collapsed it shrinks to the dot.
  * Dropdown lists projects with an inline "create" row.
  */
-import { Check, ChevronDown, Loader2, Plus } from "lucide-react";
+import { AlertCircle, Check, ChevronDown, Loader2, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { toast } from "@/shared/components/toast";
+import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import {
   useActivateProjectMutation,
@@ -85,6 +86,8 @@ export function ProjectSwitcher({
   };
 
   const projects = projectsQuery.data ?? [];
+  const hasCachedProjects = projectsQuery.data !== undefined;
+  const projectError = projectsQuery.error;
 
   return (
     <div className="relative" ref={ref}>
@@ -125,39 +128,75 @@ export function ProjectSwitcher({
             Projects
           </p>
 
-          {projectsQuery.isLoading ? (
+          {projectsQuery.isLoading && !projectError && !hasCachedProjects ? (
             <div className="flex items-center justify-center py-3">
               <Loader2 className="h-4 w-4 animate-spin text-fg-tertiary" />
             </div>
           ) : (
-            <div className="max-h-52 space-y-0.5 overflow-y-auto">
-              {projects.map((p) => {
-                const isCurrent = p.id === ctx?.projectId;
-                return (
-                  <button
-                    key={p.id}
+            <div className="space-y-1">
+              {/* Keep this compact retry state local to the switcher popover. */}
+              {projectError && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-1.5 rounded-md border border-danger/30 bg-danger-subtle p-2"
+                >
+                  <AlertCircle
+                    aria-hidden="true"
+                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-danger">Couldn&apos;t load projects</p>
+                    <p className="break-words text-[11px] text-fg-secondary">
+                      {projectError instanceof Error ? projectError.message : "Please try again."}
+                    </p>
+                  </div>
+                  <Button
                     type="button"
-                    disabled={busy}
-                    onClick={() => handleSwitch(p.id)}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors duration-150 hover:bg-surface-overlay/70",
-                      isCurrent ? "bg-brand-subtle font-medium text-brand" : "text-fg-primary",
-                      busy && "opacity-60",
-                    )}
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 px-1.5 text-danger"
+                    disabled={projectsQuery.isFetching}
+                    onClick={() => void projectsQuery.refetch()}
                   >
-                    {activateMutation.isPending && activateMutation.variables === p.id ? (
-                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                    ) : isCurrent ? (
-                      <Check className="h-3.5 w-3.5 shrink-0" />
-                    ) : (
-                      <span className="w-3.5 shrink-0" />
+                    {projectsQuery.isFetching && (
+                      <Loader2 aria-hidden="true" className="animate-spin" />
                     )}
-                    <span className="truncate">{p.name}</span>
-                  </button>
-                );
-              })}
-              {projects.length === 0 && (
-                <p className="px-2 py-1.5 text-sm text-fg-tertiary">No projects yet</p>
+                    Retry
+                  </Button>
+                </div>
+              )}
+
+              {hasCachedProjects && (
+                <div className="max-h-52 space-y-0.5 overflow-y-auto">
+                  {projects.map((p) => {
+                    const isCurrent = p.id === ctx?.projectId;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={busy}
+                        onClick={() => handleSwitch(p.id)}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors duration-150 hover:bg-surface-overlay/70",
+                          isCurrent ? "bg-brand-subtle font-medium text-brand" : "text-fg-primary",
+                          busy && "opacity-60",
+                        )}
+                      >
+                        {activateMutation.isPending && activateMutation.variables === p.id ? (
+                          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                        ) : isCurrent ? (
+                          <Check className="h-3.5 w-3.5 shrink-0" />
+                        ) : (
+                          <span className="w-3.5 shrink-0" />
+                        )}
+                        <span className="truncate">{p.name}</span>
+                      </button>
+                    );
+                  })}
+                  {projects.length === 0 && (
+                    <p className="px-2 py-1.5 text-sm text-fg-tertiary">No projects yet</p>
+                  )}
+                </div>
               )}
             </div>
           )}
