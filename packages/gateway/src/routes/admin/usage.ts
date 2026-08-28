@@ -72,7 +72,7 @@ usage.get("/daily", async (c) => {
   const projectId = c.get("projectId");
   const parsed = parseDailyUsageQuery(c.req.query());
 
-  if (!parsed.ok) {
+  if (parsed.ok === false) {
     return c.json({ error: { message: parsed.message } }, 400);
   }
   const { startDate, endDate, apiKey, model, provider, limit } = parsed.value;

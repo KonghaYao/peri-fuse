@@ -29,7 +29,7 @@ audit.get("/", async (c) => {
   const projectId = c.get("projectId");
   const rawQuery = c.req.query();
   const parsedQuery = parseAdminListQuery(rawQuery);
-  if (!parsedQuery.ok) {
+  if (parsedQuery.ok === false) {
     return c.json({ error: { message: parsedQuery.message } }, 400);
   }
   const { limit, offset, startDate, endDate } = parsedQuery.value;
