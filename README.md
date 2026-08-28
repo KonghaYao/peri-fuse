@@ -10,47 +10,93 @@ Peri-Fuse runs entirely on **SQLite** with no external dependencies (no ClickHou
 - OpenTelemetry (OTLP) ingestion
 - Public REST API compatible with Langfuse SDKs
 - Lightweight web dashboard (Vite + React)
-- Single-binary deployment via Hono HTTP server
+- Self-contained deployment through Docker or the repository-local service CLI
 
 ## Quick Start
 
+Choose the workflow that matches how you want to run Peri-Fuse.
+
+### Docker
+
+The included Compose configuration runs the published image and persists all data in `./data`:
+
 ```bash
-# Install dependencies
-pnpm install
+docker compose up -d
 
-# Generate Prisma client
-pnpm --filter @peri-fuse/shared run db:generate
-
-# Push database schema
-pnpm --filter @peri-fuse/shared run db:push
-
-# Start development servers (API + Web)
-pnpm run dev
+# Verify the API, follow logs, or stop the service
+curl http://localhost:23332/api/public/health
+docker compose logs -f
+docker compose down
 ```
 
-The API server starts at `http://localhost:3000` and the web dashboard at `http://localhost:5173`.
+Open the dashboard at `http://localhost:23332`. Port `23332` is used when
+`LITE_SERVER_PORT` is absent from both the host environment and `.env`. Setting that variable
+changes the container listener and published port together. `docker compose down` leaves the
+bind-mounted `./data` directory intact.
+
+### Source development
+
+Source development requires Node.js 22 or newer and pnpm 10:
+
+```bash
+pnpm install
+pnpm dev
+```
+
+The API runs at `http://localhost:23432`, and the Vite dashboard runs at
+`http://localhost:5173` with `/api` proxied to the API server. SQLite schemas and the initial
+workspace are created automatically when the server starts.
+
+### Local background service
+
+To manage a production build from this checkout as a background service:
+
+```bash
+pnpm install
+pnpm build
+pnpm svc:start
+pnpm svc:status
+pnpm svc:logs
+pnpm svc:stop
+```
+
+These commands use the CLI built from this repository; they do not require a global npm
+installation. The service defaults to `http://localhost:23332`, but the CLI loads `.env` and
+honors `LITE_SERVER_PORT` when it is set.
 
 ## Project Structure
 
 ```
 peri-fuse/
 ├── packages/
-│   ├── shared/       # Domain logic, DB access, adapters (SQLite)
-│   ├── server/       # Hono HTTP server (REST API + OTLP)
-│   └── web/          # Vite + React dashboard
-├── LICENSE           # MIT
-└── NOTICE            # Attribution to Langfuse GmbH
+│   ├── shared/       # SQLite domain logic, ingestion, queries, and OTLP
+│   ├── server/       # Hono HTTP server and production web host
+│   ├── gateway/      # Project-scoped LLM proxy gateway
+│   ├── web/          # Vite + React dashboard
+│   └── cli/          # Background service manager
+├── Dockerfile        # Multi-stage production image
+├── docker-compose.yml
+├── LICENSE            # MIT
+└── NOTICE             # Attribution to Langfuse GmbH
 ```
 
 ## Environment Variables
 
-See [`.env.example`](.env.example) for all available options. Key variables:
+See [`.env.example`](.env.example) for a ready-to-copy set of common options. Key variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `file:.langfuse/langfuse.db` | SQLite database path |
-| `PORT` | `3000` | API server port |
-| `SALT` | (auto-generated) | Hash salt for API keys |
+| `LITE_SERVER_PORT` | `23332` | API and dashboard port. The root `pnpm dev` script explicitly uses `23432`. |
+| `PERIFUSE_HOME` | `~/.peri-fuse` | Persistent data directory. The Docker image uses `/app/data`, bound to `./data` by Compose. |
+| `DATABASE_URL` | `file:<PERIFUSE_HOME>/langfuse.db` | Auth and metadata SQLite database. |
+| `LANGFUSE_SQLITE_DB_PATH` | `<PERIFUSE_HOME>/telemetry.db` | Trace, observation, and score SQLite database. |
+| `SALT` | generated and persisted | API-key hash salt stored at `<PERIFUSE_HOME>/.salt` when unset. |
+| `LITE_LARGE_RESPONSE_THRESHOLD_BYTES` | `1048576` | Response-size warning threshold in bytes. |
+| `PERIFUSE_TELEMETRY_RETENTION_DAYS` | disabled | Optional retention period; unset or `0` disables automatic purging. |
+
+The checked-in [`.env.example`](.env.example) explicitly selects port `23432` for source
+development. Copying it unchanged also overrides the CLI and Compose defaults, so adjust or
+comment out `LITE_SERVER_PORT` when you want the production default.
 
 ## Performance
 
