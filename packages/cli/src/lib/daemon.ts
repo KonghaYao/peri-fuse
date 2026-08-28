@@ -9,18 +9,19 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as dotenv from "dotenv";
 import {
-  type RuntimeState,
   clearState,
   ensureRuntimeDir,
   envFile,
   findProjectRoot,
   logFile,
+  type RuntimeState,
   readState,
   serverEntry,
   writeState,
 } from "./paths";
 
 const DEFAULT_PORT = 23332;
+const HEALTH_PROBE_TIMEOUT_MS = 1000;
 
 /** Check whether a process with the given pid is alive. */
 export function isAlive(pid: number): boolean {
@@ -118,67 +119,169 @@ export interface StopResult {
   wasRunning: boolean;
 }
 
+interface StopServerDependencies {
+  readState: typeof readState;
+  isAlive: typeof isAlive;
+  kill: (pid: number, signal: NodeJS.Signals) => void;
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+  clearStateForPid: (pid: number) => boolean;
+}
+
+export function clearStateForPid(pid: number): boolean {
+  if (readState()?.pid !== pid) return false;
+  clearState();
+  return true;
+}
+
 /**
  * Stop the background server. Sends SIGTERM, waits for exit, escalates to
  * SIGKILL on timeout, then clears the state file.
  */
-export async function stopServer(timeoutMs = 8000): Promise<StopResult> {
-  const state = readState();
+export async function stopServer(
+  timeoutMs = 8000,
+  expectedPid?: number,
+  overrides: Partial<StopServerDependencies> = {},
+): Promise<StopResult> {
+  const dependencies: StopServerDependencies = {
+    readState,
+    isAlive,
+    kill: (pid, signal) => {
+      process.kill(pid, signal);
+    },
+    now: Date.now,
+    sleep,
+    clearStateForPid,
+    ...overrides,
+  };
+  const state = dependencies.readState();
   if (!state) {
     return { stopped: false, wasRunning: false };
   }
-
-  if (!isAlive(state.pid)) {
-    // Stale state — clean up.
-    clearState();
+  if (expectedPid !== undefined && state.pid !== expectedPid) {
     return { stopped: false, wasRunning: false };
   }
 
-  process.kill(state.pid, "SIGTERM");
+  if (!dependencies.isAlive(state.pid)) {
+    // Stale state — clean up.
+    dependencies.clearStateForPid(state.pid);
+    return { stopped: false, wasRunning: false };
+  }
 
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (!isAlive(state.pid)) {
-      clearState();
+  try {
+    dependencies.kill(state.pid, "SIGTERM");
+  } catch (error) {
+    if (!dependencies.isAlive(state.pid)) {
+      dependencies.clearStateForPid(state.pid);
       return { stopped: true, wasRunning: true };
     }
-    await sleep(200);
+    throw error;
+  }
+
+  const deadline = dependencies.now() + timeoutMs;
+  while (dependencies.now() < deadline) {
+    if (!dependencies.isAlive(state.pid)) {
+      dependencies.clearStateForPid(state.pid);
+      return { stopped: true, wasRunning: true };
+    }
+    await dependencies.sleep(Math.min(200, deadline - dependencies.now()));
   }
 
   // Escalate.
   try {
-    process.kill(state.pid, "SIGKILL");
+    dependencies.kill(state.pid, "SIGKILL");
   } catch {
     /* already gone */
   }
-  await sleep(300);
-  clearState();
+  await dependencies.sleep(300);
+  if (dependencies.isAlive(state.pid)) {
+    return { stopped: false, wasRunning: true };
+  }
+  dependencies.clearStateForPid(state.pid);
   return { stopped: true, wasRunning: true };
 }
 
-/** Poll the server health endpoint until it responds OK or times out. */
-export async function waitForHealthy(port: number, timeoutMs = 10000): Promise<boolean> {
-  const url = `http://localhost:${port}/api/public/health`;
-  const deadline = Date.now() + timeoutMs;
+export type HealthWaitResult = { status: "healthy" | "exited" | "timeout" };
 
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return true;
-    } catch {
-      /* not up yet */
-    }
-    await sleep(300);
-  }
-  return false;
+interface HealthWaitDependencies {
+  isAlive: (pid: number) => boolean;
+  checkHealth: (port: number, timeoutMs: number) => Promise<boolean>;
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
 }
 
-/** One-shot health check (no retry). */
-export async function checkHealth(port: number): Promise<boolean> {
+/** Poll the server health endpoint until it responds OK, exits, or times out. */
+export async function waitForHealthy(
+  state: Pick<RuntimeState, "pid" | "port">,
+  timeoutMs = 10000,
+  overrides: Partial<HealthWaitDependencies> = {},
+): Promise<HealthWaitResult> {
+  const dependencies: HealthWaitDependencies = {
+    isAlive,
+    checkHealth,
+    now: Date.now,
+    sleep,
+    ...overrides,
+  };
+  const deadline = dependencies.now() + timeoutMs;
+
+  while (dependencies.now() < deadline) {
+    if (!dependencies.isAlive(state.pid)) return { status: "exited" };
+    const probeTimeoutMs = Math.min(HEALTH_PROBE_TIMEOUT_MS, deadline - dependencies.now());
+    const healthy = await dependencies.checkHealth(state.port, probeTimeoutMs);
+    if (!dependencies.isAlive(state.pid)) return { status: "exited" };
+    if (dependencies.now() >= deadline) return { status: "timeout" };
+    if (healthy) return { status: "healthy" };
+
+    const remainingMs = deadline - dependencies.now();
+    if (remainingMs > 0) await dependencies.sleep(Math.min(300, remainingMs));
+  }
+
+  return dependencies.isAlive(state.pid) ? { status: "timeout" } : { status: "exited" };
+}
+
+interface CleanupStartedServerDependencies {
+  readState: typeof readState;
+  stopServer: typeof stopServer;
+}
+
+/** Stop and clear state only when it still belongs to a server started by this command. */
+export async function cleanupStartedServer(
+  state: RuntimeState,
+  dependencies: CleanupStartedServerDependencies = { readState, stopServer },
+): Promise<void> {
+  if (dependencies.readState()?.pid !== state.pid) return;
+  await dependencies.stopServer(8000, state.pid);
+}
+
+interface HealthCheckDependencies {
+  fetch: typeof fetch;
+  setTimeout: typeof setTimeout;
+  clearTimeout: typeof clearTimeout;
+}
+
+/** One-shot health check (no retry), bounded by an abort signal. */
+export async function checkHealth(
+  port: number,
+  timeoutMs = HEALTH_PROBE_TIMEOUT_MS,
+  overrides: Partial<HealthCheckDependencies> = {},
+): Promise<boolean> {
+  const dependencies: HealthCheckDependencies = {
+    fetch,
+    setTimeout,
+    clearTimeout,
+    ...overrides,
+  };
+  const controller = new AbortController();
+  const timer = dependencies.setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
   try {
-    const res = await fetch(`http://localhost:${port}/api/public/health`);
+    const res = await dependencies.fetch(`http://localhost:${port}/api/public/health`, {
+      signal: controller.signal,
+    });
     return res.ok;
   } catch {
     return false;
+  } finally {
+    dependencies.clearTimeout(timer);
   }
 }
