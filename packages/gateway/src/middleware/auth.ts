@@ -42,6 +42,19 @@ interface CachedAuth {
 
 const authCache = new Map<string, CachedAuth>();
 const AUTH_CACHE_TTL_MS = 30_000;
+const LEGACY_KEY_BATCH_SIZE = 25;
+let legacyBearerScanInProgress = false;
+
+interface LegacyApiKeyRow {
+  id: string;
+  public_key: string;
+  hashed_secret_key: string;
+  fast_hashed_secret_key: string | null;
+  project_id: string | null;
+  organization_id: string | null;
+  scope: string | null;
+  expires_at: string | number | null;
+}
 
 // ---------------------------------------------------------------------------
 // Credential extraction
@@ -65,6 +78,33 @@ function extractBasicCredentials(header: string): { publicKey: string; secretKey
     return { publicKey, secretKey };
   } catch {
     return null;
+  }
+}
+
+async function findLegacyApiKeyBySecret(
+  db: ReturnType<typeof getSharedApiKeyDb>,
+  secretKey: string,
+): Promise<LegacyApiKeyRow | null> {
+  let cursor = "";
+
+  while (true) {
+    const rows = db
+      .prepare(
+        `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key,
+                project_id, organization_id, scope, expires_at
+         FROM api_keys
+         WHERE fast_hashed_secret_key IS NULL AND id > ?
+         ORDER BY id
+         LIMIT ?`,
+      )
+      .all(cursor, LEGACY_KEY_BATCH_SIZE) as LegacyApiKeyRow[];
+
+    for (const row of rows) {
+      if (await compare(secretKey, row.hashed_secret_key)) return row;
+    }
+
+    if (rows.length < LEGACY_KEY_BATCH_SIZE) return null;
+    cursor = rows[rows.length - 1].id;
   }
 }
 
@@ -152,54 +192,67 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
         )
         .get(hintPublicKey) as any) ?? null;
 
-    if (apiKeyRow) {
-      const isValid = await compare(secretKey, apiKeyRow.hashed_secret_key);
-      if (!isValid) {
-        return c.json(
-          { error: { message: "Invalid credentials", type: "authentication_error" } },
-          401,
+    if (!apiKeyRow) {
+      return c.json({ error: { message: "Invalid API key", type: "authentication_error" } }, 401);
+    }
+
+    const isValid = await compare(secretKey, apiKeyRow.hashed_secret_key);
+    if (!isValid) {
+      return c.json(
+        { error: { message: "Invalid credentials", type: "authentication_error" } },
+        401,
+      );
+    }
+    // Backfill fast hash
+    if (salt && !apiKeyRow.fast_hashed_secret_key) {
+      const shaHash = createShaHash(secretKey, salt);
+      try {
+        db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(
+          shaHash,
+          apiKeyRow.id,
         );
-      }
-      // Backfill fast hash
-      if (salt && !apiKeyRow.fast_hashed_secret_key) {
-        const shaHash = createShaHash(secretKey, salt);
-        try {
-          db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(
-            shaHash,
-            apiKeyRow.id,
-          );
-        } catch {
-          /* ignore */
-        }
+      } catch {
+        /* ignore */
       }
     }
   }
 
   // Slow path: bcrypt comparison across all keys (fallback)
   if (!apiKeyRow) {
-    const rows = db
-      .prepare(
-        `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key, project_id, organization_id, scope, expires_at FROM api_keys LIMIT 100`,
-      )
-      .all() as any[];
-    for (const row of rows) {
-      const isValid = await compare(secretKey, row.hashed_secret_key);
-      if (isValid) {
+    const isLegacyBearerScan = bearerToken !== null;
+    if (isLegacyBearerScan && legacyBearerScanInProgress) {
+      c.header("Retry-After", "1");
+      return c.json(
+        {
+          error: {
+            message: "Legacy API key verification is busy. Retry shortly.",
+            type: "service_unavailable_error",
+          },
+        },
+        503,
+      );
+    }
+
+    if (isLegacyBearerScan) legacyBearerScanInProgress = true;
+    try {
+      const legacyRow = await findLegacyApiKeyBySecret(db, secretKey);
+      if (legacyRow) {
         // Backfill fast hash for future requests
-        if (salt && !row.fast_hashed_secret_key) {
+        if (salt) {
           const shaHash = createShaHash(secretKey, salt);
           try {
             db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(
               shaHash,
-              row.id,
+              legacyRow.id,
             );
           } catch {
             /* ignore */
           }
         }
-        apiKeyRow = row;
-        break;
+        apiKeyRow = legacyRow;
       }
+    } finally {
+      if (isLegacyBearerScan) legacyBearerScanInProgress = false;
     }
 
     if (!apiKeyRow) {
