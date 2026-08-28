@@ -1,10 +1,10 @@
 import { AlertCircle, Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/shared/components/ui/button";
-import { resolveUsageQueryState, type UsageQuerySnapshot } from "./usage-query-state";
+import { type GatewayQuerySnapshot, resolveGatewayQueryState } from "./gateway-query-state";
 
-/** Query surface consumed by the shared Gateway Usage async-state boundary. */
-export interface UsageQueryHandle<T> extends UsageQuerySnapshot<T> {
+/** Query surface consumed by the shared Gateway async-state seam. */
+export interface GatewayQueryHandle<T> extends GatewayQuerySnapshot<T> {
   refetch: () => Promise<unknown>;
 }
 
@@ -53,10 +53,10 @@ function QueryFailure({
 }
 
 /**
- * Owns the complete async-state boundary shared by Gateway Usage sections while
- * delegating their successful and empty content layouts to the page.
+ * Owns loading, error, cached refresh, and retry behavior while delegating a
+ * query's successful and empty layouts to its caller.
  */
-export function UsageQuerySection<T>({
+export function GatewayQuerySection<T>({
   label,
   query,
   isEmpty,
@@ -65,13 +65,13 @@ export function UsageQuerySection<T>({
   children,
 }: {
   label: string;
-  query: UsageQueryHandle<T>;
+  query: GatewayQueryHandle<T>;
   isEmpty: (data: T) => boolean;
   loading: ReactNode;
   empty: ReactNode;
   children: (data: T) => ReactNode;
 }) {
-  const state = resolveUsageQueryState(query, isEmpty);
+  const state = resolveGatewayQueryState(query, isEmpty);
   const retry = () => void query.refetch();
 
   if (state.kind === "loading") {

@@ -1,11 +1,7 @@
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { UsageQuerySection } from "@/features/gateway/components/usage-query-section";
-import {
-  resolveUsageQueryState,
-  type UsageQuerySnapshot,
-} from "@/features/gateway/components/usage-query-state";
+import { GatewayQuerySection } from "@/features/gateway/components/gateway-query-section";
+import { resolveGatewayQueryState } from "@/features/gateway/components/gateway-query-state";
 import { GatewayUsageContent } from "@/features/gateway/gateway-usage-page";
 import type {
   DailySpendRow,
@@ -13,24 +9,11 @@ import type {
   UsageByProviderRow,
   UsageSummary,
 } from "@/shared/lib/gateway-api";
-
-interface TestQuery<T> extends UsageQuerySnapshot<T> {
-  refetch: () => Promise<unknown>;
-}
-
-function query<T>(
-  data: T | undefined,
-  overrides: Partial<UsageQuerySnapshot<T>> = {},
-): TestQuery<T> {
-  return {
-    data,
-    error: null,
-    isPending: data === undefined,
-    isFetching: data === undefined,
-    refetch: vi.fn(async () => undefined),
-    ...overrides,
-  };
-}
+import {
+  reactElements as elements,
+  gatewayQuery as query,
+  renderFunctionElement,
+} from "./gateway-query-test-helpers";
 
 function summary(overrides: Partial<UsageSummary> = {}): UsageSummary {
   return {
@@ -57,36 +40,17 @@ function pageProps(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function elements(node: ReactNode): ReactElement[] {
-  const found: ReactElement[] = [];
-  Children.forEach(node, (child) => {
-    if (!isValidElement(child)) return;
-    found.push(child);
-    found.push(...elements((child.props as { children?: ReactNode }).children));
-  });
-  return found;
-}
-
-function renderFunctionElement(node: ReactNode): ReactNode {
-  if (!isValidElement(node)) {
-    throw new Error("Expected a function component element");
-  }
-  const { type, props } = node;
-  if (typeof type !== "function") throw new Error("Expected a function component element");
-  return (type as (componentProps: typeof props) => ReactNode)(props);
-}
-
-describe("resolveUsageQueryState", () => {
+describe("resolveGatewayQueryState", () => {
   it("keeps initial loading distinct from an empty result", () => {
     expect(
-      resolveUsageQueryState(query<unknown[]>(undefined), (rows) => rows.length === 0),
+      resolveGatewayQueryState(query<unknown[]>(undefined), (rows) => rows.length === 0),
     ).toEqual({ kind: "loading", isFetching: true });
   });
 
   it("keeps an unavailable result distinct from an empty result", () => {
     const error = new Error("usage unavailable");
     expect(
-      resolveUsageQueryState(
+      resolveGatewayQueryState(
         query<unknown[]>(undefined, { error, isPending: false, isFetching: false }),
         (rows) => rows.length === 0,
       ),
@@ -96,10 +60,10 @@ describe("resolveUsageQueryState", () => {
   it("preserves cached data while a refresh is active or failed", () => {
     const error = new Error("refresh failed");
     expect(
-      resolveUsageQueryState(query(["gpt-5"], { isFetching: true }), (rows) => rows.length === 0),
+      resolveGatewayQueryState(query(["gpt-5"], { isFetching: true }), (rows) => rows.length === 0),
     ).toMatchObject({ kind: "content", data: ["gpt-5"], isFetching: true });
     expect(
-      resolveUsageQueryState(query(["gpt-5"], { error }), (rows) => rows.length === 0),
+      resolveGatewayQueryState(query(["gpt-5"], { error }), (rows) => rows.length === 0),
     ).toMatchObject({ kind: "content", data: ["gpt-5"], staleError: error });
   });
 });
@@ -151,7 +115,7 @@ describe("Gateway Usage async states", () => {
     );
     const summarySection = elements(content).find(
       (element) =>
-        element.type === UsageQuerySection &&
+        element.type === GatewayQuerySection &&
         (element.props as { label?: string }).label === "usage summary",
     );
     const failure = renderFunctionElement(renderFunctionElement(summarySection));
@@ -167,7 +131,7 @@ describe("Gateway Usage async states", () => {
     expect(providerQuery.refetch).not.toHaveBeenCalled();
 
     const pendingHtml = renderToStaticMarkup(
-      <UsageQuerySection
+      <GatewayQuerySection
         label="usage summary"
         query={{ ...summaryQuery, isFetching: true }}
         isEmpty={() => false}
@@ -175,7 +139,7 @@ describe("Gateway Usage async states", () => {
         empty={null}
       >
         {() => null}
-      </UsageQuerySection>,
+      </GatewayQuerySection>,
     );
     expect(pendingHtml).toContain("disabled");
     expect(pendingHtml).toContain("Retrying…");

@@ -3,10 +3,15 @@
  */
 import { Boxes, DollarSign, Server, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
+import {
+  type GatewayQueryHandle,
+  GatewayQuerySection,
+} from "@/features/gateway/components/gateway-query-section";
 import { StatusBadge } from "@/features/gateway/components/status-badge";
-import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
+import { EmptyState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { useGwProvidersQuery, useGwUsageSummaryQuery } from "@/shared/hooks/gateway-queries";
+import type { GatewayProvider, UsageSummary } from "@/shared/lib/gateway-api";
 
 function last7Days() {
   const end = new Date();
@@ -44,41 +49,52 @@ function StatCard({
   );
 }
 
-function OverviewContent() {
-  const { startDate, endDate } = last7Days();
-  const providersQuery = useGwProvidersQuery();
-  const usageQuery = useGwUsageSummaryQuery({ startDate, endDate });
+function UsageOverview({ query }: { query: GatewayQueryHandle<UsageSummary> }) {
+  return (
+    <GatewayQuerySection
+      label="7-day usage"
+      query={query}
+      isEmpty={() => false}
+      loading={<LoadingRows rows={2} />}
+      empty={null}
+    >
+      {(usage) => (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Spend (7d)"
+            value={`$${usage.totalSpend.toFixed(4)}`}
+            icon={DollarSign}
+          />
+          <StatCard label="Requests (7d)" value={usage.totalRequests.toLocaleString()} icon={Zap} />
+        </div>
+      )}
+    </GatewayQuerySection>
+  );
+}
 
-  if (providersQuery.isLoading) {
-    return <LoadingRows rows={6} />;
-  }
+function ProvidersOverview({ query }: { query: GatewayQueryHandle<GatewayProvider[]> }) {
+  return (
+    <GatewayQuerySection
+      label="gateway providers"
+      query={query}
+      isEmpty={() => false}
+      loading={<LoadingRows rows={4} />}
+      empty={null}
+    >
+      {(providers) => <ProvidersContent providers={providers} />}
+    </GatewayQuerySection>
+  );
+}
 
-  if (providersQuery.error) {
-    return <ErrorState error={providersQuery.error} />;
-  }
-
-  const providers = providersQuery.data ?? [];
-  const usage = usageQuery.data;
+function ProvidersContent({ providers }: { providers: GatewayProvider[] }) {
   const activeProviders = providers.filter((p) => p.isEnabled).length;
 
   return (
-    <div className="space-y-6 p-6">
-      {/* Stat cards */}
+    <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Spend (7d)"
-          value={usage ? `$${usage.totalSpend.toFixed(4)}` : "—"}
-          icon={DollarSign}
-        />
-        <StatCard
-          label="Requests (7d)"
-          value={usage ? String(usage.totalRequests) : "—"}
-          icon={Zap}
-        />
         <StatCard label="Active Providers" value={String(activeProviders)} icon={Server} />
       </div>
 
-      {/* Provider status */}
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -121,44 +137,66 @@ function OverviewContent() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
 
-      {/* Model deployments quick view */}
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Boxes className="h-4 w-4 text-brand" />
-            Quick Links
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {[
-              { to: "/gateway/models", label: "Models" },
-              { to: "/gateway/usage", label: "Usage" },
-              { to: "/gateway/logs", label: "Logs" },
-            ].map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                className="rounded-lg border border-border bg-surface-raised px-4 py-3 text-center text-sm font-medium text-fg-secondary transition-colors hover:border-line-strong hover:text-fg-primary"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+function QuickLinks() {
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Boxes className="h-4 w-4 text-brand" />
+          Quick Links
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { to: "/gateway/models", label: "Models" },
+            { to: "/gateway/usage", label: "Usage" },
+            { to: "/gateway/logs", label: "Logs" },
+          ].map((link) => (
+            <Link
+              key={link.to}
+              to={link.to}
+              className="rounded-lg border border-border bg-surface-raised px-4 py-3 text-center text-sm font-medium text-fg-secondary transition-colors hover:border-line-strong hover:text-fg-primary"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Pure Gateway Overview view; query ownership remains in GatewayOverviewPage. */
+export function GatewayOverviewContent({
+  providersQuery,
+  usageQuery,
+}: {
+  providersQuery: GatewayQueryHandle<GatewayProvider[]>;
+  usageQuery: GatewayQueryHandle<UsageSummary>;
+}) {
+  return (
+    <div className="flex h-full flex-col">
+      <PageHeader title="Gateway" description="LLM proxy gateway overview." />
+      <div className="flex-1 overflow-y-auto">
+        <div className="space-y-6 p-6">
+          <UsageOverview query={usageQuery} />
+          <ProvidersOverview query={providersQuery} />
+          <QuickLinks />
+        </div>
+      </div>
     </div>
   );
 }
 
 export function GatewayOverviewPage() {
-  return (
-    <div className="flex h-full flex-col">
-      <PageHeader title="Gateway" description="LLM proxy gateway overview." />
-      <div className="flex-1 overflow-y-auto">
-        <OverviewContent />
-      </div>
-    </div>
-  );
+  const { startDate, endDate } = last7Days();
+  const providersQuery = useGwProvidersQuery();
+  const usageQuery = useGwUsageSummaryQuery({ startDate, endDate });
+
+  return <GatewayOverviewContent providersQuery={providersQuery} usageQuery={usageQuery} />;
 }

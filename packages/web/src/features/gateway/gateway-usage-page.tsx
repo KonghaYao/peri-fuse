@@ -3,9 +3,9 @@
  */
 import { useState } from "react";
 import {
-  type UsageQueryHandle,
-  UsageQuerySection,
-} from "@/features/gateway/components/usage-query-section";
+  type GatewayQueryHandle,
+  GatewayQuerySection,
+} from "@/features/gateway/components/gateway-query-section";
 import { LoadingRows, PageHeader } from "@/shared/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Input } from "@/shared/components/ui/input";
@@ -64,10 +64,10 @@ export interface GatewayUsageContentProps {
   range: { start: string; end: string };
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
-  summaryQuery: UsageQueryHandle<UsageSummary>;
-  dailyQuery: UsageQueryHandle<DailySpendRow[]>;
-  byModelQuery: UsageQueryHandle<UsageByModelRow[]>;
-  byProviderQuery: UsageQueryHandle<UsageByProviderRow[]>;
+  summaryQuery: GatewayQueryHandle<UsageSummary>;
+  dailyQuery: GatewayQueryHandle<DailySpendRow[]>;
+  byModelQuery: GatewayQueryHandle<UsageByModelRow[]>;
+  byProviderQuery: GatewayQueryHandle<UsageByProviderRow[]>;
 }
 
 /** Renders all four Gateway Usage query boundaries without owning network or date state. */
@@ -106,7 +106,7 @@ export function GatewayUsageContent({
         />
       </div>
 
-      <UsageQuerySection
+      <GatewayQuerySection
         label="usage summary"
         query={summaryQuery}
         isEmpty={() => false}
@@ -114,7 +114,7 @@ export function GatewayUsageContent({
         empty={null}
       >
         {(summary) => <SummaryCards summary={summary} />}
-      </UsageQuerySection>
+      </GatewayQuerySection>
 
       {/* By model */}
       <Card>
@@ -122,7 +122,7 @@ export function GatewayUsageContent({
           <CardTitle className="text-base">By Model</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <UsageQuerySection
+          <GatewayQuerySection
             label="usage by model"
             query={byModelQuery}
             isEmpty={(rows) => rows.length === 0}
@@ -165,7 +165,7 @@ export function GatewayUsageContent({
                 </tbody>
               </table>
             )}
-          </UsageQuerySection>
+          </GatewayQuerySection>
         </CardContent>
       </Card>
 
@@ -175,7 +175,7 @@ export function GatewayUsageContent({
           <CardTitle className="text-base">By Provider</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <UsageQuerySection
+          <GatewayQuerySection
             label="usage by provider"
             query={byProviderQuery}
             isEmpty={(rows) => rows.length === 0}
@@ -216,7 +216,7 @@ export function GatewayUsageContent({
                 </tbody>
               </table>
             )}
-          </UsageQuerySection>
+          </GatewayQuerySection>
         </CardContent>
       </Card>
 
@@ -226,7 +226,7 @@ export function GatewayUsageContent({
           <CardTitle className="text-base">Daily Breakdown</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <UsageQuerySection
+          <GatewayQuerySection
             label="daily usage"
             query={dailyQuery}
             isEmpty={(rows) => rows.length === 0}
@@ -273,7 +273,7 @@ export function GatewayUsageContent({
                 </table>
               </div>
             )}
-          </UsageQuerySection>
+          </GatewayQuerySection>
         </CardContent>
       </Card>
     </div>

@@ -1,13 +1,13 @@
-/** Minimal TanStack Query projection needed by the Gateway Usage state machine. */
-export interface UsageQuerySnapshot<T> {
+/** Minimal TanStack Query projection needed by Gateway async-state views. */
+export interface GatewayQuerySnapshot<T> {
   data: T | undefined;
   error: unknown;
   isPending: boolean;
   isFetching: boolean;
 }
 
-/** Rendering state shared by all four independently loaded Gateway Usage sections. */
-export type UsageQueryState<T> =
+/** Rendering state shared by independently loaded Gateway query sections. */
+export type GatewayQueryState<T> =
   | { kind: "loading"; isFetching: boolean }
   | { kind: "error"; error: unknown; isFetching: boolean }
   | {
@@ -18,11 +18,11 @@ export type UsageQueryState<T> =
       isFetching: boolean;
     };
 
-/** Resolve the async state that Gateway Usage sections expose to their shared UI boundary. */
-export function resolveUsageQueryState<T>(
-  snapshot: UsageQuerySnapshot<T>,
+/** Resolve the async state exposed by the shared Gateway query UI seam. */
+export function resolveGatewayQueryState<T>(
+  snapshot: GatewayQuerySnapshot<T>,
   isEmpty: (data: T) => boolean,
-): UsageQueryState<T> {
+): GatewayQueryState<T> {
   if (snapshot.data === undefined) {
     if (snapshot.error !== null && snapshot.error !== undefined) {
       return { kind: "error", error: snapshot.error, isFetching: snapshot.isFetching };
