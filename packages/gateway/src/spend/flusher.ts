@@ -3,8 +3,8 @@
  * Queues spend events in memory and flushes to SQLite periodically.
  */
 import { and, eq, sql } from "drizzle-orm";
-import { getDb } from "../db.js";
 import { apiKey, dailySpend, spendLog } from "../db/schema.js";
+import { getDb } from "../db.js";
 import { gatewayEnv } from "../env.js";
 import { slowLogWriter } from "../slow-log/writer.js";
 import { generateId } from "../utils/id.js";
@@ -49,7 +49,9 @@ interface DailySpendIncrement {
   promptTokens: number;
   completionTokens: number;
   spend: number;
-  success: boolean;
+  apiRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
 }
 
 class SpendFlusher {
@@ -121,7 +123,9 @@ class SpendFlusher {
       promptTokens: event.promptTokens,
       completionTokens: event.completionTokens,
       spend: event.spend,
-      success: event.status === "success",
+      apiRequests: 1,
+      successfulRequests: event.status === "success" ? 1 : 0,
+      failedRequests: event.status === "success" ? 0 : 1,
     });
 
     // Queue key spend increment
@@ -200,9 +204,9 @@ class SpendFlusher {
         existing.promptTokens += item.promptTokens;
         existing.completionTokens += item.completionTokens;
         existing.spend += item.spend;
-        if (item.success) {
-          // count success
-        }
+        existing.apiRequests += item.apiRequests;
+        existing.successfulRequests += item.successfulRequests;
+        existing.failedRequests += item.failedRequests;
       } else {
         aggregated.set(key, { ...item });
       }
@@ -224,13 +228,10 @@ class SpendFlusher {
             promptTokens: sql`${dailySpend.promptTokens} + ${item.promptTokens}`,
             completionTokens: sql`${dailySpend.completionTokens} + ${item.completionTokens}`,
             spend: sql`${dailySpend.spend} + ${item.spend}`,
-            apiRequests: sql`${dailySpend.apiRequests} + 1`,
+            apiRequests: sql`${dailySpend.apiRequests} + ${item.apiRequests}`,
+            successfulRequests: sql`${dailySpend.successfulRequests} + ${item.successfulRequests}`,
+            failedRequests: sql`${dailySpend.failedRequests} + ${item.failedRequests}`,
           };
-          if (item.success) {
-            setClause.successfulRequests = sql`${dailySpend.successfulRequests} + 1`;
-          } else {
-            setClause.failedRequests = sql`${dailySpend.failedRequests} + 1`;
-          }
           await db.update(dailySpend).set(setClause).where(compositeWhere);
         } else {
           await db.insert(dailySpend).values({
@@ -244,9 +245,9 @@ class SpendFlusher {
             promptTokens: item.promptTokens,
             completionTokens: item.completionTokens,
             spend: item.spend,
-            apiRequests: 1,
-            successfulRequests: item.success ? 1 : 0,
-            failedRequests: item.success ? 0 : 1,
+            apiRequests: item.apiRequests,
+            successfulRequests: item.successfulRequests,
+            failedRequests: item.failedRequests,
           });
         }
       } catch (err) {
