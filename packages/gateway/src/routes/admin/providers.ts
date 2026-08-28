@@ -4,10 +4,10 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
+import { auditLog, credential, modelDeployment, provider } from "../../db/schema.js";
 import { getDb } from "../../db.js";
-import { auditLog, modelDeployment, provider } from "../../db/schema.js";
-import { generateId } from "../../utils/id.js";
 import { encrypt } from "../../utils/crypto.js";
+import { generateId } from "../../utils/id.js";
 
 const providers = new Hono<GatewayEnv>();
 
@@ -19,7 +19,9 @@ providers.get("/", async (c) => {
     where: eq(provider.projectId, projectId),
     orderBy: [desc(provider.createdAt)],
     with: {
-      deployments: { where: eq(modelDeployment.isEnabled, true) },
+      deployments: {
+        where: and(eq(modelDeployment.projectId, projectId), eq(modelDeployment.isEnabled, true)),
+      },
     },
   });
 
@@ -40,7 +42,7 @@ providers.get("/:id", async (c) => {
   const projectId = c.get("projectId");
   const found = await db.query.provider.findFirst({
     where: and(eq(provider.id, c.req.param("id")), eq(provider.projectId, projectId)),
-    with: { deployments: true },
+    with: { deployments: { where: eq(modelDeployment.projectId, projectId) } },
   });
 
   if (!found) {
@@ -58,6 +60,15 @@ providers.post("/", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
   const body = await c.req.json();
+
+  if (body.credentialId != null) {
+    const targetCredential = await db.query.credential.findFirst({
+      where: and(eq(credential.id, body.credentialId), eq(credential.projectId, projectId)),
+    });
+    if (!targetCredential) {
+      return c.json({ error: { message: "Credential not found" } }, 404);
+    }
+  }
 
   const data: any = {
     id: generateId(),
@@ -110,6 +121,15 @@ providers.put("/:id", async (c) => {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
 
+  if (body.credentialId !== undefined && body.credentialId !== null) {
+    const targetCredential = await db.query.credential.findFirst({
+      where: and(eq(credential.id, body.credentialId), eq(credential.projectId, projectId)),
+    });
+    if (!targetCredential) {
+      return c.json({ error: { message: "Credential not found" } }, 404);
+    }
+  }
+
   const data: any = {};
   if (body.name !== undefined) data.name = body.name;
   if (body.type !== undefined) data.type = body.type;
@@ -126,7 +146,11 @@ providers.put("/:id", async (c) => {
   }
   if (body.status !== undefined) data.status = body.status;
 
-  const [updated] = await db.update(provider).set(data).where(eq(provider.id, id)).returning();
+  const [updated] = await db
+    .update(provider)
+    .set(data)
+    .where(and(eq(provider.id, id), eq(provider.projectId, projectId)))
+    .returning();
 
   await db.insert(auditLog).values({
     id: generateId(),
@@ -155,19 +179,43 @@ providers.delete("/:id", async (c) => {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
 
-  // Delete associated deployments first
-  await db.delete(modelDeployment).where(eq(modelDeployment.providerId, id));
-  await db.delete(provider).where(eq(provider.id, id));
-
-  await db.insert(auditLog).values({
-    id: generateId(),
-    projectId,
-    action: "delete",
-    tableName: "Provider",
-    objectId: id,
-    beforeValue: JSON.stringify({ ...existing, apiKeyEncrypted: "***" }),
-    changedBy: "admin",
-  });
+  try {
+    db.transaction((tx) => {
+      tx.delete(modelDeployment)
+        .where(and(eq(modelDeployment.providerId, id), eq(modelDeployment.projectId, projectId)))
+        .run();
+      tx.delete(provider)
+        .where(and(eq(provider.id, id), eq(provider.projectId, projectId)))
+        .run();
+      tx.insert(auditLog)
+        .values({
+          id: generateId(),
+          projectId,
+          action: "delete",
+          tableName: "Provider",
+          objectId: id,
+          beforeValue: JSON.stringify({ ...existing, apiKeyEncrypted: "***" }),
+          changedBy: "admin",
+        })
+        .run();
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "SQLITE_CONSTRAINT_FOREIGNKEY"
+    ) {
+      console.error(
+        `[peri-gateway] Refused provider deletion for project ${projectId}, provider ${id}:`,
+        error,
+      );
+      return c.json(
+        { error: { message: "Provider cannot be deleted while deployments reference it" } },
+        409,
+      );
+    }
+    throw error;
+  }
 
   return c.json({ success: true });
 });
@@ -179,9 +227,15 @@ function computeNextReset(period: string): string {
   const unit = match[2];
   let ms = 0;
   switch (unit) {
-    case "d": ms = value * 86400000; break;
-    case "h": ms = value * 3600000; break;
-    case "m": ms = value * 60000; break;
+    case "d":
+      ms = value * 86400000;
+      break;
+    case "h":
+      ms = value * 3600000;
+      break;
+    case "m":
+      ms = value * 60000;
+      break;
   }
   return new Date(Date.now() + ms).toISOString();
 }

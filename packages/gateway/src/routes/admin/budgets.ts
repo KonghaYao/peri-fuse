@@ -4,8 +4,8 @@
 import { and, count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
-import { getDb } from "../../db.js";
 import { apiKey, auditLog, budget } from "../../db/schema.js";
+import { getDb } from "../../db.js";
 import { generateId } from "../../utils/id.js";
 
 const budgets = new Hono<GatewayEnv>();
@@ -24,7 +24,7 @@ budgets.get("/", async (c) => {
       const [row] = await db
         .select({ value: count() })
         .from(apiKey)
-        .where(eq(apiKey.budgetId, b.id));
+        .where(and(eq(apiKey.budgetId, b.id), eq(apiKey.projectId, projectId)));
       return {
         ...b,
         modelMaxBudget: b.modelMaxBudget ? JSON.parse(b.modelMaxBudget) : null,
@@ -43,7 +43,10 @@ budgets.get("/:id", async (c) => {
   const found = await db.query.budget.findFirst({
     where: and(eq(budget.id, c.req.param("id")), eq(budget.projectId, projectId)),
     with: {
-      keys: { columns: { id: true, keyName: true, publicKey: true, spend: true } },
+      keys: {
+        where: eq(apiKey.projectId, projectId),
+        columns: { id: true, keyName: true, publicKey: true, spend: true },
+      },
     },
   });
 
@@ -120,7 +123,11 @@ budgets.put("/:id", async (c) => {
     data.modelMaxBudget = body.modelMaxBudget ? JSON.stringify(body.modelMaxBudget) : null;
   }
 
-  const [updated] = await db.update(budget).set(data).where(eq(budget.id, id)).returning();
+  const [updated] = await db
+    .update(budget)
+    .set(data)
+    .where(and(eq(budget.id, id), eq(budget.projectId, projectId)))
+    .returning();
 
   await db.insert(auditLog).values({
     id: generateId(),
@@ -149,19 +156,47 @@ budgets.delete("/:id", async (c) => {
     return c.json({ error: { message: "Budget not found" } }, 404);
   }
 
-  // Unlink keys first
-  await db.update(apiKey).set({ budgetId: null }).where(eq(apiKey.budgetId, id));
-  await db.delete(budget).where(eq(budget.id, id));
-
-  await db.insert(auditLog).values({
-    id: generateId(),
-    projectId,
-    action: "delete",
-    tableName: "Budget",
-    objectId: id,
-    beforeValue: JSON.stringify({ maxBudget: existing.maxBudget, duration: existing.duration }),
-    changedBy: "admin",
-  });
+  try {
+    db.transaction((tx) => {
+      tx.update(apiKey)
+        .set({ budgetId: null })
+        .where(and(eq(apiKey.budgetId, id), eq(apiKey.projectId, projectId)))
+        .run();
+      tx.delete(budget)
+        .where(and(eq(budget.id, id), eq(budget.projectId, projectId)))
+        .run();
+      tx.insert(auditLog)
+        .values({
+          id: generateId(),
+          projectId,
+          action: "delete",
+          tableName: "Budget",
+          objectId: id,
+          beforeValue: JSON.stringify({
+            maxBudget: existing.maxBudget,
+            duration: existing.duration,
+          }),
+          changedBy: "admin",
+        })
+        .run();
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "SQLITE_CONSTRAINT_FOREIGNKEY"
+    ) {
+      console.error(
+        `[peri-gateway] Refused budget deletion for project ${projectId}, budget ${id}:`,
+        error,
+      );
+      return c.json(
+        { error: { message: "Budget cannot be deleted while API keys reference it" } },
+        409,
+      );
+    }
+    throw error;
+  }
 
   return c.json({ success: true });
 });
@@ -173,9 +208,15 @@ function computeNextReset(duration: string): string {
   const unit = match[2];
   let ms = 0;
   switch (unit) {
-    case "d": ms = value * 86400000; break;
-    case "h": ms = value * 3600000; break;
-    case "m": ms = value * 60000; break;
+    case "d":
+      ms = value * 86400000;
+      break;
+    case "h":
+      ms = value * 3600000;
+      break;
+    case "m":
+      ms = value * 60000;
+      break;
   }
   return new Date(Date.now() + ms).toISOString();
 }

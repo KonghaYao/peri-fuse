@@ -4,10 +4,10 @@
 import { and, count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
-import { getDb } from "../../db.js";
 import { auditLog, credential, provider } from "../../db/schema.js";
-import { generateId } from "../../utils/id.js";
+import { getDb } from "../../db.js";
 import { encrypt } from "../../utils/crypto.js";
+import { generateId } from "../../utils/id.js";
 
 const credentials = new Hono<GatewayEnv>();
 
@@ -84,7 +84,11 @@ credentials.put("/:id", async (c) => {
   if (body.values !== undefined) data.values = encrypt(JSON.stringify(body.values));
   if (body.info !== undefined) data.info = JSON.stringify(body.info);
 
-  const [updated] = await db.update(credential).set(data).where(eq(credential.id, id)).returning();
+  const [updated] = await db
+    .update(credential)
+    .set(data)
+    .where(and(eq(credential.id, id), eq(credential.projectId, projectId)))
+    .returning();
 
   await db.insert(auditLog).values({
     id: generateId(),
@@ -123,7 +127,9 @@ credentials.delete("/:id", async (c) => {
     return c.json({ error: { message: `Credential is referenced by ${refs} provider(s)` } }, 409);
   }
 
-  await db.delete(credential).where(eq(credential.id, id));
+  await db
+    .delete(credential)
+    .where(and(eq(credential.id, id), eq(credential.projectId, projectId)));
 
   await db.insert(auditLog).values({
     id: generateId(),

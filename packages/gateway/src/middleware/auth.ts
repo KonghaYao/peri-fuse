@@ -10,37 +10,13 @@
  * into the Hono context for downstream resource isolation.
  */
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
-import Database from "better-sqlite3";
-import { eq } from "drizzle-orm";
 import { compare } from "bcryptjs";
+import { and, eq } from "drizzle-orm";
 import type { Context, Next } from "hono";
-import { getDb } from "../db.js";
-import { apiKey } from "../db/schema.js";
 import type { GatewayEnv } from "../app.js";
-
-// ---------------------------------------------------------------------------
-// Shared DB connection (for auth verification against server's api_keys)
-// ---------------------------------------------------------------------------
-
-let sharedDb: Database.Database | null = null;
-
-function getSharedDb(): Database.Database {
-  if (sharedDb) return sharedDb;
-
-  const rawUrl = process.env.DATABASE_URL ?? "file:./.langfuse/langfuse.db";
-  let dbPath: string;
-  if (rawUrl.startsWith("file:")) {
-    const rawPath = rawUrl.slice("file:".length);
-    dbPath = rawPath.startsWith("/") ? rawPath : resolve(process.cwd(), rawPath);
-  } else {
-    dbPath = rawUrl;
-  }
-
-  sharedDb = new Database(dbPath, { readonly: false });
-  sharedDb.pragma("busy_timeout = 5000");
-  return sharedDb;
-}
+import { getSharedApiKeyDb } from "../auth/shared-api-key-store.js";
+import { apiKey } from "../db/schema.js";
+import { getDb } from "../db.js";
 
 // ---------------------------------------------------------------------------
 // Hash utilities (same as @peri-fuse/shared/src/server/auth/apiKeys.ts)
@@ -101,7 +77,12 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
 
   if (!authHeader) {
     return c.json(
-      { error: { message: "Missing Authorization header. Use Bearer <secretKey> or Basic <base64(pk:sk)>.", type: "authentication_error" } },
+      {
+        error: {
+          message: "Missing Authorization header. Use Bearer <secretKey> or Basic <base64(pk:sk)>.",
+          type: "authentication_error",
+        },
+      },
       401,
     );
   }
@@ -123,7 +104,12 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
 
   if (!secretKey) {
     return c.json(
-      { error: { message: "Invalid Authorization header format. Use Bearer <sk> or Basic <base64(pk:sk)>.", type: "authentication_error" } },
+      {
+        error: {
+          message: "Invalid Authorization header format. Use Bearer <sk> or Basic <base64(pk:sk)>.",
+          type: "authentication_error",
+        },
+      },
       401,
     );
   }
@@ -141,7 +127,7 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
   }
 
   // Verify against shared DB
-  const db = getSharedDb();
+  const db = getSharedApiKeyDb();
   const salt = process.env.SALT;
 
   let apiKeyRow: any = null;
@@ -169,14 +155,22 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
     if (apiKeyRow) {
       const isValid = await compare(secretKey, apiKeyRow.hashed_secret_key);
       if (!isValid) {
-        return c.json({ error: { message: "Invalid credentials", type: "authentication_error" } }, 401);
+        return c.json(
+          { error: { message: "Invalid credentials", type: "authentication_error" } },
+          401,
+        );
       }
       // Backfill fast hash
       if (salt && !apiKeyRow.fast_hashed_secret_key) {
         const shaHash = createShaHash(secretKey, salt);
         try {
-          db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(shaHash, apiKeyRow.id);
-        } catch { /* ignore */ }
+          db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(
+            shaHash,
+            apiKeyRow.id,
+          );
+        } catch {
+          /* ignore */
+        }
       }
     }
   }
@@ -195,8 +189,13 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
         if (salt && !row.fast_hashed_secret_key) {
           const shaHash = createShaHash(secretKey, salt);
           try {
-            db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(shaHash, row.id);
-          } catch { /* ignore */ }
+            db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(
+              shaHash,
+              row.id,
+            );
+          } catch {
+            /* ignore */
+          }
         }
         apiKeyRow = row;
         break;
@@ -204,7 +203,10 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
     }
 
     if (!apiKeyRow) {
-      return c.json({ error: { message: "Invalid secret key", type: "authentication_error" } }, 401);
+      return c.json(
+        { error: { message: "Invalid secret key", type: "authentication_error" } },
+        401,
+      );
     }
   }
 
@@ -220,7 +222,13 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
 
   if (scope !== "PROJECT" || !projectId) {
     return c.json(
-      { error: { message: "Gateway requires a PROJECT-scoped API key. Organization-level keys are not supported.", type: "authentication_error" } },
+      {
+        error: {
+          message:
+            "Gateway requires a PROJECT-scoped API key. Organization-level keys are not supported.",
+          type: "authentication_error",
+        },
+      },
       403,
     );
   }
@@ -228,7 +236,12 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
   const resolvedPublicKey = apiKeyRow.public_key ?? apiKeyRow.publicKey;
 
   // Cache the auth result
-  authCache.set(secretKey, { publicKey: resolvedPublicKey, projectId, orgId, expiresAt: Date.now() + AUTH_CACHE_TTL_MS });
+  authCache.set(secretKey, {
+    publicKey: resolvedPublicKey,
+    projectId,
+    orgId,
+    expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+  });
 
   // Look up gateway-specific config (rate limits, budget)
   const gwConfig = await getGatewayConfig(resolvedPublicKey, projectId);
@@ -248,7 +261,9 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
  */
 async function getGatewayConfig(publicKey: string, projectId: string) {
   const db = getDb();
-  const config = await db.query.apiKey.findFirst({ where: eq(apiKey.publicKey, publicKey) });
+  const config = await db.query.apiKey.findFirst({
+    where: and(eq(apiKey.publicKey, publicKey), eq(apiKey.projectId, projectId)),
+  });
 
   if (!config) {
     // No gateway-specific config — return defaults (unlimited)

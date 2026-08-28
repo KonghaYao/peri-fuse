@@ -6,8 +6,9 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
+import { projectApiKeyExists } from "../../auth/shared-api-key-store.js";
+import { apiKey, auditLog, budget } from "../../db/schema.js";
 import { getDb } from "../../db.js";
-import { apiKey, auditLog } from "../../db/schema.js";
 import { generateId } from "../../utils/id.js";
 
 const keys = new Hono<GatewayEnv>();
@@ -16,16 +17,18 @@ const keys = new Hono<GatewayEnv>();
 keys.get("/", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const items = await db.query.apiKey.findMany({
-    where: eq(apiKey.projectId, projectId),
-    orderBy: [desc(apiKey.createdAt)],
-    with: { budget: true },
-  });
+  const items = await db
+    .select({ key: apiKey, budget })
+    .from(apiKey)
+    .leftJoin(budget, and(eq(apiKey.budgetId, budget.id), eq(budget.projectId, projectId)))
+    .where(eq(apiKey.projectId, projectId))
+    .orderBy(desc(apiKey.createdAt));
 
-  const safe = items.map((k) => ({
-    ...k,
-    models: JSON.parse(k.models),
-    metadata: JSON.parse(k.metadata),
+  const safe = items.map(({ key, budget: relatedBudget }) => ({
+    ...key,
+    budget: relatedBudget,
+    models: JSON.parse(key.models),
+    metadata: JSON.parse(key.metadata),
   }));
 
   return c.json({ data: safe });
@@ -35,16 +38,23 @@ keys.get("/", async (c) => {
 keys.get("/:id", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const key = await db.query.apiKey.findFirst({
-    where: and(eq(apiKey.id, c.req.param("id")), eq(apiKey.projectId, projectId)),
-    with: { budget: true },
-  });
+  const [result] = await db
+    .select({ key: apiKey, budget })
+    .from(apiKey)
+    .leftJoin(budget, and(eq(apiKey.budgetId, budget.id), eq(budget.projectId, projectId)))
+    .where(and(eq(apiKey.id, c.req.param("id")), eq(apiKey.projectId, projectId)))
+    .limit(1);
 
-  if (!key) {
+  if (!result) {
     return c.json({ error: { message: "API key config not found" } }, 404);
   }
 
-  return c.json({ ...key, models: JSON.parse(key.models), metadata: JSON.parse(key.metadata) });
+  return c.json({
+    ...result.key,
+    budget: result.budget,
+    models: JSON.parse(result.key.models),
+    metadata: JSON.parse(result.key.metadata),
+  });
 });
 
 // Create key config — attach gateway limits to an existing publicKey
@@ -55,6 +65,19 @@ keys.post("/", async (c) => {
 
   if (!body.publicKey || typeof body.publicKey !== "string") {
     return c.json({ error: { message: "publicKey is required" } }, 400);
+  }
+
+  if (!projectApiKeyExists(body.publicKey, projectId)) {
+    return c.json({ error: { message: "Project API key not found" } }, 404);
+  }
+
+  if (body.budgetId != null) {
+    const targetBudget = await db.query.budget.findFirst({
+      where: and(eq(budget.id, body.budgetId), eq(budget.projectId, projectId)),
+    });
+    if (!targetBudget) {
+      return c.json({ error: { message: "Budget not found" } }, 404);
+    }
   }
 
   // Check if config already exists for this publicKey
@@ -91,11 +114,14 @@ keys.post("/", async (c) => {
     changedBy: "admin",
   });
 
-  return c.json({
-    ...key,
-    models: JSON.parse(key.models),
-    metadata: JSON.parse(key.metadata),
-  }, 201);
+  return c.json(
+    {
+      ...key,
+      models: JSON.parse(key.models),
+      metadata: JSON.parse(key.metadata),
+    },
+    201,
+  );
 });
 
 // Update key config
@@ -112,6 +138,19 @@ keys.put("/:id", async (c) => {
     return c.json({ error: { message: "API key config not found" } }, 404);
   }
 
+  if (!projectApiKeyExists(existing.publicKey, projectId)) {
+    return c.json({ error: { message: "Project API key not found" } }, 404);
+  }
+
+  if (body.budgetId !== undefined && body.budgetId !== null) {
+    const targetBudget = await db.query.budget.findFirst({
+      where: and(eq(budget.id, body.budgetId), eq(budget.projectId, projectId)),
+    });
+    if (!targetBudget) {
+      return c.json({ error: { message: "Budget not found" } }, 404);
+    }
+  }
+
   const data: any = {};
   if (body.keyName !== undefined) data.keyName = body.keyName;
   if (body.models !== undefined) data.models = JSON.stringify(body.models);
@@ -123,7 +162,11 @@ keys.put("/:id", async (c) => {
   if (body.budgetId !== undefined) data.budgetId = body.budgetId;
   if (body.isEnabled !== undefined) data.isEnabled = body.isEnabled;
 
-  const [key] = await db.update(apiKey).set(data).where(eq(apiKey.id, id)).returning();
+  const [key] = await db
+    .update(apiKey)
+    .set(data)
+    .where(and(eq(apiKey.id, id), eq(apiKey.projectId, projectId)))
+    .returning();
 
   await db.insert(auditLog).values({
     id: generateId(),
@@ -152,7 +195,11 @@ keys.delete("/:id", async (c) => {
     return c.json({ error: { message: "API key config not found" } }, 404);
   }
 
-  await db.delete(apiKey).where(eq(apiKey.id, id));
+  if (!projectApiKeyExists(existing.publicKey, projectId)) {
+    return c.json({ error: { message: "Project API key not found" } }, 404);
+  }
+
+  await db.delete(apiKey).where(and(eq(apiKey.id, id), eq(apiKey.projectId, projectId)));
 
   await db.insert(auditLog).values({
     id: generateId(),
