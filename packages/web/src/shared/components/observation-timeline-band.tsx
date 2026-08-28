@@ -5,6 +5,15 @@
  */
 import { useState } from "react";
 import { LevelBadge, ObservationTypeIcon } from "@/shared/components/observation-badges";
+import type { BandSegment, TypeLaneGroup } from "@/shared/components/observation-timeline-layout";
+
+export type { BandSegment, TypeLaneGroup } from "@/shared/components/observation-timeline-layout";
+export {
+  layoutLanes,
+  layoutTypeLanes,
+  TYPE_ORDER,
+} from "@/shared/components/observation-timeline-layout";
+
 import { formatDuration, formatMs, formatTokens } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
@@ -34,9 +43,7 @@ const Z_CLAMP = 2.5; // ±2.5σ ≈ 98.8% of a normal distribution
 export type DurationOpacity = (ms: number) => number;
 
 export function buildDurationOpacity(durations: number[]): DurationOpacity {
-  const xs = durations
-    .filter((d) => Number.isFinite(d) && d > 0)
-    .map((d) => Math.log10(d + 1));
+  const xs = durations.filter((d) => Number.isFinite(d) && d > 0).map((d) => Math.log10(d + 1));
   if (xs.length < 3) return () => OPACITY_FLAT; // not enough signal to rank
   xs.sort((a, b) => a - b);
   const median = xs[Math.floor(xs.length / 2)];
@@ -80,111 +87,6 @@ export const TRACE_COLORS = [
  *  observations are rendered in a separate sub-band, not the main track. */
 export function isSubagentObservation(o: Observation): boolean {
   return o.type === "AGENT" && (o.name?.startsWith("subagent") ?? false);
-}
-
-export type BandSegment = {
-  id: string;
-  obs: Observation;
-  startMs: number; // offset from trace start
-  endMs: number; // offset; === totalMs while still running
-  running: boolean;
-  lane: number;
-  traceIndex?: number; // which source/trace this observation belongs to
-};
-
-/**
- * Greedy interval-graph coloring: observations sorted by start time take the
- * first lane whose current occupant has already finished (laneEnd <= start),
- * otherwise a new lane opens. Overlapping observations stack vertically, so
- * a single fixed-width band can show concurrent activity.
- */
-export function layoutLanes(
-  observations: Observation[],
-  t0: number,
-  totalMs: number,
-  traceOf?: Map<string, number>,
-): BandSegment[] {
-  const items = observations
-    .map((o) => {
-      const startMs = new Date(o.startTime).getTime() - t0;
-      const endMs = o.endTime ? new Date(o.endTime).getTime() - t0 : null;
-      // EVENTS and zero-duration observations are instants (a thin line), not
-      // running spans — a missing endTime on EVENT means "point in time".
-      const isInstant = o.type === "EVENT" || (endMs !== null && endMs <= startMs);
-      return {
-        id: o.id,
-        obs: o,
-        startMs,
-        endMs: isInstant ? startMs : (endMs ?? totalMs),
-        running: !isInstant && endMs === null,
-        lane: 0,
-        traceIndex: traceOf?.get(o.id),
-      };
-    })
-    .sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
-  const laneEnds: number[] = [];
-  for (const it of items) {
-    let lane = laneEnds.findIndex((end) => end <= it.startMs);
-    if (lane === -1) {
-      lane = laneEnds.length;
-      laneEnds.push(0);
-    }
-    laneEnds[lane] = it.endMs;
-    it.lane = lane;
-  }
-  return items;
-}
-
-// ---------------------------------------------------------------------------
-// Type tracks — one row per observation type (gen / tool / span / ...),
-// concurrent observations of the same type stack into lanes within the row.
-// ---------------------------------------------------------------------------
-
-export const TYPE_ORDER = [
-  "AGENT",
-  "CHAIN",
-  "GENERATION",
-  "TOOL",
-  "RETRIEVER",
-  "EVALUATOR",
-  "EMBEDDING",
-  "GUARDRAIL",
-  "SPAN",
-  "EVENT",
-];
-
-export type TypeLaneGroup = {
-  type: string;
-  segments: BandSegment[];
-  laneCount: number;
-};
-
-/** Group observations by type, each type becoming a track of its own. */
-export function layoutTypeLanes(
-  observations: Observation[],
-  t0: number,
-  totalMs: number,
-  traceOf?: Map<string, number>,
-): TypeLaneGroup[] {
-  const byType = new Map<string, Observation[]>();
-  for (const o of observations) {
-    const arr = byType.get(o.type) ?? [];
-    arr.push(o);
-    byType.set(o.type, arr);
-  }
-  const groups: TypeLaneGroup[] = [];
-  const pushGroup = (type: string) => {
-    const obs = byType.get(type);
-    if (!obs || obs.length === 0) return;
-    const segments = layoutLanes(obs, t0, totalMs, traceOf);
-    const laneCount = segments.reduce((m, s) => Math.max(m, s.lane + 1), 0);
-    groups.push({ type, segments, laneCount });
-  };
-  for (const t of TYPE_ORDER) pushGroup(t);
-  for (const t of byType.keys()) {
-    if (!TYPE_ORDER.includes(t)) pushGroup(t); // unknown types appended last
-  }
-  return groups;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,13 +205,14 @@ export function TimelineBand({
   })();
 
   // Light vertical gridlines matching the ruler ticks (time area only).
-  const gridBg = pxPerMs > 0
-    ? {
-        backgroundImage: `repeating-linear-gradient(to right, var(--line-default) 0 1px, transparent 1px ${
-          niceTickStep(TICK_TARGET_PX / pxPerMs) * pxPerMs
-        }px)`,
-      }
-    : undefined;
+  const gridBg =
+    pxPerMs > 0
+      ? {
+          backgroundImage: `repeating-linear-gradient(to right, var(--line-default) 0 1px, transparent 1px ${
+            niceTickStep(TICK_TARGET_PX / pxPerMs) * pxPerMs
+          }px)`,
+        }
+      : undefined;
 
   return (
     <div className="relative" style={{ width, height: totalHeight }}>
@@ -328,7 +231,10 @@ export function TimelineBand({
             style={{ width: LABEL_W }}
           >
             <span
-              className={cn("h-2 w-2 shrink-0 rounded-[3px]", BAR_COLORS[g.type] ?? BAR_COLOR_FALLBACK)}
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-[3px]",
+                BAR_COLORS[g.type] ?? BAR_COLOR_FALLBACK,
+              )}
             />
             <span className="truncate text-[10px] font-semibold uppercase text-fg-secondary">
               {g.type}
@@ -449,7 +355,10 @@ function HoverCard({
   const tokenText = obs.totalTokens > 0 ? formatTokens(obs.totalTokens) : null;
   const trace =
     traceNames && seg.traceIndex !== undefined && traceNames[seg.traceIndex]
-      ? { name: traceNames[seg.traceIndex], color: TRACE_COLORS[seg.traceIndex % TRACE_COLORS.length] }
+      ? {
+          name: traceNames[seg.traceIndex],
+          color: TRACE_COLORS[seg.traceIndex % TRACE_COLORS.length],
+        }
       : null;
   // Near the top of the scroll area an upward card would be clipped under the
   // sticky header — flip it below the block instead.
@@ -460,18 +369,21 @@ function HoverCard({
         "pointer-events-none absolute z-50 w-56 rounded-md border border-line bg-popover p-2 text-xs shadow-lg",
         flipDown ? "translate-y-0" : "-translate-y-full",
       )}
-      style={{ left: Math.min(Math.max(left + 8, 8), width - 232), top: flipDown ? top + LANE_H + 6 : top - 6 }}
+      style={{
+        left: Math.min(Math.max(left + 8, 8), width - 232),
+        top: flipDown ? top + LANE_H + 6 : top - 6,
+      }}
     >
       <div className="flex items-center gap-1.5">
         <ObservationTypeIcon type={obs.type} />
-        <span className="truncate font-medium text-fg-primary">
-          {obs.name ?? "(unnamed)"}
-        </span>
+        <span className="truncate font-medium text-fg-primary">{obs.name ?? "(unnamed)"}</span>
       </div>
       {trace && (
         <div className="mt-1 flex items-center gap-1.5 text-[11px] text-fg-secondary">
           <span className={cn("h-2 w-2 shrink-0 rounded-full", trace.color)} />
-          <span className="truncate">Turn {seg.traceIndex! + 1} · {trace.name}</span>
+          <span className="truncate">
+            Turn {seg.traceIndex! + 1} · {trace.name}
+          </span>
         </div>
       )}
       <div className="tnum mt-1 flex justify-between font-mono text-[11px] text-fg-secondary">

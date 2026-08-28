@@ -7,10 +7,7 @@ import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/compon
 import { Card, CardContent } from "@/shared/components/ui/card";
 import { Input } from "@/shared/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
-import {
-  useGwErrorLogsQuery,
-  useGwRequestLogsQuery,
-} from "@/shared/hooks/gateway-queries";
+import { useGwErrorLogsQuery, useGwRequestLogsQuery } from "@/shared/hooks/gateway-queries";
 import type { RequestLog } from "@/shared/lib/gateway-api";
 import { cn } from "@/shared/lib/utils";
 
@@ -39,11 +36,7 @@ function RequestLogRow({ log }: { log: RequestLog }) {
       >
         <td className="px-4 py-2.5 text-xs text-fg-tertiary">
           <span className="mr-1 inline-block align-middle">
-            {expanded ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
-            )}
+            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           </span>
           {new Date(log.startTime).toLocaleString()}
         </td>

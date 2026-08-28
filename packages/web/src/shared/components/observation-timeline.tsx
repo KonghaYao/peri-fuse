@@ -10,23 +10,22 @@
  */
 import { ChartNoAxesCombined, ChevronRight, Gauge, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ObservationDetail } from "@/shared/components/observation-detail";
 import { ObservationTypeIcon } from "@/shared/components/observation-badges";
+import { ObservationDetail } from "@/shared/components/observation-detail";
 import {
-  buildDurationOpacity,
-  BandBlock,
-  BandSegment,
   BAR_COLOR_FALLBACK,
   BAR_COLORS,
+  BandBlock,
+  buildDurationOpacity,
   DurationOpacity,
   formatClock,
   isSubagentObservation,
   LABEL_W,
   LANE_H,
-  layoutTypeLanes,
   Ruler,
   TimelineBand,
 } from "@/shared/components/observation-timeline-band";
+import { type BandSegment, layoutTypeLanes } from "@/shared/components/observation-timeline-layout";
 import { isNoiseObservation } from "@/shared/components/observation-tree";
 import { Button } from "@/shared/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/shared/components/ui/dialog";
@@ -132,9 +131,7 @@ function TimelinePanel({
   const visibleObs = useMemo(
     () => [
       ...observations,
-      ...[...subagentTrees.values()].flatMap((kids) =>
-        filterBandObservations(kids, omitNoise),
-      ),
+      ...[...subagentTrees.values()].flatMap((kids) => filterBandObservations(kids, omitNoise)),
     ],
     [observations, subagentTrees, omitNoise],
   );
@@ -182,9 +179,7 @@ function TimelinePanel({
           <ChartNoAxesCombined className="h-4 w-4 shrink-0 text-brand" />
           <DialogTitle className="text-[15px]">Timeline</DialogTitle>
           <span className="truncate text-sm text-fg-secondary">
-            {sources.length === 1
-              ? sources[0].name
-              : `${sources.length} traces in session`}
+            {sources.length === 1 ? sources[0].name : `${sources.length} traces in session`}
           </span>
         </div>
 
@@ -330,7 +325,11 @@ export function ObservationTimelineDialog({
     }
     if (trace) {
       return [
-        { name: trace.name ?? "(unnamed trace)", observations: trace.observations, scores: trace.scores },
+        {
+          name: trace.name ?? "(unnamed trace)",
+          observations: trace.observations,
+          scores: trace.scores,
+        },
       ];
     }
     return [];
@@ -341,7 +340,11 @@ export function ObservationTimelineDialog({
         hideClose
         className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0"
       >
-        <TimelinePanel sources={sources} onClose={() => onOpenChange(false)} omitNoise={omitNoise} />
+        <TimelinePanel
+          sources={sources}
+          onClose={() => onOpenChange(false)}
+          omitNoise={omitNoise}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -354,9 +357,7 @@ export function ObservationTimelineDialog({
  */
 function filterBandObservations(obsList: Observation[], omitNoise: boolean): Observation[] {
   if (!omitNoise) return obsList;
-  return obsList.filter(
-    (o) => !isNoiseObservation(o) && !(o.name ?? "").startsWith("tool-batch"),
-  );
+  return obsList.filter((o) => !isNoiseObservation(o) && !(o.name ?? "").startsWith("tool-batch"));
 }
 
 /**

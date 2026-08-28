@@ -30,7 +30,7 @@ export type TreeNode = {
  */
 export function isNoiseObservation(o: Observation): boolean {
   if (o.level === "ERROR") return false;
-  return (o.name?.startsWith("stage-") ?? false);
+  return o.name?.startsWith("stage-") ?? false;
 }
 
 /**

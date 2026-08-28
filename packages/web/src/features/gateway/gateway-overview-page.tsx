@@ -6,10 +6,7 @@ import { Link } from "react-router-dom";
 import { StatusBadge } from "@/features/gateway/components/status-badge";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
-import {
-  useGwProvidersQuery,
-  useGwUsageSummaryQuery,
-} from "@/shared/hooks/gateway-queries";
+import { useGwProvidersQuery, useGwUsageSummaryQuery } from "@/shared/hooks/gateway-queries";
 
 function last7Days() {
   const end = new Date();
@@ -107,15 +104,14 @@ function OverviewContent() {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-fg-primary">
-                        {p.name}
-                      </span>
+                      <span className="truncate text-sm font-medium text-fg-primary">{p.name}</span>
                       <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-fg-tertiary">
                         {p.type}
                       </span>
                     </div>
                     <p className="mt-0.5 truncate text-xs text-fg-tertiary">
-                      {p.baseUrl} · {p.deploymentCount} deployment{p.deploymentCount === 1 ? "" : "s"}
+                      {p.baseUrl} · {p.deploymentCount} deployment
+                      {p.deploymentCount === 1 ? "" : "s"}
                     </p>
                   </div>
                   <StatusBadge status={p.isEnabled ? p.status : "disabled"} />
