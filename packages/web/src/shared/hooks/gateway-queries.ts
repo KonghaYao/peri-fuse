@@ -69,7 +69,11 @@ export function useGwDeleteProviderMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: gwDeleteProvider,
-    onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.providers }),
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: gwQueryKeys.providers }),
+        qc.invalidateQueries({ queryKey: gwQueryKeys.models }),
+      ]),
   });
 }
 
