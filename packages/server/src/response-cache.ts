@@ -1,196 +1,165 @@
-/**
- * Bounded TTL response cache for read-only public API endpoints.
- *
- * The telemetry store is a single synchronous better-sqlite3 handle, so every
- * uncached aggregate query blocks the whole event loop. Read endpoints are
- * dominated by repeat traffic (UI polling, refresh, multiple viewers of the
- * same dashboard), which makes a few seconds of reuse extremely effective.
- *
- * Design constraints honored here:
- *  - Project isolation: the cache key always includes the authenticated
- *    projectId; different API keys never share entries.
- *  - Bounded memory: both entry count and total body bytes are capped;
- *    insertion-ordered eviction keeps RSS predictable ("low memory" by design).
- *  - Singleflight: when an entry expires under concurrency, only ONE request
- *    recomputes; all others await the same promise instead of stampeding the
- *    database (thundering-herd protection).
- *  - Correctness: only 200 responses are cached; TTLs are deliberately short
- *    (seconds) so numbers never feel stale.
- *
- * Mount AFTER authMiddleware so the verified scope is available:
- *   app.get("/api/public/x", authMiddleware, responseCache(2_000), handler);
- */
-
+/** Project-scoped response cache with bounded bodies and cancellable singleflight. */
+import { throwIfTelemetryQueryFailed } from "@peri-fuse/shared/src/server/adapters";
 import type { MiddlewareHandler } from "hono";
 import type { LiteServerEnv } from "./auth";
+import { bufferSmallResponse } from "./bounded-response";
 
 const MAX_ENTRIES = 1024;
-const MAX_BYTES = 32 * 1024 * 1024; // 32 MiB total body cap
-
-type CacheEntry = {
-  expiresAt: number;
-  body: string;
-  contentType: string;
+const MAX_BYTES = 32 * 1024 * 1024;
+const MAX_ENTRY_BYTES = 1024 * 1024;
+const MAX_INFLIGHT = 128;
+const MAX_WAITERS = 64;
+type SharedResponse = { body: Uint8Array<ArrayBuffer>; status: number; headers: Headers };
+type CacheEntry = SharedResponse & { expiresAt: number };
+type Pending = {
+  finish: (value: SharedResponse | null) => void;
+  subscribers: Set<(value: SharedResponse | null) => void>;
 };
-
-// Insertion-ordered map doubles as a coarse LRU: hits are re-inserted at the
-// tail, eviction always takes from the head.
 const cache = new Map<string, CacheEntry>();
+const inflight = new Map<string, Pending>();
 let totalBytes = 0;
-
-// In-flight recomputations keyed like cache entries (singleflight).
-const inflight = new Map<string, Promise<Response | null>>();
+let expiryTimer: ReturnType<typeof setTimeout> | undefined;
 
 function dropEntry(key: string): void {
   const entry = cache.get(key);
-  if (entry) {
-    totalBytes -= entry.body.length;
-    cache.delete(key);
-  }
+  if (!entry) return;
+  totalBytes -= entry.body.byteLength;
+  cache.delete(key);
 }
-
-/** Evict oldest entries until a new body of `bytes` fits both caps. */
+function scheduleExpiry(): void {
+  clearTimeout(expiryTimer);
+  expiryTimer = undefined;
+  if (cache.size === 0) return;
+  let earliest = Infinity;
+  for (const entry of cache.values()) earliest = Math.min(earliest, entry.expiresAt);
+  expiryTimer = setTimeout(
+    () => {
+      for (const [key, entry] of cache) if (entry.expiresAt <= Date.now()) dropEntry(key);
+      scheduleExpiry();
+    },
+    Math.max(1, earliest - Date.now()),
+  );
+  expiryTimer.unref();
+}
 function makeRoom(bytes: number): void {
   while (cache.size > 0 && (cache.size >= MAX_ENTRIES || totalBytes + bytes > MAX_BYTES)) {
     const oldest = cache.keys().next().value;
-    if (oldest === undefined) break;
-    dropEntry(oldest);
+    if (oldest !== undefined) dropEntry(oldest);
   }
 }
-
-function cacheKey(projectId: string, reqUrl: string): string {
-  const url = new URL(reqUrl);
-  return `${projectId}|${url.pathname}|${url.search}`;
+function join(pending: Pending, signal: AbortSignal, timeoutMs: number) {
+  return new Promise<SharedResponse | null>((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      pending.subscribers.delete(deliver);
+    };
+    const deliver = (value: SharedResponse | null) => {
+      cleanup();
+      resolve(value);
+    };
+    const abort = () => {
+      cleanup();
+      reject(new Error("Request cancelled"));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Response wait timed out"));
+    }, timeoutMs);
+    timer.unref();
+    signal.addEventListener("abort", abort, { once: true });
+    pending.subscribers.add(deliver);
+    if (signal.aborted) abort();
+  });
 }
-
-/**
- * Response-caching middleware. `ttlMs` is the lifetime of a cached response;
- * pass a function of the request context to vary it (e.g. longer TTLs for
- * historical windows whose data barely changes). Must run after
- * authMiddleware (needs `auth.scope.projectId`).
- */
+/** Cache only small successful GETs; every owner outcome settles its waiters. */
 export function responseCache(
   ttlMs: number | ((c: Parameters<MiddlewareHandler<LiteServerEnv>>[0]) => number),
+  options: { waitTimeoutMs?: number } = {},
 ): MiddlewareHandler<LiteServerEnv> {
   return async (c, next) => {
-    if (c.req.method !== "GET") return next();
     const projectId = c.get("auth")?.scope?.projectId;
-    if (!projectId) return next();
-
-    const key = cacheKey(projectId, c.req.url);
-    const now = Date.now();
-
+    if (c.req.method !== "GET" || !projectId) return next();
+    const url = new URL(c.req.url);
+    const key = `${projectId}|${url.pathname}|${url.search}`;
     const hit = cache.get(key);
-    if (hit) {
-      if (now < hit.expiresAt) {
-        // Refresh LRU position.
-        cache.delete(key);
-        cache.set(key, hit);
-        c.header("X-Cache", "HIT");
-        return c.body(hit.body, 200, { "Content-Type": hit.contentType });
-      }
-      dropEntry(key);
+    if (hit && hit.expiresAt > Date.now()) {
+      cache.delete(key);
+      cache.set(key, hit);
+      const headers = new Headers(hit.headers);
+      headers.set("X-Cache", "HIT");
+      return new Response(hit.body, { status: hit.status, headers });
     }
-
-    // Singleflight: join an ongoing recompute instead of starting another.
-    let pending = inflight.get(key);
-    let owner = false;
-    if (!pending) {
-      owner = true;
-      let finish: (v: Response | null) => void = () => {};
-      pending = new Promise<Response | null>((resolve) => {
-        finish = resolve;
-      });
-      (pending as Promise<Response | null> & { finish?: typeof finish }).finish = finish;
-      inflight.set(key, pending);
-    }
-
-    if (!owner) {
-      const shared = await pending;
-      if (shared) {
-        c.header("X-Cache", "HIT");
-        // Clone so each waiter gets an unconsumed body. arrayBuffer (not text)
-        // so oversized bodies don't hit the V8 string cap.
-        const buf = await shared.clone().arrayBuffer();
-        return c.body(buf, 200, {
-          "Content-Type": shared.headers.get("content-type") ?? "application/json",
-        });
+    if (hit) dropEntry(key);
+    const existing = inflight.get(key);
+    if (existing) {
+      if (existing.subscribers.size >= MAX_WAITERS)
+        return c.json({ message: "Too many waiting requests" }, 503);
+      try {
+        const shared = await join(existing, c.req.raw.signal, options.waitTimeoutMs ?? 30_000);
+        if (shared) {
+          const headers = new Headers(shared.headers);
+          headers.set("X-Cache", "HIT");
+          return new Response(shared.body, { status: shared.status, headers });
+        }
+      } catch {
+        return c.json({ message: "Response wait cancelled or timed out" }, 408);
       }
-      // The owner failed; fall through and compute this request normally.
       return next();
     }
-
+    if (inflight.size >= MAX_INFLIGHT) return c.json({ message: "Too many active requests" }, 503);
+    const pending: Pending = {
+      subscribers: new Set(),
+      finish(value) {
+        for (const deliver of this.subscribers) deliver(value);
+        this.subscribers.clear();
+      },
+    };
+    inflight.set(key, pending);
     try {
       await next();
-      const res = c.res;
-      if (res.status !== 200) return;
-
-      // Oversized bodies are served straight through: decoding them into a
-      // string hits the V8 string cap (text() throws past ~512 MiB), and a
-      // body beyond MAX_BYTES would only evict the whole cache anyway.
-      const declared = Number(res.headers.get("content-length") ?? 0);
-      if (declared > MAX_BYTES) {
+      // Legacy repositories may return [] after catching an adapter limit error.
+      // Reject before sharing or caching that fallback as a successful response.
+      throwIfTelemetryQueryFailed();
+      const response = c.res;
+      if (!response.body) return;
+      if (response.headers.get("content-type")?.includes("text/event-stream")) {
         c.header("X-Cache", "SKIP");
-        const finish = (
-          pending as Promise<Response | null> & {
-            finish?: (v: Response | null) => void;
-          }
-        ).finish;
-        finish?.(res.clone());
         return;
       }
-
-      const buf = await res.arrayBuffer();
-      const contentType = res.headers.get("content-type") ?? "application/json";
-      if (buf.byteLength > MAX_BYTES) {
-        c.res = new Response(buf, { status: 200, headers: res.headers });
+      const result = await bufferSmallResponse(response, MAX_ENTRY_BYTES, c.req.raw.signal);
+      c.res = result.response;
+      if (!result.body) {
         c.header("X-Cache", "SKIP");
-        const finish = (
-          pending as Promise<Response | null> & {
-            finish?: (v: Response | null) => void;
-          }
-        ).finish;
-        finish?.(new Response(buf, { status: 200, headers: { "Content-Type": contentType } }));
         return;
       }
-
-      const body = new TextDecoder().decode(buf);
-      // The body stream was consumed above — hand the client an equivalent one.
-      c.res = new Response(body, { status: 200, headers: res.headers });
-      c.header("X-Cache", "MISS");
-
-      makeRoom(body.length);
-      const ttl = typeof ttlMs === "function" ? ttlMs(c) : ttlMs;
-      cache.set(key, { expiresAt: Date.now() + ttl, body, contentType });
-      totalBytes += body.length;
-
-      const finish = (
-        pending as Promise<Response | null> & {
-          finish?: (v: Response | null) => void;
-        }
-      ).finish;
-      finish?.(new Response(body, { status: 200, headers: { "Content-Type": contentType } }));
-    } catch (error) {
-      const finish = (
-        pending as Promise<Response | null> & {
-          finish?: (v: Response | null) => void;
-        }
-      ).finish;
-      finish?.(null);
-      throw error;
+      const shared: SharedResponse = {
+        body: result.body,
+        status: response.status,
+        headers: new Headers(response.headers),
+      };
+      if (response.status === 200) {
+        makeRoom(shared.body.byteLength);
+        const ttl = typeof ttlMs === "function" ? ttlMs(c) : ttlMs;
+        cache.set(key, { ...shared, expiresAt: Date.now() + ttl });
+        totalBytes += shared.body.byteLength;
+        scheduleExpiry();
+        c.header("X-Cache", "MISS");
+      }
+      pending.finish(shared);
     } finally {
+      pending.finish(null);
       inflight.delete(key);
     }
   };
 }
-
-/** Test/ops hook: current cache footprint. */
-export function responseCacheStats(): { entries: number; bytes: number } {
-  return { entries: cache.size, bytes: totalBytes };
+/** Actual retained payload bytes; headers/key overhead is bounded by entry count. */
+export function responseCacheStats() {
+  return { entries: cache.size, bytes: totalBytes, inflight: inflight.size };
 }
-
-/** Test/ops hook: clear all cached responses. */
 export function clearResponseCache(): void {
   cache.clear();
   totalBytes = 0;
+  clearTimeout(expiryTimer);
+  expiryTimer = undefined;
 }

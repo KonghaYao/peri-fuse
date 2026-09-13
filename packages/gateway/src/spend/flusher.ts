@@ -1,13 +1,11 @@
 /**
- * SpendFlusher — batch write queue for spend logs (inspired by LiteLLM DBSpendUpdateWriter).
- * Queues spend events in memory and flushes to SQLite periodically.
+ * Durable spend recording. The historical flusher API is retained for embedders,
+ * but acceptance now commits SQLite synchronously instead of retaining events.
  */
-import { and, eq, sql } from "drizzle-orm";
-import { apiKey, dailySpend, spendLog } from "../db/schema.js";
 import { getDb } from "../db.js";
 import { gatewayEnv } from "../env.js";
 import { slowLogWriter } from "../slow-log/writer.js";
-import { generateId } from "../utils/id.js";
+import { recordSpend } from "./record.js";
 
 export interface SpendEvent {
   projectId: string;
@@ -39,52 +37,64 @@ export interface SpendEvent {
   stream?: boolean;
 }
 
-interface DailySpendIncrement {
-  projectId: string;
-  apiKey: string;
-  date: string;
-  model: string;
-  modelGroup: string | null;
-  provider: string;
-  promptTokens: number;
-  completionTokens: number;
-  spend: number;
-  apiRequests: number;
-  successfulRequests: number;
-  failedRequests: number;
+export class SpendWriteError extends Error {
+  readonly statusCode = 503;
+
+  constructor(cause: unknown) {
+    super("Spend accounting is temporarily unavailable", { cause });
+    this.name = "SpendWriteError";
+  }
 }
 
-class SpendFlusher {
-  private spendLogQueue: SpendEvent[] = [];
-  private dailySpendQueue: DailySpendIncrement[] = [];
-  private keySpendQueue = new Map<string, number>(); // publicKey -> spend increment
-  private flushTimer: ReturnType<typeof setInterval> | null = null;
-  private dailyFlushTimer: ReturnType<typeof setInterval> | null = null;
+interface SpendOptions {
+  logRequests?: boolean;
+  logMaxBodySize?: number;
+}
 
+export class SpendFlusher {
+  private accepted = 0;
+  private failures = 0;
+
+  constructor(private readonly options: SpendOptions = {}) {}
+
+  /** Compatibility lifecycle: durable writes need no background timers. */
   start(): void {
-    this.flushTimer = setInterval(() => {
-      this.flush().catch((err) => console.error("[spend-flusher] flush error:", err));
-    }, gatewayEnv.flushIntervalMs);
-
-    this.dailyFlushTimer = setInterval(() => {
-      this.flushDaily().catch((err) => console.error("[spend-flusher] daily flush error:", err));
-    }, gatewayEnv.dailyFlushIntervalMs);
-
-    // Allow process to exit
-    if (this.flushTimer.unref) this.flushTimer.unref();
-    if (this.dailyFlushTimer.unref) this.dailyFlushTimer.unref();
+    // Intentionally idempotent; there is no retained queue to schedule.
   }
 
   stop(): void {
-    if (this.flushTimer) clearInterval(this.flushTimer);
-    if (this.dailyFlushTimer) clearInterval(this.dailyFlushTimer);
+    // Every accepted event has already committed.
+  }
+
+  /** Fail admission before contacting an upstream if SQLite cannot accept a writer. */
+  assertWritable(): void {
+    try {
+      getDb().transaction(() => undefined, { behavior: "immediate" });
+    } catch (cause) {
+      this.failures++;
+      console.error("[spend-flusher] Accounting admission failed:", cause);
+      throw new SpendWriteError(cause);
+    }
   }
 
   /**
-   * Enqueue a spend event for batch writing.
+   * Return only after the event and its accounting increments commit together.
+   * Rejected events are never queued or partially counted; the caller must surface
+   * the error, including when an upstream response has already started streaming.
    */
   enqueue(event: SpendEvent): void {
-    // Slow request log (best-effort, non-blocking)
+    try {
+      recordSpend(getDb(), event, {
+        logRequests: this.options.logRequests ?? gatewayEnv.logRequests,
+        logMaxBodySize: this.options.logMaxBodySize ?? gatewayEnv.logMaxBodySize,
+      });
+      this.accepted++;
+    } catch (cause) {
+      this.failures++;
+      console.error("[spend-flusher] Accounting commit failed:", cause);
+      throw new SpendWriteError(cause);
+    }
+
     if (gatewayEnv.slowLogEnabled) {
       slowLogWriter.writeIfSlow({
         projectId: event.projectId,
@@ -108,184 +118,17 @@ class SpendFlusher {
         traceId: event.traceId,
       });
     }
-
-    this.spendLogQueue.push(event);
-
-    // Also queue daily aggregation
-    const date = event.startTime.toISOString().slice(0, 10);
-    this.dailySpendQueue.push({
-      projectId: event.projectId,
-      apiKey: event.apiKey,
-      date,
-      model: event.model || "",
-      modelGroup: event.modelGroup || null,
-      provider: event.provider || "",
-      promptTokens: event.promptTokens,
-      completionTokens: event.completionTokens,
-      spend: event.spend,
-      apiRequests: 1,
-      successfulRequests: event.status === "success" ? 1 : 0,
-      failedRequests: event.status === "success" ? 0 : 1,
-    });
-
-    // Queue key spend increment
-    if (event.apiKey) {
-      const current = this.keySpendQueue.get(event.apiKey) ?? 0;
-      this.keySpendQueue.set(event.apiKey, current + event.spend);
-    }
   }
 
-  /**
-   * Flush spend logs to database.
-   */
-  async flush(): Promise<void> {
-    if (this.spendLogQueue.length === 0) return;
-
-    const batch = this.spendLogQueue.splice(0, this.spendLogQueue.length);
-    const db = getDb();
-
-    try {
-      await db.insert(spendLog).values(
-        batch.map((e) => ({
-          id: generateId(),
-          projectId: e.projectId,
-          callType: e.callType,
-          apiKey: e.apiKey,
-          spend: e.spend,
-          totalTokens: e.totalTokens,
-          promptTokens: e.promptTokens,
-          completionTokens: e.completionTokens,
-          startTime: e.startTime.toISOString(),
-          endTime: e.endTime.toISOString(),
-          completionStartTime: e.completionStartTime?.toISOString(),
-          requestDurationMs: e.requestDurationMs,
-          model: e.model,
-          modelId: e.modelId,
-          modelGroup: e.modelGroup,
-          provider: e.provider,
-          apiBase: e.apiBase,
-          protocol: e.protocol,
-          user: e.user,
-          metadata: e.metadata ?? "{}",
-          requestTags: e.requestTags ?? "[]",
-          sessionId: e.sessionId,
-          status: e.status,
-          messages: e.messages,
-          response: e.response,
-          errorMessage: e.errorMessage,
-          traceId: e.traceId,
-        })),
-      );
-    } catch (err) {
-      console.error(`[spend-flusher] Failed to write ${batch.length} spend logs:`, err);
-      // Re-queue failed items (at the front)
-      this.spendLogQueue.unshift(...batch);
-    }
-
-    // Flush key spend increments
-    await this.flushKeySpend();
+  /** Counters are process-local; no event payloads are retained for diagnostics. */
+  stats(): { accepted: number; failures: number; pending: number } {
+    return { accepted: this.accepted, failures: this.failures, pending: 0 };
   }
 
-  /**
-   * Flush daily spend aggregations.
-   */
-  async flushDaily(): Promise<void> {
-    if (this.dailySpendQueue.length === 0) return;
-
-    const batch = this.dailySpendQueue.splice(0, this.dailySpendQueue.length);
-    const db = getDb();
-
-    // Aggregate by unique key
-    const aggregated = new Map<string, DailySpendIncrement>();
-    for (const item of batch) {
-      const key = `${item.projectId}|${item.apiKey}|${item.date}|${item.model}|${item.provider}`;
-      const existing = aggregated.get(key);
-      if (existing) {
-        existing.promptTokens += item.promptTokens;
-        existing.completionTokens += item.completionTokens;
-        existing.spend += item.spend;
-        existing.apiRequests += item.apiRequests;
-        existing.successfulRequests += item.successfulRequests;
-        existing.failedRequests += item.failedRequests;
-      } else {
-        aggregated.set(key, { ...item });
-      }
-    }
-
-    for (const item of aggregated.values()) {
-      try {
-        const compositeWhere = and(
-          eq(dailySpend.apiKey, item.apiKey),
-          eq(dailySpend.date, item.date),
-          eq(dailySpend.model, item.model),
-          eq(dailySpend.provider, item.provider),
-        );
-
-        const existing = await db.query.dailySpend.findFirst({ where: compositeWhere });
-
-        if (existing) {
-          const setClause: Record<string, unknown> = {
-            promptTokens: sql`${dailySpend.promptTokens} + ${item.promptTokens}`,
-            completionTokens: sql`${dailySpend.completionTokens} + ${item.completionTokens}`,
-            spend: sql`${dailySpend.spend} + ${item.spend}`,
-            apiRequests: sql`${dailySpend.apiRequests} + ${item.apiRequests}`,
-            successfulRequests: sql`${dailySpend.successfulRequests} + ${item.successfulRequests}`,
-            failedRequests: sql`${dailySpend.failedRequests} + ${item.failedRequests}`,
-          };
-          await db.update(dailySpend).set(setClause).where(compositeWhere);
-        } else {
-          await db.insert(dailySpend).values({
-            id: generateId(),
-            projectId: item.projectId,
-            apiKey: item.apiKey,
-            date: item.date,
-            model: item.model,
-            modelGroup: item.modelGroup,
-            provider: item.provider,
-            promptTokens: item.promptTokens,
-            completionTokens: item.completionTokens,
-            spend: item.spend,
-            apiRequests: item.apiRequests,
-            successfulRequests: item.successfulRequests,
-            failedRequests: item.failedRequests,
-          });
-        }
-      } catch (err) {
-        console.error("[spend-flusher] Daily upsert error:", err);
-      }
-    }
-  }
-
-  private async flushKeySpend(): Promise<void> {
-    if (this.keySpendQueue.size === 0) return;
-
-    const entries = [...this.keySpendQueue.entries()];
-    this.keySpendQueue.clear();
-
-    const db = getDb();
-    const nowIso = new Date().toISOString();
-    for (const [publicKey, spend] of entries) {
-      try {
-        await db
-          .update(apiKey)
-          .set({
-            spend: sql`${apiKey.spend} + ${spend}`,
-            lastActive: nowIso,
-          })
-          .where(eq(apiKey.publicKey, publicKey));
-      } catch (err) {
-        console.error("[spend-flusher] Key spend update error:", err);
-      }
-    }
-  }
-
-  /**
-   * Flush all remaining data (called on shutdown).
-   */
-  async flushAll(): Promise<void> {
-    await this.flush();
-    await this.flushDaily();
-  }
+  /** Compatibility methods: all accepted writes are already durable. */
+  async flush(): Promise<void> {}
+  async flushDaily(): Promise<void> {}
+  async flushAll(): Promise<void> {}
 }
 
 export const spendFlusher = new SpendFlusher();

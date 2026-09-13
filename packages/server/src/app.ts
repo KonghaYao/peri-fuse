@@ -8,10 +8,12 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { createGatewayProxyRouter } from "@peri/gateway/proxy-router";
 import { BaseError, LangfuseNotFoundError } from "@peri-fuse/shared";
 import { logger } from "@peri-fuse/shared/src/server";
+import { TelemetryQueryError } from "@peri-fuse/shared/src/server/adapters";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { LiteServerEnv } from "./auth";
 import { largeResponseLogger } from "./large-response-logger";
+import { requestLimits } from "./request-limits";
 import dashboardRoutes from "./routes/dashboard";
 import datasetItemsRoutes from "./routes/dataset-items";
 import datasetsRoutes from "./routes/datasets";
@@ -39,6 +41,9 @@ import usersRoutes from "./routes/users";
 export function createApp(): Hono<LiteServerEnv> {
   const app = new Hono<LiteServerEnv>();
 
+  const limits = requestLimits();
+  app.use("/api/*", limits);
+  app.use("/v1/*", limits);
   app.use("/api/*", largeResponseLogger());
 
   // Mirror web's permissive CORS (origin: true, credentials: false) so SDKs
@@ -65,6 +70,12 @@ export function createApp(): Hono<LiteServerEnv> {
   // Global error handler: map BaseError subclasses (incl. 404) to their
   // HTTP codes; everything else becomes a 500.
   app.onError((err, c) => {
+    if (err instanceof TelemetryQueryError) {
+      const status = err.code === "RESULT_LIMIT" ? 413 : 503;
+      if (status === 503) c.header("Retry-After", "1");
+      return c.json({ message: err.message }, status);
+    }
+    if (c.req.raw.signal.aborted) return c.json({ message: "Request cancelled" }, 408);
     if (err instanceof LangfuseNotFoundError) {
       return c.json({ message: err.message }, 404);
     }

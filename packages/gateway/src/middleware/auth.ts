@@ -17,6 +17,7 @@ import type { GatewayEnv } from "../app.js";
 import { getSharedApiKeyDb } from "../auth/shared-api-key-store.js";
 import { apiKey } from "../db/schema.js";
 import { getDb } from "../db.js";
+import { BoundedTtlMap } from "../utils/bounded-ttl-map.js";
 
 // ---------------------------------------------------------------------------
 // Hash utilities (same as @peri-fuse/shared/src/server/auth/apiKeys.ts)
@@ -40,8 +41,8 @@ interface CachedAuth {
   expiresAt: number;
 }
 
-const authCache = new Map<string, CachedAuth>();
 const AUTH_CACHE_TTL_MS = 30_000;
+const authCache = new BoundedTtlMap<CachedAuth>(4096, AUTH_CACHE_TTL_MS);
 const LEGACY_KEY_BATCH_SIZE = 25;
 let legacyBearerScanInProgress = false;
 
@@ -155,8 +156,15 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
   }
 
   // Check cache
-  const cached = authCache.get(secretKey);
+  const cacheKey = createHash("sha256").update(secretKey).digest("hex");
+  const cached = authCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
+    if (hintPublicKey && hintPublicKey !== cached.publicKey) {
+      return c.json(
+        { error: { message: "Invalid credentials", type: "authentication_error" } },
+        401,
+      );
+    }
     c.set("projectId", cached.projectId);
     c.set("orgId", cached.orgId);
     c.set("apiKeyId", cached.publicKey);
@@ -289,11 +297,17 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
   const resolvedPublicKey = apiKeyRow.public_key ?? apiKeyRow.publicKey;
 
   // Cache the auth result
-  authCache.set(secretKey, {
+  if (hintPublicKey && hintPublicKey !== resolvedPublicKey) {
+    return c.json({ error: { message: "Invalid credentials", type: "authentication_error" } }, 401);
+  }
+  authCache.set(cacheKey, {
     publicKey: resolvedPublicKey,
     projectId,
     orgId,
-    expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+    expiresAt: Math.min(
+      Date.now() + AUTH_CACHE_TTL_MS,
+      apiKeyRow.expires_at ? new Date(apiKeyRow.expires_at).getTime() : Infinity,
+    ),
   });
 
   // Look up gateway-specific config (rate limits, budget)

@@ -29,7 +29,6 @@ import {
   TRACE_METRICS_CACHED_TOKENS_SQL,
   TRACE_METRICS_GROSS_INPUT_TOKENS_SQL,
 } from "../adapters/sqlite-telemetry-adapter";
-import { logger } from "../logger";
 import { LATENCY_BUCKET_COUNT, latencyBucketCaseSql } from "./histogram";
 
 /** Generation latency in ms (NULL when either endpoint is missing). */
@@ -449,90 +448,9 @@ function parseNumberArray(raw: string): number[] {
   }
 }
 
+export {
+  backfillMissingDays,
+  refreshRecentDays,
+  startDailyStatsMaintenance,
+} from "./daily-stats-maintenance";
 export { dayStart, nextDayStart };
-
-/** Yield to the event loop so chunked maintenance never starves HTTP traffic. */
-const yieldLoop = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-/** Recompute today + yesterday for every project (late-arriving events). */
-export async function refreshRecentDays(): Promise<void> {
-  const db = getTelemetryDB();
-  const projects = await db.query<{ project_id: string }>({
-    query: "SELECT DISTINCT project_id FROM traces",
-    params: {},
-  });
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterdayDate = new Date(`${today}T00:00:00Z`);
-  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
-  const days = [today, yesterdayDate.toISOString().slice(0, 10)];
-  for (const p of projects) {
-    for (const day of days) {
-      try {
-        await recomputeDay(p.project_id, day);
-      } catch (error) {
-        logger.error("[daily-stats] refresh failed", error);
-      }
-    }
-  }
-}
-
-/**
- * One-time backfill: recompute every (project, day) present in the raw tables
- * but missing from daily_stats. Runs chunked so startup never blocks.
- */
-export async function backfillMissingDays(): Promise<number> {
-  const db = getTelemetryDB();
-  const [combos] = await Promise.all([
-    db.query<{ project_id: string; day: string }>({
-      query: `
-        SELECT DISTINCT project_id, date(start_time) AS day FROM observations
-        UNION
-        SELECT DISTINCT project_id, date(timestamp) AS day FROM traces
-        UNION
-        SELECT DISTINCT project_id, date(timestamp) AS day FROM scores
-      `,
-      params: {},
-    }),
-  ]);
-  const existing = await db.query<{ project_id: string; day: string }>({
-    query: "SELECT project_id, day FROM daily_stats",
-    params: {},
-  });
-  const have = new Set(existing.map((r) => `${r.project_id}|${r.day}`));
-  const missing = combos.filter((c) => !have.has(`${c.project_id}|${c.day}`));
-  if (missing.length > 0) {
-    logger.info(`[daily-stats] Backfilling ${missing.length} missing day(s)…`);
-  }
-  let done = 0;
-  for (const c of missing) {
-    try {
-      await recomputeDay(c.project_id, c.day);
-      done++;
-    } catch (error) {
-      logger.error(`[daily-stats] Backfill failed for ${c.project_id} ${c.day}`, error);
-    }
-    await yieldLoop();
-  }
-  if (done > 0) logger.info(`[daily-stats] Backfill complete (${done} day(s))`);
-  return done;
-}
-
-const REFRESH_INTERVAL_MS = 30_000;
-
-/**
- * Start maintenance: initial backfill + periodic refresh of recent days.
- * Returns a stop function (used for graceful shutdown / tests).
- */
-export function startDailyStatsMaintenance(intervalMs = REFRESH_INTERVAL_MS): () => void {
-  let stopped = false;
-  void backfillMissingDays().catch((e) => logger.error("[daily-stats] backfill error", e));
-  const timer = setInterval(() => {
-    if (stopped) return;
-    void refreshRecentDays().catch((e) => logger.error("[daily-stats] refresh error", e));
-  }, intervalMs);
-  timer.unref?.();
-  return () => {
-    stopped = true;
-    clearInterval(timer);
-  };
-}

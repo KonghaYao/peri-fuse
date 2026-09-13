@@ -1,9 +1,10 @@
 /**
  * Rate limiter hook — RPM/TPM sliding window checks.
  */
+
+import { SlidingWindowCounter } from "../utils/sliding-window.js";
 import type { CallResult, GatewayHook, HookContext } from "./types.js";
 import { HookRejectError } from "./types.js";
-import { SlidingWindowCounter } from "../utils/sliding-window.js";
 
 const rpmCounter = new SlidingWindowCounter();
 const tpmCounter = new SlidingWindowCounter();
@@ -18,7 +19,7 @@ export const rateLimiterHook: GatewayHook = {
     const rpmLimit = apiKey.rpmLimit;
 
     if (rpmLimit != null && rpmLimit > 0) {
-      const key = `rpm:${apiKey.id}`;
+      const key = JSON.stringify([ctx.projectId, "rpm", apiKey.id]);
       const allowed = rpmCounter.checkAndIncrement(key, rpmLimit, WINDOW_MS);
       if (!allowed) {
         const resetTime = rpmCounter.getResetTime(key, WINDOW_MS);
@@ -37,7 +38,7 @@ export const rateLimiterHook: GatewayHook = {
     const tpmLimit = apiKey.tpmLimit;
 
     if (tpmLimit != null && tpmLimit > 0) {
-      const key = `tpm:${apiKey.id}`;
+      const key = JSON.stringify([ctx.projectId, "tpm", apiKey.id]);
       tpmCounter.incrementBy(key, result.totalTokens, WINDOW_MS);
     }
   },

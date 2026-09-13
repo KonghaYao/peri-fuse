@@ -66,7 +66,7 @@ function toQueryString(params: Record<string, unknown>): string {
   return s ? `?${s}` : "";
 }
 
-async function request<T>(path: string): Promise<T> {
+async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
   const ctx = getProjectContext();
   if (!ctx) throw new ApiError(0, "No active project");
 
@@ -74,6 +74,7 @@ async function request<T>(path: string): Promise<T> {
   try {
     res = await fetch(path, {
       method: "GET",
+      signal,
       headers: {
         Authorization: basicAuthHeader(ctx.publicKey, ctx.secretKey),
         "Content-Type": "application/json",
@@ -260,9 +261,14 @@ export function listSessions(params: SessionListParams = {}): Promise<Paged<Sess
   return request<Paged<SessionRow>>(`/api/public/sessions${toQueryString({ ...params })}`);
 }
 
-export function getSession(sessionId: string): Promise<SessionDetail> {
+export function getSession(
+  sessionId: string,
+  page = 1,
+  signal?: AbortSignal,
+): Promise<SessionDetail> {
   return request<SessionDetail>(
-    `/api/public/sessions/${encodeURIComponent(sessionId)}?includeObservations=false&includeIo=false`,
+    `/api/public/sessions/${encodeURIComponent(sessionId)}?includeObservations=false&includeIo=false&page=${page}&limit=50`,
+    signal,
   );
 }
 

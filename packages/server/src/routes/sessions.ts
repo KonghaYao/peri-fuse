@@ -9,22 +9,18 @@
  * / `getSessionsWithMetrics` ClickHouse queries).
  */
 
-import { LangfuseNotFoundError } from "@peri-fuse/shared";
-import {
-  convertObservation,
-  liteGetObservationsForTraces,
-  logger,
-} from "@peri-fuse/shared/src/server";
+import { logger } from "@peri-fuse/shared/src/server";
 import { getTelemetryDB } from "@peri-fuse/shared/src/server/adapters";
 import { Hono } from "hono";
 import { z } from "zod";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 import { responseCache } from "../response-cache";
 import { toSqliteTime } from "../shaping/metrics-v2-filters";
-import { transformDbToApiObservation } from "../shaping/observations";
-import { aggregateTraceMetrics, parseJsonValue, toMs } from "../shaping/trace-metrics";
+
+import sessionDetailRoutes from "./session-detail";
 
 const app = new Hono<LiteServerEnv>();
+app.route("/", sessionDetailRoutes);
 
 const SESSION_LIST_LIMIT_DEFAULT = 50;
 const SESSION_LIST_LIMIT_MAX = 500;
@@ -46,16 +42,6 @@ const GetSessionsQuery = z.object({
   toTimestamp: z.string().datetime().optional(),
   // orderBy=column.asc|desc; column validated against an allowlist below.
   orderBy: z.string().optional(),
-});
-
-const booleanQuery = z
-  .enum(["true", "false"])
-  .optional()
-  .transform((value) => value !== "false");
-
-const GetSessionDetailQuery = z.object({
-  includeObservations: booleanQuery,
-  includeIo: booleanQuery,
 });
 
 // Allowlist of sortable columns -> SQL expression (aggregated alias in the
@@ -274,182 +260,6 @@ app.get("/api/public/sessions", authMiddleware, responseCache(2_000), async (c) 
     logger.error("[lite-server] sessions list query failed", error);
     throw error;
   }
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/public/sessions/:sessionId
-//
-// Session detail: header metrics plus the session's traces with per-trace
-// metrics (reusing the traces-metrics aggregation) and trace scores.
-// ---------------------------------------------------------------------------
-
-type SessionScoreRow = {
-  id: string;
-  trace_id: string;
-  observation_id: string | null;
-  name: string;
-  value: number | null;
-  string_value: string | null;
-  data_type: string;
-  comment: string | null;
-  source: string;
-};
-
-app.get("/api/public/sessions/:sessionId", authMiddleware, responseCache(2_000), async (c) => {
-  const auth = c.get("auth");
-  const projectId = auth.scope.projectId;
-  const sessionId = c.req.param("sessionId");
-  const parsed = GetSessionDetailQuery.safeParse(c.req.query());
-  if (!parsed.success) {
-    return c.json({ message: "Invalid request data", error: parsed.error.issues }, 400);
-  }
-  const { includeObservations, includeIo } = parsed.data;
-
-  const db = getTelemetryDB();
-
-  const traceRows = await db.query<Record<string, unknown>>({
-    query: `
-      SELECT id, name, timestamp, user_id, environment
-             ${includeIo ? ", input, output" : ""}
-      FROM traces
-      WHERE project_id = @projectId
-        AND session_id = @sessionId
-        AND is_deleted = 0
-      ORDER BY timestamp ASC, id ASC
-    `,
-    params: { projectId, sessionId },
-  });
-
-  if (traceRows.length === 0) {
-    throw new LangfuseNotFoundError(`Session ${sessionId} not found within authorized project`);
-  }
-
-  const traceIds = traceRows.map((t) => String(t.id));
-  const placeholders = traceIds.map((_, i) => `@id${i}`).join(",");
-  const obsParams: Record<string, unknown> = { projectId };
-  traceIds.forEach((id, i) => {
-    obsParams[`id${i}`] = id;
-  });
-
-  const [obsRows, scoreRows] = await Promise.all([
-    db.query<Record<string, unknown>>({
-      query: `
-        SELECT trace_id, level, start_time, end_time, usage_details,
-               cost_details, total_cost
-        FROM observations
-        WHERE project_id = @projectId AND trace_id IN (${placeholders}) AND is_deleted = 0
-      `,
-      params: obsParams,
-    }),
-    db.query<SessionScoreRow>({
-      query: `
-        SELECT id, trace_id, observation_id, name, value, string_value, data_type, comment, source
-        FROM scores
-        WHERE project_id = @projectId AND trace_id IN (${placeholders}) AND is_deleted = 0
-        ORDER BY timestamp ASC
-      `,
-      params: obsParams,
-    }),
-  ]);
-
-  const obsByTrace = new Map<string, Array<Record<string, unknown>>>();
-  for (const row of obsRows) {
-    const tid = String(row.trace_id);
-    const list = obsByTrace.get(tid) ?? [];
-    list.push(row);
-    obsByTrace.set(tid, list);
-  }
-
-  const scoresByTrace = new Map<string, SessionScoreRow[]>();
-  for (const row of scoreRows) {
-    const list = scoresByTrace.get(row.trace_id) ?? [];
-    list.push(row);
-    scoresByTrace.set(row.trace_id, list);
-  }
-
-  // Full observation shapes per trace — batched into a single SQLite query
-  // (avoids N+1) so the session view can render the merged observation tree
-  // and open a per-observation detail panel. IO is included (matching the
-  // trace detail endpoint) so the panel's Input/Output/Metadata tabs are
-  // populated.
-  type ApiObservation = ReturnType<typeof transformDbToApiObservation>;
-  const observationsByTraceId = new Map<string, ApiObservation[]>();
-  const batchedObs = includeObservations
-    ? await liteGetObservationsForTraces(projectId, traceIds, includeIo)
-    : new Map();
-  for (const [tid, records] of batchedObs) {
-    observationsByTraceId.set(
-      tid,
-      records.map((r) =>
-        transformDbToApiObservation({
-          ...convertObservation({ ...r, metadata: r.metadata ?? {} }),
-          inputPrice: null,
-          outputPrice: null,
-          totalPrice: null,
-        }),
-      ),
-    );
-  }
-
-  const timestamps = traceRows
-    .map((t) => toMs(t.timestamp))
-    .filter((ms): ms is number => ms !== null)
-    .sort((a, b) => a - b);
-  const sessionDuration =
-    timestamps.length > 1 ? (timestamps[timestamps.length - 1]! - timestamps[0]!) / 1000 : 0;
-
-  const users = Array.from(
-    new Set(
-      traceRows.map((t) => t.user_id).filter((u): u is string => u !== null && u !== undefined),
-    ),
-  );
-
-  let totalCost = 0;
-  const traces = traceRows.map((t) => {
-    const metrics = aggregateTraceMetrics(String(t.id), obsByTrace.get(String(t.id)) ?? [], {
-      input: includeIo ? parseJsonValue(t.input) : null,
-      output: includeIo ? parseJsonValue(t.output) : null,
-      metadata: null,
-    });
-    totalCost += metrics.calculatedTotalCost ?? 0;
-    return {
-      id: metrics.id,
-      name: t.name,
-      timestamp: toIso(t.timestamp),
-      userId: t.user_id ?? null,
-      input: includeIo ? metrics.input : null,
-      output: includeIo ? metrics.output : null,
-      latency: metrics.latency,
-      totalCost: metrics.calculatedTotalCost,
-      promptTokens: metrics.promptTokens,
-      completionTokens: metrics.completionTokens,
-      totalTokens: metrics.totalTokens,
-      cachedTokens: metrics.cachedTokens,
-      cacheHitRate: metrics.cacheHitRate,
-      scores: (scoresByTrace.get(String(t.id)) ?? []).map((s) => ({
-        id: s.id,
-        observationId: s.observation_id,
-        name: s.name,
-        value: s.value,
-        stringValue: s.string_value,
-        dataType: s.data_type,
-        comment: s.comment,
-        source: s.source,
-      })),
-      observations: includeObservations ? (observationsByTraceId.get(String(t.id)) ?? []) : [],
-    };
-  });
-
-  return c.json({
-    id: sessionId,
-    createdAt: toIso(traceRows[0]?.timestamp),
-    users,
-    countTraces: traceRows.length,
-    totalCost,
-    sessionDuration,
-    environment: traceRows[0]?.environment ?? "default",
-    traces,
-  });
 });
 
 export default app;

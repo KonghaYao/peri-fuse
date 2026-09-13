@@ -1,6 +1,11 @@
 import { LRUCache } from "lru-cache";
 import { recordGauge, recordIncrement } from "../instrumentation";
 import { logger } from "../logger";
+import {
+  decodeOwnedSnapshot,
+  encodeOwnedSnapshot,
+  UnsupportedSnapshotError,
+} from "../utils/owned-snapshot";
 
 export type LocalCacheLoadResult<V> = {
   value: V | undefined;
@@ -13,15 +18,17 @@ export type LocalCacheConfig = {
   enabled: boolean;
   ttlMs: number;
   max: number;
+  /** Approximate retained payload budget, including keys (default 16 MiB). */
+  maxBytes?: number;
 };
 
 export class LocalCache<V extends {}> {
   private readonly config: LocalCacheConfig;
-  private readonly cache: LRUCache<string, V>;
+  private readonly cache: LRUCache<string, Buffer>;
 
   constructor(config: LocalCacheConfig) {
     this.config = config;
-    const dispose: LRUCache.Disposer<string, V> = (_value, _key, reason) => {
+    const dispose: LRUCache.Disposer<string, Buffer> = (_value, _key, reason) => {
       if (reason === "evict") {
         this.record("evict");
         this.recordSizeMetrics();
@@ -29,17 +36,19 @@ export class LocalCache<V extends {}> {
     };
 
     const baseOptions = {
-      ttlAutopurge: false as const,
+      ttlAutopurge: true as const,
       allowStale: false as const,
       updateAgeOnGet: false as const,
       updateAgeOnHas: false as const,
       dispose,
     };
 
-    this.cache = new LRUCache<string, V>({
+    this.cache = new LRUCache<string, Buffer>({
       ...baseOptions,
       ttl: config.ttlMs,
       max: config.max,
+      maxSize: config.maxBytes ?? 16 * 1024 * 1024,
+      sizeCalculation: (value, key) => value.byteLength * 2 + key.length * 2 + 64,
     });
     this.logInfo("Initialized local cache", {
       enabled: config.enabled,
@@ -60,9 +69,13 @@ export class LocalCache<V extends {}> {
       keyLength: key.length,
     });
 
-    return value;
+    return value === undefined ? undefined : decodeOwnedSnapshot<V>(value);
   }
 
+  /**
+   * Cache only losslessly cloneable values. Domain instances such as Decimal
+   * bypass this optional cache; getOrLoad still returns the original loader value.
+   */
   set(key: string, value: V): void {
     if (!this.config.enabled) {
       return;
@@ -71,7 +84,7 @@ export class LocalCache<V extends {}> {
     const ttlMs = this.config.ttlMs;
 
     try {
-      this.cache.set(key, value, { ttl: ttlMs });
+      this.cache.set(key, encodeOwnedSnapshot(value), { ttl: ttlMs });
       this.record("set");
       this.recordSizeMetrics();
       this.logDebug("Stored local cache entry", {
@@ -80,6 +93,11 @@ export class LocalCache<V extends {}> {
         keyLength: key.length,
       });
     } catch (error) {
+      if (error instanceof UnsupportedSnapshotError) {
+        this.cache.delete(key);
+        this.logDebug("Skipped local cache value with unsupported domain semantics");
+        return;
+      }
       logger.error(`Failed to set local cache entry for namespace ${this.config.namespace}`, error);
     }
   }

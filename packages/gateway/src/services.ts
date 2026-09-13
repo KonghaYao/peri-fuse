@@ -4,6 +4,7 @@
  */
 
 import { startCooldownRecovery, stopCooldownRecovery } from "./router/cooldown.js";
+import { slowLogWriter } from "./slow-log/writer.js";
 import { startBudgetReset, stopBudgetReset } from "./spend/budget-reset.js";
 import { spendFlusher } from "./spend/flusher.js";
 
@@ -25,5 +26,9 @@ export async function stopGatewayServices(): Promise<void> {
   spendFlusher.stop();
   stopBudgetReset();
   stopCooldownRecovery();
-  await spendFlusher.flushAll();
+  try {
+    await spendFlusher.flushAll();
+  } finally {
+    await slowLogWriter.close();
+  }
 }

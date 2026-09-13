@@ -386,6 +386,9 @@ export type SessionDetail = {
   users: string[];
   countTraces: number;
   totalCost: number;
+  totalTokens: number;
+  usersTruncated?: boolean;
+  meta?: PaginationMeta;
   sessionDuration: number; // seconds
   environment: string;
   traces: SessionTrace[];

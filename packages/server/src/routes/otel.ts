@@ -7,7 +7,8 @@
  * processes inline via `processEventBatchLite` (no S3/Redis/worker).
  */
 
-import { gunzipSync } from "node:zlib";
+import { promisify } from "node:util";
+import { gunzip } from "node:zlib";
 import {
   createIngestionAttribution,
   getLangfuseHeaderValue,
@@ -19,8 +20,10 @@ import {
 import { Hono } from "hono";
 import { authMiddleware, type LiteServerEnv } from "../auth";
 import { $root } from "../otel-proto/root";
+import { configuredLimit } from "../request-limits";
 
 const app = new Hono<LiteServerEnv>();
+const decompress = promisify(gunzip);
 
 app.post("/api/public/otel/v1/traces", authMiddleware, async (c) => {
   const auth = c.get("auth");
@@ -35,8 +38,13 @@ app.post("/api/public/otel/v1/traces", authMiddleware, async (c) => {
 
   if (c.req.header("content-encoding")?.includes("gzip")) {
     try {
-      body = new Uint8Array(gunzipSync(body));
+      body = await decompress(body, {
+        maxOutputLength: configuredLimit("LITE_MAX_DECOMPRESSED_BYTES", 32 * 1024 * 1024),
+      });
     } catch (e) {
+      if (e instanceof RangeError) {
+        return c.json({ error: "Decompressed request exceeds the configured byte limit" }, 413);
+      }
       logger.error(`Failed to decompress request body`, e);
       return c.json({ error: "Failed to decompress request body" }, 400);
     }

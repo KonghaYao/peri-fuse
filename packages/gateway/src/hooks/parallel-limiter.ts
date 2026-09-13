@@ -6,6 +6,8 @@ import { HookRejectError } from "./types.js";
 
 // In-flight request counters per key
 const inFlight = new Map<string, number>();
+const acquired = new WeakSet<HookContext>();
+const keyFor = (ctx: HookContext) => JSON.stringify([ctx.projectId, ctx.apiKey.id]);
 
 export const parallelLimiterHook: GatewayHook = {
   name: "parallel-limiter",
@@ -15,7 +17,7 @@ export const parallelLimiterHook: GatewayHook = {
     const maxParallel = apiKey.maxParallel;
 
     if (maxParallel != null && maxParallel > 0) {
-      const key = apiKey.id;
+      const key = keyFor(ctx);
       const current = inFlight.get(key) ?? 0;
 
       if (current >= maxParallel) {
@@ -27,19 +29,22 @@ export const parallelLimiterHook: GatewayHook = {
       }
 
       inFlight.set(key, current + 1);
+      acquired.add(ctx);
     }
   },
 
   async postSuccess(_ctx: HookContext, _result: CallResult): Promise<void> {
-    decrement(_ctx.apiKey.id);
+    decrement(_ctx);
   },
 
   async postFailure(_ctx: HookContext, _error: Error): Promise<void> {
-    decrement(_ctx.apiKey.id);
+    decrement(_ctx);
   },
 };
 
-function decrement(keyId: string): void {
+function decrement(ctx: HookContext): void {
+  if (!acquired.delete(ctx)) return;
+  const keyId = keyFor(ctx);
   const current = inFlight.get(keyId) ?? 0;
   if (current <= 1) {
     inFlight.delete(keyId);

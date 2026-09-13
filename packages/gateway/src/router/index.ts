@@ -1,11 +1,12 @@
 /**
  * Router — main entry point for model routing with failover.
  */
-import type { PeriRequest, PeriStreamChunk, PeriUsage } from "../protocol/types.js";
-import { createAdapter, ProviderError } from "../provider/registry.js";
+import type { PeriRequest } from "../protocol/types.js";
 import type { ProviderCallResult } from "../provider/base.js";
+import { createAdapter, ProviderError } from "../provider/registry.js";
+import { BoundedTtlMap } from "../utils/bounded-ttl-map.js";
 import { recordFailure, recordSuccess } from "./cooldown.js";
-import { resolveModel, type ResolvedDeployment } from "./model-resolver.js";
+import { type ResolvedDeployment, resolveModel } from "./model-resolver.js";
 import type { RoutingContext, RoutingStrategy } from "./strategies/base.js";
 import { lowestLatency } from "./strategies/lowest-latency.js";
 import { priorityStrategy } from "./strategies/priority.js";
@@ -18,7 +19,7 @@ const strategies: Record<string, RoutingStrategy> = {
 };
 
 // Latency tracking for lowest-latency strategy
-const latencyData = new Map<string, number[]>();
+const latencyData = new BoundedTtlMap<number[]>(4096, 30 * 60_000);
 const MAX_LATENCY_SAMPLES = 10;
 
 export function recordLatency(providerId: string, latencyMs: number): void {
@@ -28,6 +29,11 @@ export function recordLatency(providerId: string, latencyMs: number): void {
     samples.shift();
   }
   latencyData.set(providerId, samples);
+}
+
+export function clearProviderRoutingState(projectId: string, providerId: string): void {
+  latencyData.delete(providerId);
+  recordSuccess(providerId, projectId);
 }
 
 export interface RouteResult extends ProviderCallResult {
@@ -41,7 +47,9 @@ export async function routeRequest(
   req: PeriRequest,
   projectId: string,
   strategyName = "weighted-shuffle",
+  signal?: AbortSignal,
 ): Promise<RouteResult> {
+  signal?.throwIfAborted();
   const deployments = await resolveModel(req.model, projectId);
 
   if (deployments.length === 0) {
@@ -57,11 +65,13 @@ export async function routeRequest(
   let lastError: Error | null = null;
 
   for (const deployment of ranked) {
+    signal?.throwIfAborted();
     try {
       const adapter = createAdapter(deployment.providerType, {
         baseUrl: deployment.baseUrl,
         apiKey: deployment.apiKey,
         timeout: deployment.timeout,
+        signal,
       });
 
       let result: ProviderCallResult;
@@ -72,20 +82,21 @@ export async function routeRequest(
       }
 
       // Success — record and return
-      recordSuccess(deployment.providerId);
+      recordSuccess(deployment.providerId, projectId);
       if (result.ttftMs) {
         recordLatency(deployment.providerId, result.ttftMs);
       }
 
       return { ...result, deployment };
     } catch (err) {
+      signal?.throwIfAborted();
       lastError = err instanceof Error ? err : new Error(String(err));
       console.warn(
         `[router] Deployment ${deployment.id} (${deployment.providerName}) failed: ${lastError.message}`,
       );
 
       // Record failure for cooldown tracking
-      await recordFailure(deployment.providerId).catch(() => {});
+      await recordFailure(deployment.providerId, projectId).catch(() => {});
 
       // Don't retry on client errors (4xx) — they won't succeed on another provider
       if (err instanceof ProviderError && err.statusCode >= 400 && err.statusCode < 500) {

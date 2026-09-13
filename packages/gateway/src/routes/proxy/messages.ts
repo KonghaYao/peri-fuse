@@ -7,10 +7,11 @@ import type { GatewayEnv } from "../../app.js";
 import { hookRegistry } from "../../hooks/registry.js";
 import type { HookContext } from "../../hooks/types.js";
 import type { PeriMessage, PeriRequest } from "../../protocol/types.js";
-import { routeRequest, RouterError } from "../../router/index.js";
 import { ProviderError } from "../../provider/base.js";
-import { spendFlusher } from "../../spend/flusher.js";
+import { RouterError, routeRequest } from "../../router/index.js";
 import { calculateCost } from "../../spend/calculator.js";
+import { SpendWriteError, spendFlusher } from "../../spend/flusher.js";
+import { runStream } from "./stream-lifecycle.js";
 
 const messages = new Hono<GatewayEnv>();
 
@@ -107,90 +108,143 @@ messages.post("/v1/messages", async (c) => {
     metadata: req.metadata ?? {},
   };
 
+  const streamController = new AbortController();
+  const requestSignal = AbortSignal.any([c.req.raw.signal, streamController.signal]);
+
   // Pre-call hooks
   try {
+    requestSignal.throwIfAborted();
+    spendFlusher.assertWritable();
     await hookRegistry.runPreCall(hookCtx);
   } catch (err: any) {
     const status = err.statusCode ?? 429;
-    return c.json({ type: "error", error: { type: "rate_limit_error", message: err.message } }, status);
+    return c.json(
+      { type: "error", error: { type: "rate_limit_error", message: err.message } },
+      status,
+    );
   }
 
   try {
-    const result = await routeRequest(req, projectId);
+    const result = await routeRequest(req, projectId, "weighted-shuffle", requestSignal);
     const endTime = new Date();
     const latencyMs = endTime.getTime() - startTime.getTime();
 
     if (req.stream && result.stream) {
       const chunkStream = result.stream;
       // Anthropic SSE streaming
-      return streamSSE(c, async (stream) => {
-        let ttftMs: number | undefined;
-        const chunkStartTime = Date.now();
+      return streamSSE(c, (stream) =>
+        runStream(stream, streamController, requestSignal, result, hookCtx, async (stream) => {
+          let ttftMs: number | undefined;
+          const chunkStartTime = Date.now();
 
-        // Send message_start
-        await stream.writeSSE({
-          event: "message_start",
-          data: JSON.stringify({
-            type: "message_start",
-            message: { id: `msg_${Date.now()}`, type: "message", role: "assistant", model: result.deployment.providerModel, content: [], usage: { input_tokens: 0, output_tokens: 0 } },
-          }),
-        });
-        await stream.writeSSE({
-          event: "content_block_start",
-          data: JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }),
-        });
+          // Send message_start
+          await stream.writeSSE({
+            event: "message_start",
+            data: JSON.stringify({
+              type: "message_start",
+              message: {
+                id: `msg_${Date.now()}`,
+                type: "message",
+                role: "assistant",
+                model: result.deployment.providerModel,
+                content: [],
+                usage: { input_tokens: 0, output_tokens: 0 },
+              },
+            }),
+          });
+          await stream.writeSSE({
+            event: "content_block_start",
+            data: JSON.stringify({
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "text", text: "" },
+            }),
+          });
 
-        for await (const chunk of chunkStream) {
-          if (!ttftMs) ttftMs = Date.now() - chunkStartTime;
+          for await (const chunk of chunkStream) {
+            if (!ttftMs) ttftMs = Date.now() - chunkStartTime;
 
-          if (chunk.delta.content) {
-            await stream.writeSSE({
-              event: "content_block_delta",
-              data: JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: chunk.delta.content } }),
-            });
+            if (chunk.delta.content) {
+              await stream.writeSSE({
+                event: "content_block_delta",
+                data: JSON.stringify({
+                  type: "content_block_delta",
+                  index: 0,
+                  delta: { type: "text_delta", text: chunk.delta.content },
+                }),
+              });
+            }
           }
-        }
 
-        await stream.writeSSE({
-          event: "content_block_stop",
-          data: JSON.stringify({ type: "content_block_stop", index: 0 }),
-        });
-        await stream.writeSSE({
-          event: "message_delta",
-          data: JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: result.usage.completionTokens } }),
-        });
-        await stream.writeSSE({
-          event: "message_stop",
-          data: JSON.stringify({ type: "message_stop" }),
-        });
+          await stream.writeSSE({
+            event: "content_block_stop",
+            data: JSON.stringify({ type: "content_block_stop", index: 0 }),
+          });
+          await stream.writeSSE({
+            event: "message_delta",
+            data: JSON.stringify({
+              type: "message_delta",
+              delta: { stop_reason: "end_turn" },
+              usage: { output_tokens: result.usage.completionTokens },
+            }),
+          });
 
-        // Track spend
-        const spend = calculateCost(result.usage.promptTokens, result.usage.completionTokens, result.deployment.modelInfo);
-        spendFlusher.enqueue({
-          projectId,
-          callType: "messages", apiKey: hookCtx.apiKey.publicKey, spend,
-          promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens,
-          totalTokens: result.usage.totalTokens, startTime, endTime: new Date(),
-          completionStartTime: ttftMs ? new Date(startTime.getTime() + ttftMs) : undefined,
-          requestDurationMs: Date.now() - startTime.getTime(),
-          model: result.deployment.providerModel, modelId: result.deployment.id,
-          modelGroup: req.model, provider: result.deployment.providerName,
-          apiBase: result.deployment.baseUrl, protocol: "anthropic", stream: req.stream, status: "success",
-        });
+          // Track spend
+          const spend = calculateCost(
+            result.usage.promptTokens,
+            result.usage.completionTokens,
+            result.deployment.modelInfo,
+          );
+          spendFlusher.enqueue({
+            projectId,
+            callType: "messages",
+            apiKey: hookCtx.apiKey.publicKey,
+            spend,
+            promptTokens: result.usage.promptTokens,
+            completionTokens: result.usage.completionTokens,
+            totalTokens: result.usage.totalTokens,
+            startTime,
+            endTime: new Date(),
+            completionStartTime: ttftMs ? new Date(startTime.getTime() + ttftMs) : undefined,
+            requestDurationMs: Date.now() - startTime.getTime(),
+            model: result.deployment.providerModel,
+            modelId: result.deployment.id,
+            modelGroup: req.model,
+            provider: result.deployment.providerName,
+            apiBase: result.deployment.baseUrl,
+            protocol: "anthropic",
+            stream: req.stream,
+            status: "success",
+          });
 
-        hookRegistry.runPostSuccess(hookCtx, {
-          response: null, promptTokens: result.usage.promptTokens,
-          completionTokens: result.usage.completionTokens, totalTokens: result.usage.totalTokens,
-          spend, latencyMs: Date.now() - startTime.getTime(), ttftMs,
-          providerId: result.deployment.providerId, providerModel: result.deployment.providerModel,
-          apiBase: result.deployment.baseUrl,
-        });
-      });
+          await stream.writeSSE({
+            event: "message_stop",
+            data: JSON.stringify({ type: "message_stop" }),
+          });
+
+          hookRegistry.runPostSuccess(hookCtx, {
+            response: null,
+            promptTokens: result.usage.promptTokens,
+            completionTokens: result.usage.completionTokens,
+            totalTokens: result.usage.totalTokens,
+            spend,
+            latencyMs: Date.now() - startTime.getTime(),
+            ttftMs,
+            providerId: result.deployment.providerId,
+            providerModel: result.deployment.providerModel,
+            apiBase: result.deployment.baseUrl,
+          });
+        }),
+      );
     }
 
     // Non-streaming Anthropic response
     const response = result.response!;
-    const spend = calculateCost(response.usage.promptTokens, response.usage.completionTokens, result.deployment.modelInfo);
+    const spend = calculateCost(
+      response.usage.promptTokens,
+      response.usage.completionTokens,
+      result.deployment.modelInfo,
+    );
 
     const anthropicResponse = {
       id: response.id || `msg_${Date.now()}`,
@@ -199,44 +253,76 @@ messages.post("/v1/messages", async (c) => {
       model: result.deployment.providerModel,
       content: response.choices[0]?.message.toolCalls
         ? [
-            ...(response.choices[0]?.message.content ? [{ type: "text", text: response.choices[0].message.content }] : []),
+            ...(response.choices[0]?.message.content
+              ? [{ type: "text", text: response.choices[0].message.content }]
+              : []),
             ...response.choices[0].message.toolCalls.map((tc) => ({
-              type: "tool_use", id: tc.id, name: tc.function.name, input: JSON.parse(tc.function.arguments || "{}"),
+              type: "tool_use",
+              id: tc.id,
+              name: tc.function.name,
+              input: JSON.parse(tc.function.arguments || "{}"),
             })),
           ]
         : [{ type: "text", text: response.choices[0]?.message.content ?? "" }],
       stop_reason: mapFinishReason(response.choices[0]?.finishReason),
       stop_sequence: null,
-      usage: { input_tokens: response.usage.promptTokens, output_tokens: response.usage.completionTokens },
+      usage: {
+        input_tokens: response.usage.promptTokens,
+        output_tokens: response.usage.completionTokens,
+      },
     };
 
     spendFlusher.enqueue({
       projectId,
-      callType: "messages", apiKey: hookCtx.apiKey.publicKey, spend,
-      promptTokens: response.usage.promptTokens, completionTokens: response.usage.completionTokens,
-      totalTokens: response.usage.totalTokens, startTime, endTime,
-      requestDurationMs: latencyMs, model: result.deployment.providerModel,
-      modelId: result.deployment.id, modelGroup: req.model,
-      provider: result.deployment.providerName, apiBase: result.deployment.baseUrl,
-      protocol: "anthropic", stream: req.stream, status: "success",
+      callType: "messages",
+      apiKey: hookCtx.apiKey.publicKey,
+      spend,
+      promptTokens: response.usage.promptTokens,
+      completionTokens: response.usage.completionTokens,
+      totalTokens: response.usage.totalTokens,
+      startTime,
+      endTime,
+      requestDurationMs: latencyMs,
+      model: result.deployment.providerModel,
+      modelId: result.deployment.id,
+      modelGroup: req.model,
+      provider: result.deployment.providerName,
+      apiBase: result.deployment.baseUrl,
+      protocol: "anthropic",
+      stream: req.stream,
+      status: "success",
     });
 
     hookRegistry.runPostSuccess(hookCtx, {
-      response: anthropicResponse, promptTokens: response.usage.promptTokens,
-      completionTokens: response.usage.completionTokens, totalTokens: response.usage.totalTokens,
-      spend, latencyMs, ttftMs: result.ttftMs,
-      providerId: result.deployment.providerId, providerModel: result.deployment.providerModel,
+      response: anthropicResponse,
+      promptTokens: response.usage.promptTokens,
+      completionTokens: response.usage.completionTokens,
+      totalTokens: response.usage.totalTokens,
+      spend,
+      latencyMs,
+      ttftMs: result.ttftMs,
+      providerId: result.deployment.providerId,
+      providerModel: result.deployment.providerModel,
       apiBase: result.deployment.baseUrl,
     });
 
     return c.json(anthropicResponse);
   } catch (err) {
     hookRegistry.runPostFailure(hookCtx, err instanceof Error ? err : new Error(String(err)));
+    if (err instanceof SpendWriteError) {
+      return c.json({ error: { message: err.message, type: "service_unavailable_error" } }, 503);
+    }
     if (err instanceof RouterError) {
-      return c.json({ type: "error", error: { type: "api_error", message: err.message } }, err.statusCode as 502);
+      return c.json(
+        { type: "error", error: { type: "api_error", message: err.message } },
+        err.statusCode as 502,
+      );
     }
     if (err instanceof ProviderError) {
-      return c.json({ type: "error", error: { type: "api_error", message: err.message } }, err.statusCode as 502);
+      return c.json(
+        { type: "error", error: { type: "api_error", message: err.message } },
+        err.statusCode as 502,
+      );
     }
     return c.json({ type: "error", error: { type: "api_error", message: "Internal error" } }, 500);
   }
@@ -244,10 +330,14 @@ messages.post("/v1/messages", async (c) => {
 
 function mapFinishReason(reason: string | null): string {
   switch (reason) {
-    case "stop": return "end_turn";
-    case "length": return "max_tokens";
-    case "tool_calls": return "tool_use";
-    default: return "end_turn";
+    case "stop":
+      return "end_turn";
+    case "length":
+      return "max_tokens";
+    case "tool_calls":
+      return "tool_use";
+    default:
+      return "end_turn";
   }
 }
 

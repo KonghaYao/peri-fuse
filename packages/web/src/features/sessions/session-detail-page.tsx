@@ -17,10 +17,11 @@ import {
   Users,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ObservationDetail } from "@/shared/components/observation-detail";
 import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
 import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
+import { Pagination } from "@/shared/components/pagination";
 import { EmptyState, ErrorState } from "@/shared/components/state";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
@@ -150,15 +151,44 @@ function TraceObservations({
 
 export function SessionDetailPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedPage = Number(searchParams.get("page") ?? 1);
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  return (
+    <SessionDetailContent
+      key={`${sessionId}:${page}`}
+      sessionId={sessionId}
+      page={page}
+      onPageChange={(next) =>
+        setSearchParams((previous) => {
+          const params = new URLSearchParams(previous);
+          params.set("page", String(next));
+          return params;
+        })
+      }
+    />
+  );
+}
+
+function SessionDetailContent({
+  sessionId,
+  page,
+  onPageChange,
+}: {
+  sessionId: string | undefined;
+  page: number;
+  onPageChange: (page: number) => void;
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedTraceIds, setExpandedTraceIds] = useState<Set<string>>(new Set());
   const [loadedByTrace, setLoadedByTrace] = useState<Map<string, Observation[]>>(new Map());
   const [timelineOpen, setTimelineOpen] = useState(false);
 
   const query = useQuery({
-    queryKey: ["session", sessionId],
-    queryFn: () => getSession(sessionId!),
+    queryKey: ["session", sessionId, page],
+    queryFn: ({ signal }) => getSession(sessionId!, page, signal),
     enabled: !!sessionId,
+    gcTime: 30_000,
   });
 
   const session = query.data;
@@ -243,7 +273,7 @@ export function SessionDetailPage() {
               onClick={() => setTimelineOpen(true)}
             >
               <ChartNoAxesCombined className="h-4 w-4" />
-              Timeline
+              Page timeline
             </Button>
           )}
         </div>
@@ -252,10 +282,7 @@ export function SessionDetailPage() {
           <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3">
             <Stat label="Duration" value={formatIntervalSeconds(session.sessionDuration)} />
             <Stat label="Traces" value={session.countTraces} />
-            <Stat
-              label="Total Tokens"
-              value={formatTokens(session.traces.reduce((acc, t) => acc + (t.totalTokens || 0), 0))}
-            />
+            <Stat label="Total Tokens" value={formatTokens(session.totalTokens)} />
             <Stat
               label="Users"
               value={
@@ -263,6 +290,7 @@ export function SessionDetailPage() {
                   <span className="flex items-center gap-1">
                     <Users className="h-3.5 w-3.5 text-muted-foreground" />
                     {session.users.join(", ")}
+                    {session.usersTruncated ? ", …" : ""}
                   </span>
                 ) : (
                   "—"
@@ -329,6 +357,7 @@ export function SessionDetailPage() {
               </ScrollArea>
             )}
           </CardContent>
+          <Pagination meta={session?.meta} page={page} pageSize={50} onPageChange={onPageChange} />
         </Card>
 
         <Card className="m-4 flex flex-1 flex-col overflow-hidden">

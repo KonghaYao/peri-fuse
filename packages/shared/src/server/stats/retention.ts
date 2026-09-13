@@ -12,6 +12,7 @@
 
 import { getTelemetryDB } from "../adapters";
 import { logger } from "../logger";
+import { startMaintenanceLoop } from "./maintenance-loop";
 
 const ENV_RETENTION_DAYS = "PERIFUSE_TELEMETRY_RETENTION_DAYS";
 const CHUNK_SIZE = 50_000;
@@ -29,7 +30,10 @@ const yieldLoop = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
  * Delete rows older than `cutoff` (SQLite TEXT timestamp) across all
  * telemetry tables. Returns total deleted rows per table.
  */
-export async function purgeOlderThan(cutoff: string): Promise<Record<string, number>> {
+export async function purgeOlderThan(
+  cutoff: string,
+  signal?: AbortSignal,
+): Promise<Record<string, number>> {
   const db = getTelemetryDB();
   const cutoffDay = cutoff.slice(0, 10);
   const targets: Array<{ table: string; where: string }> = [
@@ -45,6 +49,7 @@ export async function purgeOlderThan(cutoff: string): Promise<Record<string, num
   for (const t of targets) {
     let total = 0;
     for (;;) {
+      signal?.throwIfAborted();
       const res = await db.command({
         query: `DELETE FROM ${t.table} WHERE rowid IN (
                   SELECT rowid FROM ${t.table} WHERE ${t.where} LIMIT ${CHUNK_SIZE}
@@ -62,13 +67,13 @@ export async function purgeOlderThan(cutoff: string): Promise<Record<string, num
 }
 
 /** Run one retention pass (no-op when retention is disabled). */
-export async function runRetentionOnce(): Promise<void> {
+export async function runRetentionOnce(signal?: AbortSignal): Promise<void> {
   const days = resolveRetentionDays();
   if (days <= 0) return;
   const cutoffDate = new Date(Date.now() - days * 24 * 3600_000);
   const cutoff = cutoffDate.toISOString().replace("T", " ").replace("Z", "");
   try {
-    const deleted = await purgeOlderThan(cutoff);
+    const deleted = await purgeOlderThan(cutoff, signal);
     const total = Object.values(deleted).reduce((a, b) => a + b, 0);
     if (total > 0) {
       logger.info(
@@ -76,7 +81,7 @@ export async function runRetentionOnce(): Promise<void> {
       );
     }
   } catch (error) {
-    logger.error("[retention] Purge failed", error);
+    if (!signal?.aborted) logger.error("[retention] Purge failed", error);
   }
 }
 
@@ -86,8 +91,7 @@ export function startRetentionJob(intervalMs = RETENTION_CHECK_INTERVAL_MS): () 
   logger.info(
     `[retention] Enabled with PERIFUSE_TELEMETRY_RETENTION_DAYS=${resolveRetentionDays()}`,
   );
-  void runRetentionOnce();
-  const timer = setInterval(() => void runRetentionOnce(), intervalMs);
-  timer.unref?.();
-  return () => clearInterval(timer);
+  return startMaintenanceLoop(runRetentionOnce, runRetentionOnce, intervalMs, (error) =>
+    logger.error("[retention] Maintenance failed", error),
+  );
 }

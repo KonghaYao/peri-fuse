@@ -3,24 +3,25 @@
  */
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { budgetLimiterHook } from "./hooks/budget-limiter.js";
+import { parallelLimiterHook } from "./hooks/parallel-limiter.js";
+import { periFuseLoggerHook } from "./hooks/peri-fuse-logger.js";
+import { rateLimiterHook } from "./hooks/rate-limiter.js";
+import { hookRegistry } from "./hooks/registry.js";
+import { unifiedAuth } from "./middleware/auth.js";
+import { gatewayRequestLimits } from "./middleware/request-limits.js";
+import adminAudit from "./routes/admin/audit.js";
+import adminBudgets from "./routes/admin/budgets.js";
+import adminCredentials from "./routes/admin/credentials.js";
+import adminKeys from "./routes/admin/keys.js";
+import adminLogs from "./routes/admin/logs.js";
+import adminModels from "./routes/admin/models.js";
+import adminProviders from "./routes/admin/providers.js";
+import adminUsage from "./routes/admin/usage.js";
 import healthRoutes from "./routes/health.js";
 import chatRoutes from "./routes/proxy/chat.js";
 import messagesRoutes from "./routes/proxy/messages.js";
 import modelsRoutes from "./routes/proxy/models.js";
-import adminProviders from "./routes/admin/providers.js";
-import adminCredentials from "./routes/admin/credentials.js";
-import adminKeys from "./routes/admin/keys.js";
-import adminModels from "./routes/admin/models.js";
-import adminBudgets from "./routes/admin/budgets.js";
-import adminUsage from "./routes/admin/usage.js";
-import adminLogs from "./routes/admin/logs.js";
-import adminAudit from "./routes/admin/audit.js";
-import { unifiedAuth } from "./middleware/auth.js";
-import { hookRegistry } from "./hooks/registry.js";
-import { parallelLimiterHook } from "./hooks/parallel-limiter.js";
-import { rateLimiterHook } from "./hooks/rate-limiter.js";
-import { budgetLimiterHook } from "./hooks/budget-limiter.js";
-import { periFuseLoggerHook } from "./hooks/peri-fuse-logger.js";
 
 export type GatewayEnv = {
   Variables: {
@@ -53,6 +54,9 @@ hookRegistry.register(periFuseLoggerHook);
 
 export function createApp(): Hono<GatewayEnv> {
   const app = new Hono<GatewayEnv>();
+  const limits = gatewayRequestLimits();
+  app.use("/v1/*", limits);
+  app.use("/admin/*", limits);
 
   // CORS for admin ui
   app.use(

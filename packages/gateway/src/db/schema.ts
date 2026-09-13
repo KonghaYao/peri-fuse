@@ -6,14 +6,7 @@
  * keep working. Timestamps are stored as ISO-8601 text (Prisma-compatible).
  */
 import { relations } from "drizzle-orm";
-import {
-  index,
-  integer,
-  real,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // ISO-8601 timestamp helpers (Prisma stores DateTime as ISO text in SQLite).
 const nowIso = () => new Date().toISOString();
@@ -230,7 +223,8 @@ export const dailySpend = sqliteTable(
     updatedAt: text("updatedAt").notNull().$defaultFn(nowIso).$onUpdateFn(nowIso),
   },
   (t) => [
-    uniqueIndex("DailySpend_apiKey_date_model_provider_key").on(
+    uniqueIndex("DailySpend_projectId_apiKey_date_model_provider_key").on(
+      t.projectId,
       t.apiKey,
       t.date,
       t.model,

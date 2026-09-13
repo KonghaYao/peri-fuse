@@ -1,16 +1,8 @@
-/**
- * In-memory queue adapter.
- * Replaces Redis/BullMQ with process-local EventEmitter-based queues in lite mode.
- *
- * Limitations vs BullMQ:
- * - Jobs are lost on process restart (acceptable for local dev)
- * - No distributed locking or cross-process coordination
- * - No persistence / dead-letter queue
- */
-
+/** Bounded process-local queues. Admission rejects overflow; accepted jobs run or emit failure. */
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { logger } from "../logger";
+import { decodeOwnedSnapshot, encodeOwnedSnapshot } from "../utils/owned-snapshot";
 import type {
   QueueAdapter,
   QueueInstance,
@@ -21,251 +13,303 @@ import type {
   WorkerInstance,
 } from "./types";
 
-// ============================================================================
-// In-Memory Job
-// ============================================================================
-
-interface InternalJob<T = unknown> {
-  id: string;
-  name: string;
-  data: T;
-  opts: QueueJobOptions;
-  attemptsMade: number;
-  timestamp: number;
-  delayTimer?: ReturnType<typeof setTimeout>;
+export interface InMemoryQueueLimits {
+  maxJobs?: number;
+  maxBytes?: number;
+  maxFailed?: number;
+  maxFailedBytes?: number;
+  maxQueues?: number;
 }
 
-// ============================================================================
-// In-Memory Queue
-// ============================================================================
+type InternalJob<T> = Omit<QueueJob<T>, "data"> & {
+  snapshot: Buffer;
+  bytes: number;
+  delayTimer?: ReturnType<typeof setTimeout>;
+};
 
 class InMemoryQueue<T = unknown> implements QueueInstance<T> {
-  private emitter = new EventEmitter();
+  private readonly emitter = new EventEmitter();
   private waiting: InternalJob<T>[] = [];
-  private active: InternalJob<T>[] = [];
+  private readonly jobs = new Map<string, InternalJob<T>>();
+  private readonly active = new Set<InternalJob<T>>();
+  private readonly executions = new Set<Promise<void>>();
   private failed: InternalJob<T>[] = [];
+  private bytes = 0;
+  private failedBytes = 0;
   private processor: QueueProcessor<T> | null = null;
-  private workerOpts: QueueWorkerOptions;
+  private concurrency = 1;
   private running = false;
-  private processing = false;
+  private closed = false;
+  private closePromise?: Promise<void>;
 
   constructor(
     public readonly name: string,
-    private defaultJobOptions?: QueueJobOptions,
-    workerOpts?: QueueWorkerOptions,
-  ) {
-    this.workerOpts = workerOpts ?? {};
-    // Allow many listeners (one per event type)
-    this.emitter.setMaxListeners(50);
-  }
+    private readonly limits: Required<InMemoryQueueLimits>,
+    private readonly defaults?: QueueJobOptions,
+  ) {}
 
   setProcessor(processor: QueueProcessor<T>, opts?: QueueWorkerOptions): void {
+    if (this.closed) throw new Error("Queue is closed");
+    const concurrency = opts?.concurrency ?? 1;
+    if (!Number.isInteger(concurrency) || concurrency <= 0)
+      throw new Error("Invalid queue concurrency");
     this.processor = processor;
-    if (opts) this.workerOpts = opts;
+    this.concurrency = concurrency;
     this.running = true;
-    // Start processing any waiting jobs
-    void this.processNext();
+    this.processNext();
+  }
+
+  isRunning(): boolean {
+    return this.running && !this.closed;
+  }
+
+  async stopWorker(): Promise<void> {
+    this.running = false;
+    await Promise.allSettled([...this.executions]);
   }
 
   async add(name: string, data: T, opts?: QueueJobOptions): Promise<QueueJob<T>> {
-    const job: InternalJob<T> = {
-      id: opts?.jobId ?? randomUUID(),
-      name,
-      data,
-      opts: { ...this.defaultJobOptions, ...opts },
-      attemptsMade: 0,
-      timestamp: Date.now(),
-    };
-
-    const delay = job.opts.delay ?? 0;
-    if (delay > 0) {
-      job.delayTimer = setTimeout(() => {
-        this.waiting.push(job);
-        void this.processNext();
-      }, delay);
-    } else {
-      this.waiting.push(job);
-      void this.processNext();
-    }
-
-    return this.toPublicJob(job);
+    const [job] = await this.addBulk([{ name, data, opts }]);
+    return job;
   }
 
+  /** Check the entire batch before accepting any jobs, so partial success cannot be lost. */
   async addBulk(
-    jobs: Array<{ name: string; data: T; opts?: QueueJobOptions }>,
+    entries: Array<{ name: string; data: T; opts?: QueueJobOptions }>,
   ): Promise<QueueJob<T>[]> {
-    const results: QueueJob<T>[] = [];
-    for (const j of jobs) {
-      results.push(await this.add(j.name, j.data, j.opts));
+    if (this.closed) throw new Error("Queue is closed");
+    const prepared = new Map<string, InternalJob<T>>();
+    const result: InternalJob<T>[] = [];
+    let addedBytes = 0;
+    for (const entry of entries) {
+      const opts = { ...this.defaults, ...entry.opts };
+      const id = opts.jobId ?? randomUUID();
+      const existing = this.jobs.get(id) ?? prepared.get(id);
+      if (existing) {
+        result.push(existing);
+        continue;
+      }
+      const snapshot = encodeOwnedSnapshot({ data: entry.data, opts });
+      const bytes = snapshot.byteLength * 2 + (id.length + entry.name.length) * 2 + 128;
+      addedBytes += bytes;
+      if (
+        this.jobs.size + prepared.size + 1 > this.limits.maxJobs ||
+        this.bytes + addedBytes > this.limits.maxBytes
+      ) {
+        throw new Error(`Queue ${this.name} capacity exceeded`);
+      }
+      const job = {
+        id,
+        name: entry.name,
+        snapshot,
+        opts: decodeOwnedSnapshot<{ opts: QueueJobOptions }>(snapshot).opts,
+        bytes,
+        attemptsMade: 0,
+        timestamp: Date.now(),
+      };
+      prepared.set(id, job);
+      result.push(job);
     }
-    return results;
+    for (const job of prepared.values()) {
+      this.jobs.set(job.id, job);
+      this.bytes += job.bytes;
+      this.schedule(job, job.opts.delay ?? 0);
+    }
+    this.processNext();
+    return result.map((job) => this.toPublicJob(job));
   }
 
   async getWaitingCount(): Promise<number> {
-    return this.waiting.length;
+    return this.jobs.size - this.active.size;
   }
 
   async getActiveCount(): Promise<number> {
-    return this.active.length;
+    return this.active.size;
   }
-
   async getFailedCount(): Promise<number> {
     return this.failed.length;
   }
 
   async drain(): Promise<void> {
     this.waiting = [];
+    for (const job of this.jobs.values()) {
+      if (this.active.has(job)) continue;
+      clearTimeout(job.delayTimer);
+      this.finishFailure(job, new Error(`Queue ${this.name} drained`));
+    }
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closed = true;
     this.running = false;
-    // Clear any pending delay timers
-    for (const job of this.waiting) {
-      if (job.delayTimer) clearTimeout(job.delayTimer);
-    }
-    this.waiting = [];
-    this.emitter.removeAllListeners();
+    this.closePromise = this.drain().then(async () => {
+      await Promise.allSettled([...this.executions]);
+      this.failed = [];
+      this.failedBytes = 0;
+      this.processor = null;
+      this.emitter.removeAllListeners();
+    });
+    return this.closePromise;
   }
 
   on(event: "error", handler: (error: Error) => void): void;
   on(event: "completed", handler: (job: QueueJob) => void): void;
   on(event: "failed", handler: (job: QueueJob, error: Error) => void): void;
   on(event: string, handler: (...args: never[]) => void): void {
-    // The catch-all implementation signature uses `never[]` params; widen to
-    // the EventEmitter's `any[]` listener shape for the pass-through.
-    this.emitter.on(event, handler as (...args: any[]) => void);
+    this.emitter.on(event, handler);
   }
 
-  // --------------------------------------------------------------------------
-  // Internal processing loop
-  // --------------------------------------------------------------------------
+  private schedule(job: InternalJob<T>, delay: number): void {
+    if (delay > 0) {
+      job.delayTimer = setTimeout(
+        () => {
+          job.delayTimer = undefined;
+          if (this.closed || !this.jobs.has(job.id)) return;
+          this.waiting.push(job);
+          this.processNext();
+        },
+        Math.min(delay, 2_147_483_647),
+      );
+    } else this.waiting.push(job);
+  }
 
-  private async processNext(): Promise<void> {
-    if (!this.running || !this.processor || this.processing) return;
-
-    const concurrency = this.workerOpts.concurrency ?? 1;
-    if (this.active.length >= concurrency) return;
-    if (this.waiting.length === 0) return;
-
-    this.processing = true;
-
-    try {
-      while (this.running && this.waiting.length > 0 && this.active.length < concurrency) {
-        const job = this.waiting.shift()!;
-        this.active.push(job);
-
-        // Fire-and-forget processing to allow concurrency
-        void this.executeJob(job);
-      }
-    } finally {
-      this.processing = false;
+  private processNext(): void {
+    while (
+      this.isRunning() &&
+      this.processor &&
+      this.waiting.length &&
+      this.active.size < this.concurrency
+    ) {
+      const job = this.waiting.shift()!;
+      this.active.add(job);
+      const execution = this.executeJob(job, this.processor);
+      this.executions.add(execution);
+      void execution.finally(() => this.executions.delete(execution));
     }
   }
 
-  private async executeJob(job: InternalJob<T>): Promise<void> {
-    const maxAttempts = job.opts.attempts ?? 1;
-
+  private async executeJob(job: InternalJob<T>, processor: QueueProcessor<T>): Promise<void> {
     try {
-      await this.processor?.(this.toPublicJob(job));
-      // Success
-      this.active = this.active.filter((j) => j.id !== job.id);
-      this.emitter.emit("completed", this.toPublicJob(job));
-      // Process next job
-      void this.processNext();
+      await processor(this.toPublicJob(job));
+      this.release(job);
+      this.emit("completed", this.toPublicJob(job));
     } catch (error) {
       job.attemptsMade++;
-
-      if (job.attemptsMade < maxAttempts) {
-        // Retry with backoff
+      this.active.delete(job);
+      if (!this.closed && job.attemptsMade < (job.opts.attempts ?? 1)) {
         const backoff = job.opts.backoff;
         const delay =
           backoff?.type === "exponential"
             ? backoff.delay * 2 ** (job.attemptsMade - 1)
             : (backoff?.delay ?? 1000);
-
-        this.active = this.active.filter((j) => j.id !== job.id);
-
-        setTimeout(() => {
-          this.waiting.push(job);
-          void this.processNext();
-        }, delay);
+        this.schedule(job, delay);
       } else {
-        // Failed permanently
-        this.active = this.active.filter((j) => j.id !== job.id);
-        this.failed.push(job);
-        this.emitter.emit("failed", this.toPublicJob(job), error);
-        logger.warn(
-          `[InMemoryQueue:${this.name}] Job ${job.id} failed after ${job.attemptsMade} attempts`,
-        );
-        // Process next job
-        void this.processNext();
+        this.finishFailure(job, error instanceof Error ? error : new Error(String(error)));
       }
+    } finally {
+      this.processNext();
+    }
+  }
+
+  private release(job: InternalJob<T>): void {
+    this.active.delete(job);
+    if (this.jobs.delete(job.id)) this.bytes -= job.bytes;
+  }
+
+  private finishFailure(job: InternalJob<T>, error: Error): void {
+    this.release(job);
+    const requested = job.opts.removeOnFail;
+    const keep =
+      requested === true
+        ? 0
+        : typeof requested === "number"
+          ? Math.max(0, Math.min(requested, this.limits.maxFailed))
+          : this.limits.maxFailed;
+    if (keep && job.bytes <= this.limits.maxFailedBytes) {
+      this.failed.push(job);
+      this.failedBytes += job.bytes;
+    }
+    while (
+      this.failed.length > (keep || this.limits.maxFailed) ||
+      this.failedBytes > this.limits.maxFailedBytes
+    ) {
+      this.failedBytes -= this.failed.shift()!.bytes;
+    }
+    this.emit("failed", this.toPublicJob(job), error);
+    logger.warn(`[InMemoryQueue:${this.name}] Job ${job.id} failed: ${error.message}`);
+  }
+
+  private emit(event: string, ...args: unknown[]): void {
+    try {
+      this.emitter.emit(event, ...args);
+    } catch (error) {
+      logger.error(`[InMemoryQueue:${this.name}] ${event} listener failed`, error);
     }
   }
 
   private toPublicJob(job: InternalJob<T>): QueueJob<T> {
-    return {
-      id: job.id,
-      name: job.name,
-      data: job.data,
-      attemptsMade: job.attemptsMade,
-      opts: job.opts,
-      timestamp: job.timestamp,
-    };
+    const { id, name, attemptsMade, timestamp } = job;
+    // Processor and event consumers own their copies; they cannot grow delayed
+    // or failed retained jobs, or modify the private retry configuration.
+    const { data, opts } = decodeOwnedSnapshot<{ data: T; opts: QueueJobOptions }>(job.snapshot);
+    return { id, name, data, attemptsMade, opts, timestamp };
   }
 }
-
-// ============================================================================
-// In-Memory Worker
-// ============================================================================
 
 class InMemoryWorker implements WorkerInstance {
-  // biome-ignore lint/complexity/noUselessConstructor: parameter kept for interface consistency
-  constructor(_queue: InMemoryQueue) {}
-
-  async close(): Promise<void> {
-    // Worker lifecycle is tied to the queue in lite mode
+  constructor(private readonly queue: InMemoryQueue) {}
+  close(): Promise<void> {
+    return this.queue.stopWorker();
   }
-
   isRunning(): boolean {
-    return true;
+    return this.queue.isRunning();
   }
 }
 
-// ============================================================================
-// In-Memory Queue Adapter
-// ============================================================================
-
 export class InMemoryQueueAdapter implements QueueAdapter {
-  private queues: Map<string, InMemoryQueue> = new Map();
+  private readonly queues = new Map<string, InMemoryQueue>();
+  private readonly limits: Required<InMemoryQueueLimits>;
+  private closed = false;
 
-  getQueue<T = unknown>(
-    name: string,
-    defaultJobOptions?: QueueJobOptions,
-  ): QueueInstance<T> | null {
-    if (!this.queues.has(name)) {
-      this.queues.set(name, new InMemoryQueue(name, defaultJobOptions));
+  constructor(limits: InMemoryQueueLimits = {}) {
+    this.limits = {
+      maxJobs: 1000,
+      maxBytes: 16 * 1024 * 1024,
+      maxFailed: 100,
+      maxFailedBytes: 1024 * 1024,
+      maxQueues: 128,
+      ...limits,
+    };
+    for (const value of Object.values(this.limits)) {
+      if (!Number.isFinite(value) || value < 0) throw new Error("Invalid queue limit");
     }
-    return this.queues.get(name)! as unknown as QueueInstance<T>;
+  }
+
+  getQueue<T = unknown>(name: string, defaultJobOptions?: QueueJobOptions): QueueInstance<T> {
+    if (this.closed) throw new Error("Queue adapter is closed");
+    if (!this.queues.has(name)) {
+      if (this.queues.size >= this.limits.maxQueues)
+        throw new Error("Queue adapter capacity exceeded");
+      this.queues.set(name, new InMemoryQueue(name, this.limits, defaultJobOptions));
+    }
+    return this.queues.get(name)! as QueueInstance<T>;
   }
 
   createWorker<T = unknown>(
     name: string,
     processor: QueueProcessor<T>,
     opts?: QueueWorkerOptions,
-  ): WorkerInstance | null {
-    // Ensure queue exists
-    if (!this.queues.has(name)) {
-      this.queues.set(name, new InMemoryQueue(name));
-    }
+  ): WorkerInstance {
+    this.getQueue(name);
     const queue = this.queues.get(name)!;
     queue.setProcessor(processor as QueueProcessor, opts);
     return new InMemoryWorker(queue);
   }
 
   async close(): Promise<void> {
-    const promises = Array.from(this.queues.values()).map((q) => q.close());
-    await Promise.allSettled(promises);
+    this.closed = true;
+    await Promise.allSettled([...this.queues.values()].map((queue) => queue.close()));
     this.queues.clear();
   }
 }

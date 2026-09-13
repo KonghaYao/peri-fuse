@@ -29,6 +29,11 @@ export {
   TRACE_METRICS_CACHED_TOKENS_SQL,
   TRACE_METRICS_GROSS_INPUT_TOKENS_SQL,
 } from "./sqlite-telemetry-adapter";
+export {
+  TelemetryQueryError,
+  throwIfTelemetryQueryFailed,
+  withTelemetryQuerySignal,
+} from "./telemetry-query-context";
 // Types
 export type {
   CacheAdapter,

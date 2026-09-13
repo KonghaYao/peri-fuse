@@ -3,29 +3,31 @@
  * Tracks consecutive failures and puts providers into cooldown.
  */
 import { and, eq, lte } from "drizzle-orm";
-import { getDb } from "../db.js";
 import { provider } from "../db/schema.js";
+import { getDb } from "../db.js";
+import { BoundedTtlMap } from "../utils/bounded-ttl-map.js";
 
 const COOLDOWN_THRESHOLD = 3; // consecutive failures before cooldown
 const COOLDOWN_DURATION_MS = 60_000; // 60 seconds cooldown
 
 // In-memory failure counters
-const failureCounts = new Map<string, number>();
+const failureCounts = new BoundedTtlMap<number>(4096, 30 * 60_000);
 
 /**
  * Record a successful call — resets the failure counter.
  */
-export function recordSuccess(providerId: string): void {
-  failureCounts.delete(providerId);
+export function recordSuccess(providerId: string, projectId: string): void {
+  failureCounts.delete(JSON.stringify([projectId, providerId]));
 }
 
 /**
  * Record a failed call. After COOLDOWN_THRESHOLD consecutive failures,
  * puts the provider into cooldown.
  */
-export async function recordFailure(providerId: string): Promise<void> {
-  const count = (failureCounts.get(providerId) ?? 0) + 1;
-  failureCounts.set(providerId, count);
+export async function recordFailure(providerId: string, projectId: string): Promise<void> {
+  const key = JSON.stringify([projectId, providerId]);
+  const count = (failureCounts.get(key) ?? 0) + 1;
+  failureCounts.set(key, count);
 
   if (count >= COOLDOWN_THRESHOLD) {
     const cooldownUntil = new Date(Date.now() + COOLDOWN_DURATION_MS);
@@ -37,14 +39,14 @@ export async function recordFailure(providerId: string): Promise<void> {
         status: "cooldown",
         cooldownUntil: cooldownUntil.toISOString(),
       })
-      .where(eq(provider.id, providerId));
+      .where(and(eq(provider.id, providerId), eq(provider.projectId, projectId)));
 
     console.warn(
       `[router] Provider ${providerId} entered cooldown until ${cooldownUntil.toISOString()} (${count} consecutive failures)`,
     );
 
     // Reset counter after cooldown is set
-    failureCounts.delete(providerId);
+    failureCounts.delete(JSON.stringify([projectId, providerId]));
   }
 }
 

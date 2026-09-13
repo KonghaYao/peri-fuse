@@ -20,7 +20,7 @@ import { authMiddleware, type LiteServerEnv } from "../auth";
 const app = new Hono<LiteServerEnv>();
 
 const batchType = z.object({
-  batch: z.array(z.unknown()),
+  batch: z.array(z.unknown()).max(10_000),
   metadata: jsonSchema.nullish(),
 });
 

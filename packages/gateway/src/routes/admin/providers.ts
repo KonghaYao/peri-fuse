@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
 import { auditLog, credential, modelDeployment, provider } from "../../db/schema.js";
 import { getDb } from "../../db.js";
+import { clearProviderRoutingState } from "../../router/index.js";
 import { nextBudgetResetAt } from "../../spend/budget-period.js";
 import { encrypt } from "../../utils/crypto.js";
 import { generateId } from "../../utils/id.js";
@@ -244,6 +245,7 @@ providers.delete("/:id", async (c) => {
     throw error;
   }
 
+  clearProviderRoutingState(projectId, id);
   return c.json({ success: true });
 });
 

@@ -33,6 +33,11 @@ export interface TelemetryQueryOpts {
   tags?: Record<string, string>;
   /** Timeout in milliseconds */
   timeoutMs?: number;
+  /** Cancel queued/running reads when the caller disconnects. */
+  signal?: AbortSignal;
+  /** Optional tighter result limits; excessive results fail without truncation. */
+  maxResultRows?: number;
+  maxResultBytes?: number;
 }
 
 /**

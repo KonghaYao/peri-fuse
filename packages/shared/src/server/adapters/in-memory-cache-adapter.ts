@@ -12,9 +12,12 @@ const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
 export class InMemoryCacheAdapter implements CacheAdapter {
   private cache: LRUCache<string, string>;
 
-  constructor(opts?: { max?: number; ttlMs?: number }) {
+  constructor(opts?: { max?: number; ttlMs?: number; maxBytes?: number }) {
     this.cache = new LRUCache<string, string>({
       max: opts?.max ?? DEFAULT_MAX_ENTRIES,
+      maxSize: opts?.maxBytes ?? 16 * 1024 * 1024,
+      sizeCalculation: (value, key) => (value.length + key.length) * 2 + 64,
+      ttlAutopurge: true,
       ttl: opts?.ttlMs ?? DEFAULT_TTL_MS,
     });
   }

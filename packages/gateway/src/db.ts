@@ -7,7 +7,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import Database from "better-sqlite3";
-import { drizzle, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { type BetterSQLite3Database, drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "./db/schema.js";
 
 export type Db = BetterSQLite3Database<typeof schema>;
@@ -43,6 +43,7 @@ export function closeDb(): void {
     _sqlite.close();
     _sqlite = null;
     _db = null;
+    _schemaReady = false;
   }
 }
 
@@ -90,7 +91,7 @@ function schemaAlreadyApplied(sqlite: Database.Database): boolean {
  */
 function projectScopingApplied(sqlite: Database.Database): boolean {
   try {
-    const cols = sqlite.prepare("PRAGMA table_info('Provider')").all() as any[];
+    const cols = sqlite.prepare("PRAGMA table_info('Provider')").all() as { name: string }[];
     return cols.some((c) => c.name === "projectId");
   } catch {
     return false;
@@ -121,6 +122,16 @@ export function ensureSchema(): void {
   // Step 2: project scoping migration (0001)
   if (!projectScopingApplied(sqlite)) {
     runMigrationFile(sqlite, "0001_add_project_scoping.sql");
+  }
+
+  // Daily aggregation must use the same project boundary as its source events.
+  const scopedDailyIndex = sqlite
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?")
+    .get("DailySpend_projectId_apiKey_date_model_provider_key");
+  if (!scopedDailyIndex) {
+    sqlite.transaction(() => {
+      runMigrationFile(sqlite, "0002_scope_daily_spend.sql");
+    })();
   }
 
   _schemaReady = true;

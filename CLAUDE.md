@@ -49,8 +49,8 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 - `src/routes/proxy/`：数据平面路由（chat completions、messages、models）。
 - `src/routes/admin/`：控制平面路由（providers、credentials、models、keys、budgets、usage、logs、audit）。
 - `src/hooks/`：Hook 系统（parallel-limiter、rate-limiter、budget-limiter、peri-fuse-logger）。
-- `src/spend/`：花费计算、批量刷写（SpendFlusher）、预算重置。
-- `drizzle/`：SQL 迁移文件（0000_init.sql、0001_add_project_scoping.sql）。
+- `src/spend/`：花费计算、同步事务记账（保留 SpendFlusher 接口）、预算重置。
+- `drizzle/`：SQL 增量迁移文件（含 DailySpend 项目隔离索引迁移）。
 - `test/integration.test.ts`：集成测试（31 个用例，覆盖多项目隔离）。
 
 ### CLI 地图（packages/cli）
@@ -247,6 +247,7 @@ pnpm run svc:logs             # 查看服务日志
 
 - `LITE_SERVER_PORT`：Server 端口（生产默认 23332；开发统一用 23432，root `dev`/`dev:server` 脚本与 `vite.config.ts` 代理已按此约定，勿混用）。
 - `LITE_LARGE_RESPONSE_THRESHOLD_BYTES`：API 大响应 warning 阈值，默认 1 MiB；日志只记录 method/path/status/bytes/duration/project/cache，不记录 query、鉴权或正文。
+- `LITE_MAX_ACTIVE_REQUESTS` / `LITE_MAX_REQUEST_BYTES` / `LITE_MAX_DECOMPRESSED_BYTES`：默认 64 个活动请求、16 MiB 上传、32 MiB OTLP 解压输出。完整边界及错误语义见 [运行时内存边界](./docs/runtime-memory-limits.md)。
 - `LANGFUSE_MODE`：运行模式（固定 `lite`，server 启动时自动设置）。
 - `PERIFUSE_HOME`：全局数据目录（默认 `~/.peri-fuse`），所有 SQLite 数据库、salt、encryption key 存放于此。
 - `DATABASE_URL`：Prisma SQLite 路径（默认 `<PERIFUSE_HOME>/langfuse.db`）。
@@ -259,7 +260,7 @@ pnpm run svc:logs             # 查看服务日志
 - `GATEWAY_DB_URL`：Gateway SQLite 路径（默认 `<PERIFUSE_HOME>/gateway.db`）。
 - `GATEWAY_ENCRYPTION_KEY`：Provider API Key 加密密钥（64 字符 hex，自动生成并持久化到 `<PERIFUSE_HOME>/.encryption-key`）。
 - `GATEWAY_LOG_REQUESTS`：是否记录请求日志（默认 true）。
-- `GATEWAY_FLUSH_INTERVAL_MS`：SpendFlusher 刷写间隔（默认 30000）。
-- `GATEWAY_DAILY_FLUSH_INTERVAL_MS`：DailySpend 刷写间隔（默认 60000）。
+- `GATEWAY_FLUSH_INTERVAL_MS` / `GATEWAY_DAILY_FLUSH_INTERVAL_MS`：兼容保留，已不影响记账；每次请求结束时同步提交 SQLite 事务。
+- `GATEWAY_MAX_ACTIVE_REQUESTS` / `GATEWAY_MAX_REQUEST_BYTES`：独立 Gateway 默认 64 个活动请求、16 MiB 上传；内嵌 Gateway 使用 server 的 `LITE_*` 上限。
 - `PERIFUSE_ENDPOINT`：PeriFuse 可观测性上报端点（可选）。
 - `PERIFUSE_PUBLIC_KEY` / `PERIFUSE_SECRET_KEY`：上报鉴权（可选）。
