@@ -156,6 +156,7 @@ export function ObservationsPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Level</TableHead>
+                  <TableHead>Detail</TableHead>
                   <TableHead>Start time</TableHead>
                   <TableHead>Model</TableHead>
                   <TableHead className="text-right">Tokens</TableHead>
@@ -173,6 +174,18 @@ export function ObservationsPage() {
                     </TableCell>
                     <TableCell>
                       <LevelBadge level={o.level} />
+                    </TableCell>
+                    <TableCell className="max-w-[360px] text-muted-foreground">
+                      {o.level === "ERROR" ? (
+                        <span
+                          className="block truncate text-danger"
+                          title={o.statusMessage || "No status message recorded"}
+                        >
+                          {o.statusMessage || "No status message recorded"}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
                       {formatDateTime(o.startTime)}
