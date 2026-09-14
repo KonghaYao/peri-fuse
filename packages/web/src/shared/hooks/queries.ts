@@ -1,10 +1,8 @@
 /**
- * Centralized React Query layer.
+ * Centralized TanStack Solid Query layer.
  *
  * All query keys and query functions live here so pages stay thin and
- * cache behaviour is consistent. Management-API hooks (projects, keys)
- * replace the manual fetch + useState patterns that settings/onboarding
- * previously used.
+ * cache behaviour is consistent across observability and management flows.
  */
 
 import {
@@ -13,7 +11,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
-} from "@tanstack/react-query";
+} from "@tanstack/solid-query";
 import {
   activateProject,
   createProject,
@@ -74,126 +72,126 @@ export const queryKeys = {
 
 export function useTracesQuery(params: TraceListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.traces(params),
     queryFn: () => listTraces(params),
     placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval || false,
-  });
+    refetchInterval: refetchInterval() || false,
+  }));
 }
 
 export function useTracesMetricsQuery(traceIds: string[]) {
   const refetchInterval = useRefreshInterval();
   const idsKey = traceIds.join(",");
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.tracesMetrics(idsKey),
     queryFn: () => getTracesMetrics(traceIds),
     enabled: traceIds.length > 0,
     placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval || false,
-  });
+    refetchInterval: refetchInterval() || false,
+  }));
 }
 
 export function useTraceQuery(traceId: string | undefined) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.trace(traceId ?? ""),
     queryFn: () => getTraceShell(traceId!),
     enabled: Boolean(traceId),
-  });
+  }));
 }
 
 export function useTraceIoQuery(traceId: string | undefined, enabled: boolean) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.traceIo(traceId ?? ""),
     queryFn: () => getTraceIo(traceId!),
     enabled: Boolean(traceId) && enabled,
-  });
+  }));
 }
 
 export function useTraceObservationsQuery(traceId: string | undefined, enabled = true) {
-  return useInfiniteQuery({
+  return useInfiniteQuery(() => ({
     queryKey: queryKeys.traceObservations(traceId ?? ""),
     queryFn: ({ pageParam }) => listTraceObservationSummaries(traceId!, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.meta.cursor ?? undefined,
     enabled: Boolean(traceId) && enabled,
-  });
+  }));
 }
 
 export function useObservationDetailQuery(observationId: string | null | undefined) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.observationDetail(observationId ?? ""),
     queryFn: () => getObservationDetail(observationId!),
     enabled: Boolean(observationId),
-  });
+  }));
 }
 
 export function useSessionsQuery(params: SessionListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.sessions(params),
     queryFn: () => listSessions(params),
     placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval || false,
-  });
+    refetchInterval: refetchInterval() || false,
+  }));
 }
 
 export function useSessionQuery(sessionId: string | undefined) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.session(sessionId ?? ""),
     queryFn: () => getSession(sessionId!),
     enabled: Boolean(sessionId),
-  });
+  }));
 }
 
 export function useUsersQuery(params: UserListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.users(params),
     queryFn: () => listUsers(params),
     placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval || false,
-  });
+    refetchInterval: refetchInterval() || false,
+  }));
 }
 
 export function useObservationsQuery(params: ObservationListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.observations(params),
     queryFn: () => listObservations(params),
     placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval || false,
-  });
+    refetchInterval: refetchInterval() || false,
+  }));
 }
 
 export function useScoresQuery(params: ScoreListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.scores(params),
     queryFn: () => listScores(params),
     placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval || false,
-  });
+    refetchInterval: refetchInterval() || false,
+  }));
 }
 
 export function useDashboardQuery(params?: DashboardQueryParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.dashboard(params),
     queryFn: () => getDashboard(params),
-    refetchInterval: refetchInterval || false,
-  });
+    refetchInterval: refetchInterval() || false,
+  }));
 }
 
 export function useErrorsQuery(params: ErrorQueryParams) {
   const refetchInterval = useRefreshInterval();
-  return useInfiniteQuery({
+  return useInfiniteQuery(() => ({
     queryKey: queryKeys.errors(params),
     queryFn: ({ pageParam }) => listErrors(params, pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.meta.cursor ?? undefined,
-    refetchInterval: refetchInterval || false,
-  });
+    refetchInterval: refetchInterval() || false,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -201,46 +199,52 @@ export function useErrorsQuery(params: ErrorQueryParams) {
 // ---------------------------------------------------------------------------
 
 export function useProjectsQuery() {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: queryKeys.projects,
     queryFn: listProjects,
-  });
+  }));
 }
 
-export function useProjectKeysQuery(projectId: string | undefined) {
-  return useQuery({
-    queryKey: queryKeys.projectKeys(projectId ?? ""),
-    queryFn: () => listProjectKeys(projectId!),
-    enabled: Boolean(projectId),
-  });
+export function useProjectKeysQuery(projectId: () => string | undefined) {
+  return useQuery(() => ({
+    queryKey: queryKeys.projectKeys(projectId() ?? ""),
+    queryFn: () => listProjectKeys(projectId()!),
+    enabled: Boolean(projectId()),
+  }));
 }
 
 export function useCreateProjectMutation() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation(() => ({
     mutationFn: (name: string) => createProject(name),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.projects }),
-  });
+  }));
 }
 
 export function useActivateProjectMutation() {
-  return useMutation({
+  return useMutation(() => ({
     mutationFn: (projectId: string) => activateProject(projectId),
-  });
+  }));
 }
 
-export function useCreateKeyMutation(projectId: string) {
+export function useCreateKeyMutation(projectId: () => string | undefined) {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => createProjectKey(projectId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.projectKeys(projectId) }),
-  });
+  return useMutation(() => ({
+    mutationFn: () => createProjectKey(projectId()!),
+    onSuccess: () => {
+      const id = projectId();
+      if (id) qc.invalidateQueries({ queryKey: queryKeys.projectKeys(id) });
+    },
+  }));
 }
 
-export function useDeleteKeyMutation(projectId: string) {
+export function useDeleteKeyMutation(projectId: () => string | undefined) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation(() => ({
     mutationFn: (keyId: string) => deleteProjectKey(keyId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.projectKeys(projectId) }),
-  });
+    onSuccess: () => {
+      const id = projectId();
+      if (id) qc.invalidateQueries({ queryKey: queryKeys.projectKeys(id) });
+    },
+  }));
 }

@@ -15,7 +15,7 @@ Pure SQLite backend, zero external infrastructure. Node.js >= 22, pnpm monorepo.
 | `packages/shared` | `@peri-fuse/shared` | Domain logic, Prisma DB, ingestion, OTLP |
 | `packages/server` | `@peri-fuse/server` | Hono HTTP server (production port 23332; dev port 23432) |
 | `packages/gateway` | `@peri/gateway` | LLM proxy gateway (port 4100) |
-| `packages/web` | `@peri-fuse/web` | React SPA dashboard |
+| `packages/web` | `@peri-fuse/web` | Solid.js SPA dashboard |
 | `packages/cli` | `peri-fuse` | CLI service manager |
 
 ## Critical Rules

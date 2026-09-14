@@ -13,7 +13,7 @@
  *
  * Usage: node scripts/transform-drizzle.mjs
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const prismaPath = ROOT + "prisma/schema.sqlite.prisma";
@@ -142,17 +142,14 @@ let result = out.join("\n");
 // ── 3. Fix imports (drop now-unused `numeric` / `sql`) ─────────────
 const usesNumeric = /numeric\(/.test(result);
 const usesSql = /sql`/.test(result);
-result = result.replace(
-  /import \{([^}]*)\} from "drizzle-orm\/sqlite-core"/,
-  (full, names) => {
-    const kept = names
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s && !(s === "numeric" && !usesNumeric))
-      .join(", ");
-    return `import { ${kept} } from "drizzle-orm/sqlite-core"`;
-  },
-);
+result = result.replace(/import \{([^}]*)\} from "drizzle-orm\/sqlite-core"/, (full, names) => {
+  const kept = names
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s && !(s === "numeric" && !usesNumeric))
+    .join(", ");
+  return `import { ${kept} } from "drizzle-orm/sqlite-core"`;
+});
 if (!usesSql) {
   result = result.replace(/\n?\s*import \{ sql \} from "drizzle-orm"\n/, "\n");
 }

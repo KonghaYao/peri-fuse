@@ -4,14 +4,13 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "strict": true,
-    // Keep app sources strict; react18-json-view ships React 18/CRA declarations.
-    // Remove when its declarations support React 19 and Vite SVG imports.
     "skipLibCheck": true,
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
@@ -22,6 +21,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "vite.config.ts"],
+  "include": ["src", "vite.config.ts", "vitest.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

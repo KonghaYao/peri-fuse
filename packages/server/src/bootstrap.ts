@@ -12,7 +12,11 @@ import { logger } from "@peri-fuse/shared/src/server";
 import { createAndAddApiKeysToDb } from "@peri-fuse/shared/src/server/auth/apiKeys";
 
 export async function ensureBootstrap(): Promise<void> {
-  const existingKey = await prisma.select({ id: apiKeys.id }).from(apiKeys).limit(1).then((rows) => rows[0]);
+  const existingKey = await prisma
+    .select({ id: apiKeys.id })
+    .from(apiKeys)
+    .limit(1)
+    .then((rows) => rows[0]);
   if (existingKey) {
     // Already bootstrapped
     return;

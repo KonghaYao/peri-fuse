@@ -35,7 +35,9 @@ function check(name, cond, extra) {
   } else {
     fail++;
     failures.push(name);
-    console.log(`  ✗ ${name}${extra !== undefined ? " — " + JSON.stringify(extra)?.slice(0, 200) : ""}`);
+    console.log(
+      `  ✗ ${name}${extra !== undefined ? " — " + JSON.stringify(extra)?.slice(0, 200) : ""}`,
+    );
   }
 }
 function section(title) {
@@ -47,13 +49,19 @@ async function api(method, path, body, useAuth = true) {
     method,
     headers: {
       "Content-Type": "application/json",
-      ...(useAuth ? { Authorization: "Basic " + Buffer.from(`${PK}:${SK}`).toString("base64") } : {}),
+      ...(useAuth
+        ? { Authorization: "Basic " + Buffer.from(`${PK}:${SK}`).toString("base64") }
+        : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
   let json;
-  try { json = JSON.parse(text); } catch { json = text; }
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = text;
+  }
   return { status: res.status, body: json };
 }
 
@@ -220,15 +228,29 @@ async function testTracesApi() {
   check("trace1 name", t1.body.name === "chat-completion", t1.body.name);
   check("trace1 sessionId", t1.body.sessionId === sessionId, t1.body.sessionId);
   check("trace1 userId", t1.body.userId === userId, t1.body.userId);
-  check("trace1 tags", JSON.stringify(t1.body.tags) === JSON.stringify(["e2e", "chat"]), t1.body.tags);
+  check(
+    "trace1 tags",
+    JSON.stringify(t1.body.tags) === JSON.stringify(["e2e", "chat"]),
+    t1.body.tags,
+  );
   check("trace1 environment", t1.body.environment === "e2e-test", t1.body.environment);
-  check("trace1 input preserved", t1.body.input?.messages?.[0]?.content === "What is 2+2?", t1.body.input);
+  check(
+    "trace1 input preserved",
+    t1.body.input?.messages?.[0]?.content === "What is 2+2?",
+    t1.body.input,
+  );
   check("trace1 output preserved", t1.body.output?.answer === "4", t1.body.output);
 
   // Embedded observations
   const obsNames = (t1.body.observations || []).map((o) => o.name).sort();
   check("trace1 has 3 observations", obsNames.length === 3, obsNames);
-  check("trace1 obs names", obsNames.includes("gpt4o-call") && obsNames.includes("retrieval") && obsNames.includes("cache-hit"), obsNames);
+  check(
+    "trace1 obs names",
+    obsNames.includes("gpt4o-call") &&
+      obsNames.includes("retrieval") &&
+      obsNames.includes("cache-hit"),
+    obsNames,
+  );
 
   // Embedded scores
   const sc = (t1.body.scores || []).find((s) => s.name === `e2e-accuracy-${runId}`);
@@ -239,12 +261,19 @@ async function testTracesApi() {
   check("GET /traces/unknown → 404", nf.status === 404, nf.status);
 
   // Metrics endpoint
-  const metrics = await api("GET", `/api/public/traces/metrics?traceIds=e2e-t1-${runId},e2e-t2-${runId}`);
+  const metrics = await api(
+    "GET",
+    `/api/public/traces/metrics?traceIds=e2e-t1-${runId},e2e-t2-${runId}`,
+  );
   check("GET /traces/metrics → 200", metrics.status === 200, metrics.status);
   check("metrics returns array", Array.isArray(metrics.body), typeof metrics.body);
   if (Array.isArray(metrics.body) && metrics.body.length > 0) {
     const m1 = metrics.body.find((m) => m.id === `e2e-t1-${runId}`);
-    check("metrics has trace1", !!m1, metrics.body.map((m) => m.id));
+    check(
+      "metrics has trace1",
+      !!m1,
+      metrics.body.map((m) => m.id),
+    );
     check("metrics trace1 has latency", m1 && typeof m1.latency === "number", m1);
   }
 }
@@ -261,9 +290,22 @@ async function testObservationsApi() {
 
   check("generation type", byName["gpt4o-call"]?.type === "GENERATION", byName["gpt4o-call"]?.type);
   check("generation model", byName["gpt4o-call"]?.model === "gpt-4o", byName["gpt4o-call"]?.model);
-  check("generation usage", byName["gpt4o-call"]?.usageDetails?.input === 12 && byName["gpt4o-call"]?.usageDetails?.total === 15, byName["gpt4o-call"]?.usageDetails);
-  check("generation input", byName["gpt4o-call"]?.input?.[0]?.content === "What is 2+2?", byName["gpt4o-call"]?.input);
-  check("generation output", byName["gpt4o-call"]?.output?.[0]?.content === "4", byName["gpt4o-call"]?.output);
+  check(
+    "generation usage",
+    byName["gpt4o-call"]?.usageDetails?.input === 12 &&
+      byName["gpt4o-call"]?.usageDetails?.total === 15,
+    byName["gpt4o-call"]?.usageDetails,
+  );
+  check(
+    "generation input",
+    byName["gpt4o-call"]?.input?.[0]?.content === "What is 2+2?",
+    byName["gpt4o-call"]?.input,
+  );
+  check(
+    "generation output",
+    byName["gpt4o-call"]?.output?.[0]?.content === "4",
+    byName["gpt4o-call"]?.output,
+  );
 
   check("span type", byName["retrieval"]?.type === "SPAN", byName["retrieval"]?.type);
   check("event type", byName["cache-hit"]?.type === "EVENT", byName["cache-hit"]?.type);
@@ -271,8 +313,16 @@ async function testObservationsApi() {
   // trace2 observations
   const obs2 = await api("GET", `/api/public/observations?traceId=e2e-t2-${runId}&limit=100`);
   const byName2 = Object.fromEntries((obs2.body.data || []).map((o) => [o.name, o]));
-  check("trace2 generation model claude", byName2["claude-call"]?.model === "claude-sonnet-4-20250514", byName2["claude-call"]?.model);
-  check("trace2 generation level DEBUG", byName2["claude-call"]?.level === "DEBUG", byName2["claude-call"]?.level);
+  check(
+    "trace2 generation model claude",
+    byName2["claude-call"]?.model === "claude-sonnet-4-20250514",
+    byName2["claude-call"]?.model,
+  );
+  check(
+    "trace2 generation level DEBUG",
+    byName2["claude-call"]?.level === "DEBUG",
+    byName2["claude-call"]?.level,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -284,7 +334,11 @@ async function testScoresApi() {
   const scores = await api("GET", `/api/public/scores?traceId=e2e-t1-${runId}`);
   check("GET /scores → 200", scores.status === 200, scores.status);
   const s1 = (scores.body.data || []).find((s) => s.name === `e2e-accuracy-${runId}`);
-  check("score accuracy found", !!s1, scores.body.data?.map((s) => s.name));
+  check(
+    "score accuracy found",
+    !!s1,
+    scores.body.data?.map((s) => s.name),
+  );
   check("score value 1.0", s1 && Math.abs(s1.value - 1.0) < 1e-6, s1?.value);
   check("score dataType NUMERIC", s1?.dataType === "NUMERIC", s1?.dataType);
   check("score traceId", s1?.traceId === `e2e-t1-${runId}`, s1?.traceId);
@@ -315,11 +369,23 @@ async function testSessionsApi() {
   check("session detail id", detail.body.id === sessionId, detail.body.id);
   check("session detail countTraces ≥ 2", detail.body.countTraces >= 2, detail.body.countTraces);
   check("session detail users", detail.body.users?.includes(userId), detail.body.users);
-  check("session detail has traces array", Array.isArray(detail.body.traces) && detail.body.traces.length >= 2, detail.body.traces?.length);
+  check(
+    "session detail has traces array",
+    Array.isArray(detail.body.traces) && detail.body.traces.length >= 2,
+    detail.body.traces?.length,
+  );
   if (detail.body.traces?.length > 0) {
     const st1 = detail.body.traces.find((t) => t.id === `e2e-t1-${runId}`);
-    check("session trace1 has observations", st1 && Array.isArray(st1.observations) && st1.observations.length > 0, st1?.observations?.length);
-    check("session trace1 has scores", st1 && Array.isArray(st1.scores) && st1.scores.length > 0, st1?.scores?.length);
+    check(
+      "session trace1 has observations",
+      st1 && Array.isArray(st1.observations) && st1.observations.length > 0,
+      st1?.observations?.length,
+    );
+    check(
+      "session trace1 has scores",
+      st1 && Array.isArray(st1.scores) && st1.scores.length > 0,
+      st1?.scores?.length,
+    );
   }
 
   // 404
@@ -354,15 +420,35 @@ async function testDashboardApi() {
 
   const dash = await api("GET", "/api/public/dashboard");
   check("GET /dashboard → 200", dash.status === 200, dash.status);
-  check("summary.totalTraces ≥ 3", dash.body.summary?.totalTraces >= 3, dash.body.summary?.totalTraces);
-  check("summary.totalObservations ≥ 5", dash.body.summary?.totalObservations >= 5, dash.body.summary?.totalObservations);
-  check("summary.totalScores ≥ 2", dash.body.summary?.totalScores >= 2, dash.body.summary?.totalScores);
-  check("summary.totalUsers ≥ 2", dash.body.summary?.totalUsers >= 2, dash.body.summary?.totalUsers);
+  check(
+    "summary.totalTraces ≥ 3",
+    dash.body.summary?.totalTraces >= 3,
+    dash.body.summary?.totalTraces,
+  );
+  check(
+    "summary.totalObservations ≥ 5",
+    dash.body.summary?.totalObservations >= 5,
+    dash.body.summary?.totalObservations,
+  );
+  check(
+    "summary.totalScores ≥ 2",
+    dash.body.summary?.totalScores >= 2,
+    dash.body.summary?.totalScores,
+  );
+  check(
+    "summary.totalUsers ≥ 2",
+    dash.body.summary?.totalUsers >= 2,
+    dash.body.summary?.totalUsers,
+  );
   check("daily is array", Array.isArray(dash.body.daily), typeof dash.body.daily);
   check("byModel is array", Array.isArray(dash.body.byModel), typeof dash.body.byModel);
   if (dash.body.byModel?.length > 0) {
     const gpt = dash.body.byModel.find((m) => m.model === "gpt-4o");
-    check("byModel has gpt-4o", !!gpt, dash.body.byModel.map((m) => m.model));
+    check(
+      "byModel has gpt-4o",
+      !!gpt,
+      dash.body.byModel.map((m) => m.model),
+    );
   }
   check("levels is array", Array.isArray(dash.body.levels), typeof dash.body.levels);
 }
@@ -398,15 +484,27 @@ async function testManageCrud() {
   // List keys
   const keysList = await api("GET", `/api/manage/projects/${projId}/keys`, null, false);
   check("GET keys → 200", keysList.status === 200, keysList.status);
-  check("key in list", (keysList.body || []).some((k) => k.id === keyRes.body.id), keysList.body?.length);
+  check(
+    "key in list",
+    (keysList.body || []).some((k) => k.id === keyRes.body.id),
+    keysList.body?.length,
+  );
 
   // Delete key
   const delRes = await api("DELETE", `/api/manage/keys/${keyRes.body.id}`, null, false);
-  check("DELETE /manage/keys/:id → 200", delRes.status === 200 && delRes.body.success === true, delRes);
+  check(
+    "DELETE /manage/keys/:id → 200",
+    delRes.status === 200 && delRes.body.success === true,
+    delRes,
+  );
 
   // Verify deleted
   const keysAfter = await api("GET", `/api/manage/projects/${projId}/keys`, null, false);
-  check("key removed from list", !(keysAfter.body || []).some((k) => k.id === keyRes.body.id), keysAfter.body?.length);
+  check(
+    "key removed from list",
+    !(keysAfter.body || []).some((k) => k.id === keyRes.body.id),
+    keysAfter.body?.length,
+  );
 
   // Activate (creates web-ui key)
   const activate = await api("POST", `/api/manage/projects/${projId}/activate`, {}, false);

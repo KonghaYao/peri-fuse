@@ -1,187 +1,201 @@
-import { AlertTriangle, ChevronRight, Clock3, Globe, Search, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
-import { FilterInput, type FilterInputHandle } from "@/shared/components/filter-input";
-import { FilterSelect } from "@/shared/components/filter-select";
-import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
-import { Badge } from "@/shared/components/ui/badge";
-import { Button } from "@/shared/components/ui/button";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  FilterInput,
+  type FilterInputHandle,
+  FilterSelect,
+  PageHeaderShell,
+  Skeleton,
+  TableInlineError,
+} from "@peri/ui";
+import { useSearchParams } from "@solidjs/router";
+import { AlertTriangle, ChevronRight, Clock3, Globe, Search, X } from "lucide-solid";
+import { type Component, createSignal, For, Show } from "solid-js";
+import { ErrorAnalysisRail } from "@/features/errors/components/error-analysis-rail";
+import { ErrorInvestigationPanel } from "@/features/errors/components/error-investigation-panel";
+import { AutoRefreshControl } from "@/features/users/components/auto-refresh-control";
+import { searchParamValue } from "@/features/users/search-param";
 import { useErrorsQuery } from "@/shared/hooks/queries";
 import { formatDateTime, formatDuration } from "@/shared/lib/format";
 import type { ErrorEvent, ErrorQueryParams } from "@/shared/lib/types";
 import { cn } from "@/shared/lib/utils";
-import { ErrorAnalysisRail } from "./components/error-analysis-rail";
-import { ErrorInvestigationPanel } from "./components/error-investigation-panel";
 
 const RANGE_MS: Record<string, number | null> = {
-  "24h": 24 * 3600_000,
-  "7d": 7 * 24 * 3600_000,
-  "30d": 30 * 24 * 3600_000,
+  "24h": 24 * 3_600_000,
+  "7d": 7 * 24 * 3_600_000,
+  "30d": 30 * 24 * 3_600_000,
   all: null,
 };
 
-function ErrorRow({
-  error,
-  selected,
-  onSelect,
-}: {
+const ErrorRow: Component<{
   error: ErrorEvent;
   selected: boolean;
   onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        "group grid w-full grid-cols-[18px_minmax(0,1fr)_auto] gap-3 border-b border-line px-4 py-3 text-left transition-colors focus-visible:bg-danger-subtle",
-        selected ? "bg-danger-subtle" : "hover:bg-surface-inset/70",
-      )}
-    >
-      <AlertTriangle className="mt-0.5 h-4 w-4 text-danger" />
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-semibold text-fg-primary">
-            {error.name ?? "Unnamed observation"}
+}> = (props) => (
+  <button
+    type="button"
+    onClick={props.onSelect}
+    class={cn(
+      "group grid w-full grid-cols-[18px_minmax(0,1fr)_auto] gap-3 border-b border-line px-4 py-3 text-left transition-colors focus-visible:bg-danger-subtle",
+      props.selected ? "bg-danger-subtle" : "hover:bg-surface-inset/70",
+    )}
+  >
+    <AlertTriangle class="mt-0.5 h-4 w-4 text-danger" size={16} />
+    <div class="min-w-0">
+      <div class="flex min-w-0 items-center gap-2">
+        <span class="truncate text-sm font-semibold text-fg-primary">
+          {props.error.name ?? "Unnamed observation"}
+        </span>
+        <Badge tone="neutral" class="shrink-0 font-mono text-[9px]">
+          {props.error.type}
+        </Badge>
+        {props.error.model && (
+          <span class="hidden truncate font-mono text-[10px] text-fg-tertiary sm:block">
+            {props.error.model}
           </span>
-          <Badge variant="muted" className="shrink-0 font-mono text-[9px]">
-            {error.type}
-          </Badge>
-          {error.model && (
-            <span className="hidden truncate font-mono text-[10px] text-fg-tertiary sm:block">
-              {error.model}
-            </span>
-          )}
-        </div>
-        <p className="mt-1 line-clamp-2 font-mono text-[11px] leading-4 text-fg-secondary">
-          {error.statusMessage ?? "No status message recorded"}
-        </p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-fg-tertiary">
-          <span>{error.traceName ?? error.traceId ?? "Unknown trace"}</span>
-          {error.environment && <span>{error.environment}</span>}
-          {error.endTime && <span>{formatDuration(error.startTime, error.endTime)}</span>}
-        </div>
+        )}
       </div>
-      <div className="flex items-start gap-2">
-        <time className="hidden whitespace-nowrap font-mono text-[10px] text-fg-tertiary sm:block">
-          {formatDateTime(error.startTime)}
-        </time>
-        <ChevronRight className="h-4 w-4 text-fg-tertiary transition-transform group-hover:translate-x-0.5" />
+      <p class="mt-1 line-clamp-2 font-mono text-[11px] leading-4 text-fg-secondary">
+        {props.error.statusMessage ?? "No status message recorded"}
+      </p>
+      <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-fg-tertiary">
+        <span>{props.error.traceName ?? props.error.traceId ?? "Unknown trace"}</span>
+        {props.error.environment && <span>{props.error.environment}</span>}
+        {props.error.endTime && (
+          <span>{formatDuration(props.error.startTime, props.error.endTime)}</span>
+        )}
       </div>
-    </button>
-  );
-}
+    </div>
+    <div class="flex items-start gap-2">
+      <time class="hidden whitespace-nowrap font-mono text-[10px] text-fg-tertiary sm:block">
+        {formatDateTime(props.error.startTime)}
+      </time>
+      <ChevronRight
+        class="h-4 w-4 text-fg-tertiary transition-transform group-hover:translate-x-0.5"
+        size={16}
+      />
+    </div>
+  </button>
+);
 
-export function ErrorsPage() {
+export const ErrorsPage: Component = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [clock] = useState(() => Date.now());
-  const searchRef = useRef<FilterInputHandle>(null);
-  const environmentRef = useRef<FilterInputHandle>(null);
-  const range = searchParams.get("range") ?? "7d";
-  const search = searchParams.get("search") ?? undefined;
-  const type = searchParams.get("type") ?? undefined;
-  const model = searchParams.get("model") ?? undefined;
-  const environment = searchParams.get("environment") ?? undefined;
-  const selectedId = searchParams.get("errorId") ?? undefined;
+  const [clock] = createSignal(Date.now());
+  let searchRef: FilterInputHandle | undefined;
+  let environmentRef: FilterInputHandle | undefined;
 
-  const params = useMemo<ErrorQueryParams>(() => {
-    const duration = RANGE_MS[range] ?? RANGE_MS["7d"];
+  const range = () => searchParamValue(searchParams.range) ?? "7d";
+  const search = () => searchParamValue(searchParams.search);
+  const type = () => searchParamValue(searchParams.type);
+  const model = () => searchParamValue(searchParams.model);
+  const environment = () => searchParamValue(searchParams.environment);
+  const selectedId = () => searchParamValue(searchParams.errorId);
+
+  const queryParams = (): ErrorQueryParams => {
+    const duration = RANGE_MS[range()] ?? RANGE_MS["7d"];
     return {
-      from: duration === null ? undefined : new Date(clock - duration).toISOString(),
-      search,
-      type,
-      model,
-      environment,
+      from: duration === null ? undefined : new Date(clock() - duration).toISOString(),
+      search: search(),
+      type: type(),
+      model: model(),
+      environment: environment(),
     };
-  }, [clock, environment, model, range, search, type]);
-  const query = useErrorsQuery(params);
-  const analysis = query.data?.pages[0];
-  const errors = query.data?.pages.flatMap((page) => page.data) ?? [];
-  const selected = errors.find((error) => error.id === selectedId);
-
-  const updateFilter = (key: string, value: string | undefined) => {
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current);
-      if (value) next.set(key, value);
-      else next.delete(key);
-      next.delete("errorId");
-      return next;
-    });
   };
 
-  const selectError = (id: string | undefined) => {
+  const query = useErrorsQuery(queryParams());
+  const analysis = () => query.data?.pages[0];
+  const errors = () => query.data?.pages.flatMap((page) => page.data) ?? [];
+  const selected = () => errors().find((error) => error.id === selectedId());
+
+  const updateFilter = (key: string, value: string | undefined) => {
     setSearchParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        if (id) next.set("errorId", id);
-        else next.delete("errorId");
-        return next;
+      {
+        [key]: value ?? undefined,
+        errorId: undefined,
       },
       { replace: true },
     );
   };
 
-  const clearFilters = () => {
-    setSearchParams({ range });
+  const selectError = (id: string | undefined) => {
+    setSearchParams({ errorId: id ?? undefined }, { replace: true });
   };
 
+  const clearFilters = () => {
+    setSearchParams({
+      range: range(),
+      search: undefined,
+      type: undefined,
+      model: undefined,
+      environment: undefined,
+      errorId: undefined,
+    });
+  };
+
+  const hasActiveFilters = () => Boolean(search() || type() || model() || environment());
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <PageHeader
+    <div class="flex h-full min-h-0 flex-col">
+      <PageHeaderShell
         title="Errors"
         description="Find recurring failures and follow their evidence back to the source."
         actions={<AutoRefreshControl />}
       />
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
-        <div className="flex rounded-md border border-line bg-surface-inset p-0.5">
-          {Object.keys(RANGE_MS).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => updateFilter("range", item)}
-              className={cn(
-                "rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
-                range === item
-                  ? "bg-surface-raised text-fg-primary shadow-sm"
-                  : "text-fg-tertiary hover:text-fg-primary",
-              )}
-            >
-              {item === "all" ? "All" : item}
-            </button>
-          ))}
+      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
+        <div class="flex rounded-md border border-line bg-surface-inset p-0.5">
+          <For each={Object.keys(RANGE_MS)}>
+            {(item) => (
+              <button
+                type="button"
+                onClick={() => updateFilter("range", item)}
+                class={cn(
+                  "rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
+                  range() === item
+                    ? "bg-surface-raised text-fg-primary shadow-sm"
+                    : "text-fg-tertiary hover:text-fg-primary",
+                )}
+              >
+                {item === "all" ? "All" : item}
+              </button>
+            )}
+          </For>
         </div>
         <FilterInput
-          ref={searchRef}
-          className="w-64"
+          ref={(handle) => {
+            searchRef = handle;
+          }}
+          class="w-64"
           placeholder="Search message, trace or name…"
           icon={Search}
-          value={search}
+          value={search()}
           onCommit={(value) => updateFilter("search", value)}
         />
         <FilterInput
-          ref={environmentRef}
-          className="w-40"
+          ref={(handle) => {
+            environmentRef = handle;
+          }}
+          class="w-40"
           placeholder="Environment…"
           icon={Globe}
-          value={environment}
+          value={environment()}
           onCommit={(value) => updateFilter("environment", value)}
         />
         <Button
           size="sm"
           variant="secondary"
           onClick={() => {
-            searchRef.current?.commit();
-            environmentRef.current?.commit();
+            searchRef?.commit();
+            environmentRef?.commit();
           }}
         >
-          <Search className="h-3.5 w-3.5" /> Search
+          <Search class="h-3.5 w-3.5" size={14} /> Search
         </Button>
         <FilterSelect
           placeholder="Type"
           allLabel="All types"
-          value={type}
+          value={type()}
           onCommit={(value) => updateFilter("type", value)}
           options={["GENERATION", "SPAN", "EVENT", "AGENT", "TOOL"].map((value) => ({
             value,
@@ -191,91 +205,118 @@ export function ErrorsPage() {
         <FilterSelect
           placeholder="Model"
           allLabel="All models"
-          value={model}
+          value={model()}
           onCommit={(value) => updateFilter("model", value)}
-          options={(analysis?.models ?? []).map((item) => ({
+          options={(analysis()?.models ?? []).map((item) => ({
             value: item.model,
             label: `${item.model} (${item.count})`,
           }))}
         />
-        {(search || type || model || environment) && (
+        <Show when={hasActiveFilters()}>
           <Button size="sm" variant="ghost" onClick={clearFilters}>
-            <X className="h-3.5 w-3.5" /> Clear filters
+            <X class="h-3.5 w-3.5" size={14} /> Clear filters
           </Button>
-        )}
+        </Show>
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        {analysis && (
-          <aside className="hidden w-72 shrink-0 overflow-y-auto border-r border-line bg-surface-raised lg:block">
-            <ErrorAnalysisRail
-              analysis={analysis}
-              onSelectSignature={(signature) => updateFilter("search", signature)}
-            />
-          </aside>
-        )}
-
-        <main className="flex min-w-0 flex-1 flex-col">
-          {analysis && (
-            <details className="shrink-0 border-b border-line bg-surface-raised lg:hidden">
-              <summary className="cursor-pointer px-4 py-2.5 text-xs font-semibold text-fg-secondary">
-                Analysis snapshot · {analysis.summary.uniqueSignatures} fingerprints
-              </summary>
+      <div class="flex min-h-0 flex-1">
+        <Show when={analysis()}>
+          {(data) => (
+            <aside class="hidden w-72 shrink-0 overflow-y-auto border-r border-line bg-surface-raised lg:block">
               <ErrorAnalysisRail
-                analysis={analysis}
+                analysis={data()}
                 onSelectSignature={(signature) => updateFilter("search", signature)}
               />
-            </details>
+            </aside>
           )}
-          <div className="flex h-10 shrink-0 items-center justify-between border-b border-line px-4">
-            <div className="flex items-center gap-2 text-xs text-fg-secondary">
-              <Clock3 className="h-3.5 w-3.5" />
+        </Show>
+
+        <main class="flex min-w-0 flex-1 flex-col">
+          <Show when={analysis()}>
+            {(data) => (
+              <details class="shrink-0 border-b border-line bg-surface-raised lg:hidden">
+                <summary class="cursor-pointer px-4 py-2.5 text-xs font-semibold text-fg-secondary">
+                  Analysis snapshot · {data().summary.uniqueSignatures} fingerprints
+                </summary>
+                <ErrorAnalysisRail
+                  analysis={data()}
+                  onSelectSignature={(signature) => updateFilter("search", signature)}
+                />
+              </details>
+            )}
+          </Show>
+          <div class="flex h-10 shrink-0 items-center justify-between border-b border-line px-4">
+            <div class="flex items-center gap-2 text-xs text-fg-secondary">
+              <Clock3 class="h-3.5 w-3.5" size={14} />
               <span>
-                {analysis
-                  ? `${analysis.summary.totalErrors.toLocaleString()} matching errors`
+                {analysis()
+                  ? `${analysis()!.summary.totalErrors.toLocaleString()} matching errors`
                   : "Loading errors"}
               </span>
             </div>
-            <span className="font-mono text-[10px] text-fg-tertiary">Newest first</span>
+            <span class="font-mono text-[10px] text-fg-tertiary">Newest first</span>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {query.isLoading ? (
-              <LoadingRows rows={10} />
-            ) : query.error ? (
-              <ErrorState error={query.error} />
-            ) : errors.length === 0 ? (
-              <EmptyState message="No errors match this investigation window." />
-            ) : (
-              <>
-                {errors.map((error) => (
-                  <ErrorRow
-                    key={error.id}
-                    error={error}
-                    selected={error.id === selectedId}
-                    onSelect={() => selectError(error.id)}
-                  />
-                ))}
-                {query.hasNextPage && (
-                  <div className="flex justify-center p-4">
-                    <Button
-                      variant="secondary"
-                      disabled={query.isFetchingNextPage}
-                      onClick={() => query.fetchNextPage()}
-                    >
-                      {query.isFetchingNextPage ? "Loading…" : "Load older errors"}
-                    </Button>
+          <div class="min-h-0 flex-1 overflow-y-auto">
+            <Show
+              when={!query.isPending}
+              fallback={
+                <div class="space-y-2 p-4">
+                  <For each={Array.from({ length: 10 }, (_, i) => i)}>
+                    {() => <Skeleton class="h-16 w-full" />}
+                  </For>
+                </div>
+              }
+            >
+              <Show
+                when={!query.isError}
+                fallback={
+                  <div class="p-4">
+                    <TableInlineError error={query.error} onRetry={() => void query.refetch()} />
                   </div>
-                )}
-              </>
-            )}
+                }
+              >
+                <Show
+                  when={errors().length > 0}
+                  fallback={
+                    <EmptyState
+                      variant="inline"
+                      title="No errors match this investigation window."
+                    />
+                  }
+                >
+                  <For each={errors()}>
+                    {(error) => (
+                      <ErrorRow
+                        error={error}
+                        selected={error.id === selectedId()}
+                        onSelect={() => selectError(error.id)}
+                      />
+                    )}
+                  </For>
+                  <Show when={query.hasNextPage}>
+                    <div class="flex justify-center p-4">
+                      <Button
+                        variant="secondary"
+                        disabled={query.isFetchingNextPage}
+                        onClick={() => void query.fetchNextPage()}
+                      >
+                        {query.isFetchingNextPage ? "Loading…" : "Load older errors"}
+                      </Button>
+                    </div>
+                  </Show>
+                </Show>
+              </Show>
+            </Show>
           </div>
         </main>
 
-        {selected && (
-          <ErrorInvestigationPanel error={selected} onClose={() => selectError(undefined)} />
-        )}
+        <Show when={selected()} keyed>
+          {(error) => (
+            <ErrorInvestigationPanel error={error} onClose={() => selectError(undefined)} />
+          )}
+        </Show>
       </div>
     </div>
   );
-}
+};

@@ -9,13 +9,14 @@
  *  5. Rate limiting & budget enforcement
  *  6. Usage & logs visibility
  */
-import { serve, type ServerType } from "@hono/node-server";
-import bcrypt from "bcryptjs";
-import { Hono } from "hono";
-import { streamSSE } from "hono/streaming";
+
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { type ServerType, serve } from "@hono/node-server";
+import bcrypt from "bcryptjs";
+import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const TEST_DB = "/tmp/peri-gateway-test.db";
@@ -577,23 +578,35 @@ describe("rate limiting", () => {
     });
 
     // First 2 requests should pass
-    const r1 = await proxyPost("/v1/chat/completions", {
-      model: "gpt-test",
-      messages: [{ role: "user", content: "1" }],
-    }, "sk-ratelimit");
+    const r1 = await proxyPost(
+      "/v1/chat/completions",
+      {
+        model: "gpt-test",
+        messages: [{ role: "user", content: "1" }],
+      },
+      "sk-ratelimit",
+    );
     expect(r1.status).toBe(200);
 
-    const r2 = await proxyPost("/v1/chat/completions", {
-      model: "gpt-test",
-      messages: [{ role: "user", content: "2" }],
-    }, "sk-ratelimit");
+    const r2 = await proxyPost(
+      "/v1/chat/completions",
+      {
+        model: "gpt-test",
+        messages: [{ role: "user", content: "2" }],
+      },
+      "sk-ratelimit",
+    );
     expect(r2.status).toBe(200);
 
     // Third should be rate limited
-    const r3 = await proxyPost("/v1/chat/completions", {
-      model: "gpt-test",
-      messages: [{ role: "user", content: "3" }],
-    }, "sk-ratelimit");
+    const r3 = await proxyPost(
+      "/v1/chat/completions",
+      {
+        model: "gpt-test",
+        messages: [{ role: "user", content: "3" }],
+      },
+      "sk-ratelimit",
+    );
     expect(r3.status).toBe(429);
     const body = (await r3.json()) as any;
     expect(body.error.message).toContain("Rate limit");
@@ -625,10 +638,14 @@ describe("budget limiting", () => {
     const db = getDb();
     await db.update(apiKey).set({ spend: 1.0 }).where(eq(apiKey.publicKey, "pk-budget"));
 
-    const res = await proxyPost("/v1/chat/completions", {
-      model: "gpt-test",
-      messages: [{ role: "user", content: "Hi" }],
-    }, "sk-budget");
+    const res = await proxyPost(
+      "/v1/chat/completions",
+      {
+        model: "gpt-test",
+        messages: [{ role: "user", content: "Hi" }],
+      },
+      "sk-budget",
+    );
     expect(res.status).toBe(429);
     const body = (await res.json()) as any;
     expect(body.error.message).toContain("Budget");
@@ -657,10 +674,14 @@ describe("user flow: full lifecycle", () => {
     expect(depRes.status).toBe(201);
 
     // 3. Proxy call with project B key
-    const chatRes = await proxyPost("/v1/chat/completions", {
-      model: "lifecycle-model",
-      messages: [{ role: "user", content: "lifecycle test" }],
-    }, SK_B);
+    const chatRes = await proxyPost(
+      "/v1/chat/completions",
+      {
+        model: "lifecycle-model",
+        messages: [{ role: "user", content: "lifecycle test" }],
+      },
+      SK_B,
+    );
     expect(chatRes.status).toBe(200);
     const chatBody = (await chatRes.json()) as any;
     expect(chatBody.choices[0].message.content).toBe("Hello world");

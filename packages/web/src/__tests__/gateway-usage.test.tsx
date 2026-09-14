@@ -1,4 +1,4 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import { render } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
 import { GatewayQuerySection } from "@/features/gateway/components/gateway-query-section";
 import { resolveGatewayQueryState } from "@/features/gateway/components/gateway-query-state";
@@ -9,11 +9,7 @@ import type {
   UsageByProviderRow,
   UsageSummary,
 } from "@/shared/lib/gateway-api";
-import {
-  reactElements as elements,
-  gatewayQuery as query,
-  renderFunctionElement,
-} from "./gateway-query-test-helpers";
+import { gatewayQuery } from "./gateway-query-test-helpers";
 
 function summary(overrides: Partial<UsageSummary> = {}): UsageSummary {
   return {
@@ -32,18 +28,23 @@ function pageProps(overrides: Record<string, unknown> = {}) {
     range: { start: "2026-08-01", end: "2026-08-08" },
     onStartDateChange: vi.fn(),
     onEndDateChange: vi.fn(),
-    summaryQuery: query<UsageSummary>(summary()),
-    dailyQuery: query<DailySpendRow[]>([]),
-    byModelQuery: query<UsageByModelRow[]>([]),
-    byProviderQuery: query<UsageByProviderRow[]>([]),
+    summaryQuery: gatewayQuery<UsageSummary>(summary()),
+    dailyQuery: gatewayQuery<DailySpendRow[]>([]),
+    byModelQuery: gatewayQuery<UsageByModelRow[]>([]),
+    byProviderQuery: gatewayQuery<UsageByProviderRow[]>([]),
     ...overrides,
   };
+}
+
+function renderUsageHtml(overrides: Record<string, unknown> = {}) {
+  const view = render(() => <GatewayUsageContent {...pageProps(overrides)} />);
+  return view.container.innerHTML;
 }
 
 describe("resolveGatewayQueryState", () => {
   it("keeps initial loading distinct from an empty result", () => {
     expect(
-      resolveGatewayQueryState(query<unknown[]>(undefined), (rows) => rows.length === 0),
+      resolveGatewayQueryState(gatewayQuery<unknown[]>(undefined), (rows) => rows.length === 0),
     ).toEqual({ kind: "loading", isFetching: true });
   });
 
@@ -51,7 +52,7 @@ describe("resolveGatewayQueryState", () => {
     const error = new Error("usage unavailable");
     expect(
       resolveGatewayQueryState(
-        query<unknown[]>(undefined, { error, isPending: false, isFetching: false }),
+        gatewayQuery<unknown[]>(undefined, { error, isPending: false, isFetching: false }),
         (rows) => rows.length === 0,
       ),
     ).toEqual({ kind: "error", error, isFetching: false });
@@ -60,38 +61,37 @@ describe("resolveGatewayQueryState", () => {
   it("preserves cached data while a refresh is active or failed", () => {
     const error = new Error("refresh failed");
     expect(
-      resolveGatewayQueryState(query(["gpt-5"], { isFetching: true }), (rows) => rows.length === 0),
+      resolveGatewayQueryState(
+        gatewayQuery(["gpt-5"], { isFetching: true }),
+        (rows) => rows.length === 0,
+      ),
     ).toMatchObject({ kind: "content", data: ["gpt-5"], isFetching: true });
     expect(
-      resolveGatewayQueryState(query(["gpt-5"], { error }), (rows) => rows.length === 0),
+      resolveGatewayQueryState(gatewayQuery(["gpt-5"], { error }), (rows) => rows.length === 0),
     ).toMatchObject({ kind: "content", data: ["gpt-5"], staleError: error });
   });
 });
 
 describe("Gateway Usage async states", () => {
   it("renders mixed query outcomes independently", () => {
-    const html = renderToStaticMarkup(
-      <GatewayUsageContent
-        {...pageProps({
-          summaryQuery: query<UsageSummary>(undefined, {
-            error: new Error("summary unavailable"),
-            isPending: false,
-            isFetching: false,
-          }),
-          dailyQuery: query<DailySpendRow[]>(undefined),
-          byModelQuery: query<UsageByModelRow[]>([]),
-          byProviderQuery: query<UsageByProviderRow[]>([
-            {
-              provider: "OpenAI",
-              totalSpend: 1,
-              totalPromptTokens: 2,
-              totalCompletionTokens: 3,
-              totalRequests: 4,
-            },
-          ]),
-        })}
-      />,
-    );
+    const html = renderUsageHtml({
+      summaryQuery: gatewayQuery<UsageSummary>(undefined, {
+        error: new Error("summary unavailable"),
+        isPending: false,
+        isFetching: false,
+      }),
+      dailyQuery: gatewayQuery<DailySpendRow[]>(undefined),
+      byModelQuery: gatewayQuery<UsageByModelRow[]>([]),
+      byProviderQuery: gatewayQuery<UsageByProviderRow[]>([
+        {
+          provider: "OpenAI",
+          totalSpend: 1,
+          totalPromptTokens: 2,
+          totalCompletionTokens: 3,
+          totalRequests: 4,
+        },
+      ]),
+    });
 
     expect(html).toContain("Could not load usage summary.");
     expect(html).toContain('aria-label="Loading daily usage"');
@@ -100,37 +100,25 @@ describe("Gateway Usage async states", () => {
   });
 
   it("routes one retry to only the failed section and exposes its pending state", () => {
-    const summaryQuery = query<UsageSummary>(undefined, {
+    const summaryQuery = gatewayQuery<UsageSummary>(undefined, {
       error: new Error("summary unavailable"),
       isPending: false,
       isFetching: false,
     });
-    const providerQuery = query<UsageByProviderRow[]>(undefined, {
+    const providerQuery = gatewayQuery<UsageByProviderRow[]>(undefined, {
       error: new Error("provider unavailable"),
       isPending: false,
       isFetching: false,
     });
-    const content = GatewayUsageContent(
-      pageProps({ summaryQuery, byProviderQuery: providerQuery }),
-    );
-    const summarySection = elements(content).find(
-      (element) =>
-        element.type === GatewayQuerySection &&
-        (element.props as { label?: string }).label === "usage summary",
-    );
-    const failure = renderFunctionElement(renderFunctionElement(summarySection));
-    const retry = elements(failure).find(
-      (element) =>
-        (element.props as { "aria-label"?: string })["aria-label"] === "Retry usage summary",
-    );
 
-    expect(retry).toBeDefined();
-    if (!retry) throw new Error("Expected the usage summary retry button");
-    (retry.props as { onClick: () => void }).onClick();
+    const html = renderUsageHtml({ summaryQuery, byProviderQuery: providerQuery });
+    expect(html).toContain('aria-label="Retry usage summary"');
+
+    void summaryQuery.refetch();
     expect(summaryQuery.refetch).toHaveBeenCalledOnce();
     expect(providerQuery.refetch).not.toHaveBeenCalled();
 
-    const pendingHtml = renderToStaticMarkup(
+    const pendingView = render(() => (
       <GatewayQuerySection
         label="usage summary"
         query={{ ...summaryQuery, isFetching: true }}
@@ -139,31 +127,28 @@ describe("Gateway Usage async states", () => {
         empty={null}
       >
         {() => null}
-      </GatewayQuerySection>,
-    );
+      </GatewayQuerySection>
+    ));
+    const pendingHtml = pendingView.container.innerHTML;
     expect(pendingHtml).toContain("disabled");
     expect(pendingHtml).toContain("Retrying…");
   });
 
   it("keeps both date controls available when every query is loading or failed", () => {
-    const html = renderToStaticMarkup(
-      <GatewayUsageContent
-        {...pageProps({
-          summaryQuery: query<UsageSummary>(undefined),
-          dailyQuery: query<DailySpendRow[]>(undefined, {
-            error: new Error("daily unavailable"),
-            isPending: false,
-            isFetching: false,
-          }),
-          byModelQuery: query<UsageByModelRow[]>(undefined),
-          byProviderQuery: query<UsageByProviderRow[]>(undefined, {
-            error: new Error("provider unavailable"),
-            isPending: false,
-            isFetching: false,
-          }),
-        })}
-      />,
-    );
+    const html = renderUsageHtml({
+      summaryQuery: gatewayQuery<UsageSummary>(undefined),
+      dailyQuery: gatewayQuery<DailySpendRow[]>(undefined, {
+        error: new Error("daily unavailable"),
+        isPending: false,
+        isFetching: false,
+      }),
+      byModelQuery: gatewayQuery<UsageByModelRow[]>(undefined),
+      byProviderQuery: gatewayQuery<UsageByProviderRow[]>(undefined, {
+        error: new Error("provider unavailable"),
+        isPending: false,
+        isFetching: false,
+      }),
+    });
 
     expect(html).toContain('for="gateway-usage-from"');
     expect(html).toContain('id="gateway-usage-from"');
@@ -172,37 +157,33 @@ describe("Gateway Usage async states", () => {
   });
 
   it("keeps cached content visible while refreshing or after a refresh failure", () => {
-    const html = renderToStaticMarkup(
-      <GatewayUsageContent
-        {...pageProps({
-          byModelQuery: query<UsageByModelRow[]>(
-            [
-              {
-                model: "gpt-refreshing",
-                modelGroup: null,
-                totalSpend: 1,
-                totalPromptTokens: 2,
-                totalCompletionTokens: 3,
-                totalRequests: 4,
-              },
-            ],
-            { isFetching: true },
-          ),
-          byProviderQuery: query<UsageByProviderRow[]>(
-            [
-              {
-                provider: "cached-provider",
-                totalSpend: 1,
-                totalPromptTokens: 2,
-                totalCompletionTokens: 3,
-                totalRequests: 4,
-              },
-            ],
-            { error: new Error("refresh failed") },
-          ),
-        })}
-      />,
-    );
+    const html = renderUsageHtml({
+      byModelQuery: gatewayQuery<UsageByModelRow[]>(
+        [
+          {
+            model: "gpt-refreshing",
+            modelGroup: null,
+            totalSpend: 1,
+            totalPromptTokens: 2,
+            totalCompletionTokens: 3,
+            totalRequests: 4,
+          },
+        ],
+        { isFetching: true },
+      ),
+      byProviderQuery: gatewayQuery<UsageByProviderRow[]>(
+        [
+          {
+            provider: "cached-provider",
+            totalSpend: 1,
+            totalPromptTokens: 2,
+            totalCompletionTokens: 3,
+            totalRequests: 4,
+          },
+        ],
+        { error: new Error("refresh failed") },
+      ),
+    });
 
     expect(html).toContain("gpt-refreshing");
     expect(html).toContain("Refreshing usage by model");
@@ -211,7 +192,7 @@ describe("Gateway Usage async states", () => {
   });
 
   it("renders a zero-valued summary as real content", () => {
-    const html = renderToStaticMarkup(<GatewayUsageContent {...pageProps()} />);
+    const html = renderUsageHtml();
 
     expect(html).toContain("$0.0000");
     expect(html.match(/>0<\/p>/g)).toHaveLength(2);

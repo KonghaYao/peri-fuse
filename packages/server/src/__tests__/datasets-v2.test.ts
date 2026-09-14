@@ -56,7 +56,10 @@ function getV2App(): Hono<LiteServerEnv> {
   return app;
 }
 
-async function apiGet<T = any>(path: string, auth: string = basicAuth()): Promise<{
+async function apiGet<T = any>(
+  path: string,
+  auth: string = basicAuth(),
+): Promise<{
   status: number;
   body: T;
 }> {

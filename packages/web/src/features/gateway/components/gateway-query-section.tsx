@@ -1,116 +1,115 @@
-import { AlertCircle, Loader2 } from "lucide-react";
-import type { ReactNode } from "react";
-import { Button } from "@/shared/components/ui/button";
-import { type GatewayQuerySnapshot, resolveGatewayQueryState } from "./gateway-query-state";
+import { Button } from "@peri/ui";
+import { Loader2 } from "lucide-solid";
+import { type Component, createMemo, type JSX, Match, Switch } from "solid-js";
+import {
+  type GatewayQuerySnapshot,
+  type GatewayQueryState,
+  resolveGatewayQueryState,
+} from "./gateway-query-state";
 
 /** Query surface consumed by the shared Gateway async-state seam. */
 export interface GatewayQueryHandle<T> extends GatewayQuerySnapshot<T> {
   refetch: () => Promise<unknown>;
 }
 
-function QueryFailure({
-  label,
-  error,
-  isFetching,
-  isStale,
-  onRetry,
-}: {
+function resolveErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+const QueryFailure: Component<{
   label: string;
   error: unknown;
   isFetching: boolean;
   isStale: boolean;
   onRetry: () => void;
-}) {
-  return (
-    <div
-      role="alert"
-      className="mb-3 flex flex-wrap items-start gap-3 rounded-md border border-danger/30 bg-danger-subtle p-3 text-sm"
-    >
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
-      <div className="min-w-0 flex-1">
-        <p className="font-medium text-danger">
-          {isStale
-            ? `Could not refresh ${label}; showing previous data.`
-            : `Could not load ${label}.`}
-        </p>
-        <p className="break-words text-fg-secondary">
-          {error instanceof Error ? error.message : String(error)}
-        </p>
-      </div>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={isFetching}
-        onClick={onRetry}
-        aria-label={`Retry ${label}`}
-      >
-        {isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-        {isFetching ? "Retrying…" : "Retry"}
-      </Button>
+}> = (props) => (
+  <div
+    role="alert"
+    class="mb-3 flex flex-wrap items-start gap-3 rounded-md border border-danger/30 bg-danger-subtle p-3 text-sm"
+  >
+    <div class="min-w-0 flex-1">
+      <p class="font-medium text-danger">
+        {props.isStale
+          ? `Could not refresh ${props.label}; showing previous data.`
+          : `Could not load ${props.label}.`}
+      </p>
+      <p class="break-words text-fg-secondary">{resolveErrorMessage(props.error)}</p>
     </div>
-  );
-}
+    <Button
+      type="button"
+      size="sm"
+      variant="default"
+      disabled={props.isFetching}
+      onClick={props.onRetry}
+      aria-label={`Retry ${props.label}`}
+    >
+      {props.isFetching ? <Loader2 class="h-3.5 w-3.5 animate-spin" size={14} /> : null}
+      {props.isFetching ? "Retrying…" : "Retry"}
+    </Button>
+  </div>
+);
 
-/**
- * Owns loading, error, cached refresh, and retry behavior while delegating a
- * query's successful and empty layouts to its caller.
- */
-export function GatewayQuerySection<T>({
-  label,
-  query,
-  isEmpty,
-  loading,
-  empty,
-  children,
-}: {
+export function GatewayQuerySection<T>(props: {
   label: string;
   query: GatewayQueryHandle<T>;
   isEmpty: (data: T) => boolean;
-  loading: ReactNode;
-  empty: ReactNode;
-  children: (data: T) => ReactNode;
+  loading: JSX.Element;
+  empty: JSX.Element;
+  children: (data: T) => JSX.Element;
 }) {
-  const state = resolveGatewayQueryState(query, isEmpty);
-  const retry = () => void query.refetch();
-
-  if (state.kind === "loading") {
-    return (
-      <div role="status" aria-live="polite" aria-label={`Loading ${label}`}>
-        {loading}
-      </div>
-    );
-  }
-
-  if (state.kind === "error") {
-    return (
-      <QueryFailure
-        label={label}
-        error={state.error}
-        isFetching={state.isFetching}
-        isStale={false}
-        onRetry={retry}
-      />
-    );
-  }
+  const state = createMemo(() => resolveGatewayQueryState(props.query, props.isEmpty));
+  const contentState = createMemo(() => {
+    const current = state();
+    return current.kind === "content" ? current : undefined;
+  });
+  const retry = () => void props.query.refetch();
 
   return (
-    <div aria-busy={state.isFetching}>
-      {state.staleError !== null && (
+    <Switch>
+      <Match when={state().kind === "loading"}>
+        <div role="status" aria-live="polite" aria-label={`Loading ${props.label}`}>
+          {props.loading}
+        </div>
+      </Match>
+      <Match when={state().kind === "error"}>
         <QueryFailure
-          label={label}
-          error={state.staleError}
-          isFetching={state.isFetching}
-          isStale
+          label={props.label}
+          error={(state() as GatewayQueryState<T> & { kind: "error" }).error}
+          isFetching={props.query.isFetching}
+          isStale={false}
           onRetry={retry}
         />
-      )}
-      {state.isFetching && !state.staleError && (
-        <span role="status" className="sr-only">
-          Refreshing {label}
-        </span>
-      )}
-      {state.isEmpty ? empty : children(state.data)}
-    </div>
+      </Match>
+      <Match when={contentState()}>
+        {(s) => {
+          const content = s() as GatewayQueryState<T> & {
+            kind: "content";
+            data: T;
+            isEmpty: boolean;
+            staleError: unknown | null;
+            isFetching: boolean;
+          };
+          return (
+            <div aria-busy={content.isFetching}>
+              {content.staleError !== null && (
+                <QueryFailure
+                  label={props.label}
+                  error={content.staleError}
+                  isFetching={props.query.isFetching}
+                  isStale
+                  onRetry={retry}
+                />
+              )}
+              {content.isFetching && !content.staleError && (
+                <span role="status" class="sr-only">
+                  Refreshing {props.label}
+                </span>
+              )}
+              {content.isEmpty ? props.empty : props.children(content.data)}
+            </div>
+          );
+        }}
+      </Match>
+    </Switch>
   );
 }

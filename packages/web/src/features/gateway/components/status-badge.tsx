@@ -1,6 +1,3 @@
-/**
- * Provider status badge with color coding.
- */
 import { cn } from "@/shared/lib/utils";
 
 const statusStyles: Record<string, string> = {
@@ -9,16 +6,16 @@ const statusStyles: Record<string, string> = {
   disabled: "bg-muted text-fg-tertiary border-border",
 };
 
-export function StatusBadge({ status }: { status: string }) {
-  const style = statusStyles[status] ?? "bg-muted text-fg-secondary border-border";
+export function StatusBadge(props: { status: string }) {
+  const style = () => statusStyles[props.status] ?? "bg-muted text-fg-secondary border-border";
   return (
     <span
-      className={cn(
+      class={cn(
         "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
-        style,
+        style(),
       )}
     >
-      {status}
+      {props.status}
     </span>
   );
 }

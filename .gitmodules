@@ -1,0 +1,3 @@
+[submodule "vendor/peri-studio"]
+	path = vendor/peri-studio
+	url = git@github.com:KonghaYao/peri-studio.git

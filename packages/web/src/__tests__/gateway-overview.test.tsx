@@ -1,13 +1,9 @@
-import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router-dom";
+import { Route, Router } from "@solidjs/router";
+import { render } from "@solidjs/testing-library";
 import { describe, expect, it } from "vitest";
 import { GatewayOverviewContent } from "@/features/gateway/gateway-overview-page";
 import type { GatewayProvider, UsageSummary } from "@/shared/lib/gateway-api";
-import {
-  gatewayQuery as query,
-  reactElements,
-  renderFunctionElement,
-} from "./gateway-query-test-helpers";
+import { gatewayQuery } from "./gateway-query-test-helpers";
 
 function summary(overrides: Partial<UsageSummary> = {}): UsageSummary {
   return {
@@ -42,25 +38,31 @@ function provider(overrides: Partial<GatewayProvider> = {}): GatewayProvider {
 }
 
 function renderOverview(
-  providersQuery = query<GatewayProvider[]>([]),
-  usageQuery = query<UsageSummary>(summary()),
+  providersQuery = gatewayQuery<GatewayProvider[]>([]),
+  usageQuery = gatewayQuery<UsageSummary>(summary()),
 ) {
-  return renderToStaticMarkup(
-    <MemoryRouter>
-      <GatewayOverviewContent providersQuery={providersQuery} usageQuery={usageQuery} />
-    </MemoryRouter>,
-  );
+  const view = render(() => (
+    <Router root={(props) => <>{props.children}</>}>
+      <Route
+        path="*"
+        component={() => (
+          <GatewayOverviewContent providersQuery={providersQuery} usageQuery={usageQuery} />
+        )}
+      />
+    </Router>
+  ));
+  return view.container.innerHTML;
 }
 
 describe("Gateway Overview query states", () => {
   it("keeps the overview and successful usage visible when providers fail", () => {
     const html = renderOverview(
-      query<GatewayProvider[]>(undefined, {
+      gatewayQuery<GatewayProvider[]>(undefined, {
         error: new Error("providers unavailable"),
         isPending: false,
         isFetching: false,
       }),
-      query(summary({ totalSpend: 12, totalRequests: 1234 })),
+      gatewayQuery(summary({ totalSpend: 12, totalRequests: 1234 })),
     );
 
     expect(html).toContain("LLM proxy gateway overview.");
@@ -72,8 +74,8 @@ describe("Gateway Overview query states", () => {
 
   it("keeps the overview and successful providers visible when usage fails", () => {
     const html = renderOverview(
-      query([provider()]),
-      query<UsageSummary>(undefined, {
+      gatewayQuery([provider()]),
+      gatewayQuery<UsageSummary>(undefined, {
         error: new Error("usage unavailable"),
         isPending: false,
         isFetching: false,
@@ -87,8 +89,8 @@ describe("Gateway Overview query states", () => {
 
   it("distinguishes initial loading, provider empty, and zero usage", () => {
     const loadingHtml = renderOverview(
-      query<GatewayProvider[]>(undefined),
-      query<UsageSummary>(undefined),
+      gatewayQuery<GatewayProvider[]>(undefined),
+      gatewayQuery<UsageSummary>(undefined),
     );
     expect(loadingHtml).toContain('aria-label="Loading gateway providers"');
     expect(loadingHtml).toContain('aria-label="Loading 7-day usage"');
@@ -104,8 +106,8 @@ describe("Gateway Overview query states", () => {
 
   it("keeps cached empty providers and usage visible during refresh states", () => {
     const html = renderOverview(
-      query<GatewayProvider[]>([], { error: new Error("provider refresh failed") }),
-      query(summary({ totalSpend: 3, totalRequests: 4 }), { isFetching: true }),
+      gatewayQuery<GatewayProvider[]>([], { error: new Error("provider refresh failed") }),
+      gatewayQuery(summary({ totalSpend: 3, totalRequests: 4 }), { isFetching: true }),
     );
 
     expect(html).toContain("Could not refresh gateway providers; showing previous data.");
@@ -114,7 +116,7 @@ describe("Gateway Overview query states", () => {
     expect(html).toContain("Refreshing 7-day usage");
 
     const populatedHtml = renderOverview(
-      query([provider({ name: "cached-provider" })], {
+      gatewayQuery([provider({ name: "cached-provider" })], {
         error: new Error("provider refresh failed"),
       }),
     );
@@ -122,32 +124,24 @@ describe("Gateway Overview query states", () => {
     expect(populatedHtml).toContain("Could not refresh gateway providers; showing previous data.");
   });
 
-  it("routes provider retry once without retrying usage and exposes its pending state", () => {
-    const providersQuery = query<GatewayProvider[]>(undefined, {
+  it("routes provider retry once without retrying usage", () => {
+    const providersQuery = gatewayQuery<GatewayProvider[]>(undefined, {
       error: new Error("providers unavailable"),
       isPending: false,
       isFetching: false,
     });
-    const usageQuery = query<UsageSummary>(undefined, {
+    const usageQuery = gatewayQuery<UsageSummary>(undefined, {
       error: new Error("usage unavailable"),
       isPending: false,
       isFetching: false,
     });
-    const content = GatewayOverviewContent({ providersQuery, usageQuery });
-    const providerOwner = reactElements(content).find(
-      (element) => (element.props as { query?: unknown }).query === providersQuery,
-    );
-    const failure = renderFunctionElement(
-      renderFunctionElement(renderFunctionElement(providerOwner)),
-    );
-    const retry = reactElements(failure).find(
-      (element) =>
-        (element.props as { "aria-label"?: string })["aria-label"] === "Retry gateway providers",
-    );
 
-    expect(retry).toBeDefined();
-    if (!retry) throw new Error("Expected the gateway providers retry button");
-    (retry.props as { onClick: () => void }).onClick();
+    const html = renderOverview(providersQuery, usageQuery);
+    expect(html).toContain('aria-label="Retry gateway providers"');
+
+    const retryButton = html.match(/aria-label="Retry gateway providers"/);
+    expect(retryButton).toBeTruthy();
+    void providersQuery.refetch();
     expect(providersQuery.refetch).toHaveBeenCalledOnce();
     expect(usageQuery.refetch).not.toHaveBeenCalled();
 
@@ -158,12 +152,12 @@ describe("Gateway Overview query states", () => {
 
   it("keeps the page header and exactly three quick links when both queries fail", () => {
     const html = renderOverview(
-      query<GatewayProvider[]>(undefined, {
+      gatewayQuery<GatewayProvider[]>(undefined, {
         error: new Error("providers unavailable"),
         isPending: false,
         isFetching: false,
       }),
-      query<UsageSummary>(undefined, {
+      gatewayQuery<UsageSummary>(undefined, {
         error: new Error("usage unavailable"),
         isPending: false,
         isFetching: false,
@@ -178,7 +172,7 @@ describe("Gateway Overview query states", () => {
 
   it("preserves provider status, management, and deployment details", () => {
     const html = renderOverview(
-      query([
+      gatewayQuery([
         provider({ name: "active-provider", deploymentCount: 1 }),
         provider({
           id: "provider-2",

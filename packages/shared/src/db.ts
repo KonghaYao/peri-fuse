@@ -7,9 +7,9 @@
 // now inferred from the Drizzle schema (see ./types). The `Prisma` namespace
 // (sql/raw/join/empty + error + input types) is provided by ./prisma-compat.
 
-import { getDb, closeDb, ensureSchema, type Db } from "./db/client.js";
+import { closeDb, type Db, ensureSchema, getDb } from "./db/client.js";
 
-export { getDb, closeDb, ensureSchema, type Db };
+export { closeDb, type Db, ensureSchema, getDb };
 
 /**
  * Drizzle database instance. Named `prisma` for historical continuity; it is a
@@ -18,11 +18,15 @@ export { getDb, closeDb, ensureSchema, type Db };
  */
 export const prisma = getDb();
 
+// `Prisma` namespace replacement (sql builders, error class, loose input types).
+export {
+  Prisma,
+  PrismaClientKnownRequestError,
+  type Sql,
+  toKnownRequestError,
+} from "./db/prisma-compat.js";
 // Model row/insert types (User, ApiKey, Project, …) inferred from Drizzle tables.
 export * from "./db/types.js";
-
-// `Prisma` namespace replacement (sql builders, error class, loose input types).
-export { Prisma, PrismaClientKnownRequestError, toKnownRequestError, type Sql } from "./db/prisma-compat.js";
 
 // Enum compat (SQLite has no enums; string literal unions live in ./prisma-enums).
 export {

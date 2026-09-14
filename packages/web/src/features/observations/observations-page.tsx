@@ -1,24 +1,29 @@
-import { Globe, Search } from "lucide-react";
-import { useRef } from "react";
-import { Link } from "react-router-dom";
-import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
-import { DateFilterInput } from "@/shared/components/date-filter-input";
-import { FilterInput, type FilterInputHandle } from "@/shared/components/filter-input";
-import { FilterSelect } from "@/shared/components/filter-select";
-import { LevelBadge, ObservationTypeBadge } from "@/shared/components/observation-badges";
-import { Pagination } from "@/shared/components/pagination";
-import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
-import { Button } from "@/shared/components/ui/button";
 import {
+  Button,
+  DateFilterInput,
+  EmptyState,
+  FilterInput,
+  type FilterInputHandle,
+  FilterSelect,
+  MonitorObservationLevelBadge,
+  MonitorObservationTypeBadge,
+  PageHeaderShell,
+  PaginationControls,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
+  TableInlineError,
+  TableLoadingRows,
   TableRow,
-} from "@/shared/components/ui/table";
+} from "@peri/ui";
+import { A } from "@solidjs/router";
+import { Globe, Search } from "lucide-solid";
+import { type Component, For, Show } from "solid-js";
+import { AutoRefreshControl } from "@/features/users/components/auto-refresh-control";
+import { useTableState } from "@/features/users/use-table-state";
 import { useObservationsQuery } from "@/shared/hooks/queries";
-import { useTableState } from "@/shared/hooks/use-table-state";
 import { formatDateTime, formatTokens } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 
@@ -33,9 +38,9 @@ type ObservationFilters = {
   toStartTime?: string;
 };
 
-export function ObservationsPage() {
-  const nameFilterRef = useRef<FilterInputHandle>(null);
-  const environmentFilterRef = useRef<FilterInputHandle>(null);
+export const ObservationsPage: Component = () => {
+  let nameFilterRef: FilterInputHandle | undefined;
+  let environmentFilterRef: FilterInputHandle | undefined;
 
   const tableState = useTableState<ObservationFilters>({
     filterKeys: ["name", "type", "level", "environment", "fromStartTime", "toStartTime"],
@@ -43,33 +48,35 @@ export function ObservationsPage() {
   });
 
   const query = useObservationsQuery({
-    page: tableState.page,
+    page: tableState.page(),
     limit: PAGE_SIZE,
-    ...tableState.filters,
+    ...tableState.filters(),
   });
 
-  const observations: Observation[] = query.data?.data ?? [];
+  const observations = () => (query.data?.data ?? []) as Observation[];
 
   return (
-    <div className="flex h-full flex-col">
-      <PageHeader
+    <div class="flex h-full flex-col">
+      <PageHeaderShell
         title="Observations"
         description="Spans, generations and events across all traces."
       />
 
-      <div className="flex flex-wrap items-center gap-2 px-6 py-3">
+      <div class="flex flex-wrap items-center gap-2 px-6 py-3">
         <FilterInput
-          ref={nameFilterRef}
-          className="w-52"
+          ref={(handle) => {
+            nameFilterRef = handle;
+          }}
+          class="w-52"
           placeholder="Filter by name…"
           icon={Search}
-          value={tableState.filters.name}
+          value={tableState.filters().name}
           onCommit={(v) => tableState.setFilter("name", v)}
         />
         <FilterSelect
           placeholder="Type"
           allLabel="All types"
-          value={tableState.filters.type}
+          value={tableState.filters().type}
           onCommit={(v) => tableState.setFilter("type", v)}
           options={[
             { value: "SPAN", label: "SPAN" },
@@ -78,24 +85,26 @@ export function ObservationsPage() {
           ]}
         />
         <FilterInput
-          ref={environmentFilterRef}
-          className="w-44"
+          ref={(handle) => {
+            environmentFilterRef = handle;
+          }}
+          class="w-44"
           placeholder="Environment…"
           icon={Globe}
-          value={tableState.filters.environment}
+          value={tableState.filters().environment}
           onCommit={(v) => tableState.setFilter("environment", v)}
         />
         <DateFilterInput
-          className="w-36"
-          value={tableState.filters.fromStartTime}
+          class="w-36"
+          value={tableState.filters().fromStartTime}
           onCommit={(v) => tableState.setFilter("fromStartTime", v)}
           placeholder="From date…"
           title="Observation start date"
           boundary="start"
         />
         <DateFilterInput
-          className="w-36"
-          value={tableState.filters.toStartTime}
+          class="w-36"
+          value={tableState.filters().toStartTime}
           onCommit={(v) => tableState.setFilter("toStartTime", v)}
           placeholder="To date…"
           title="Observation end date"
@@ -104,7 +113,7 @@ export function ObservationsPage() {
         <FilterSelect
           placeholder="Level"
           allLabel="All levels"
-          value={tableState.filters.level}
+          value={tableState.filters().level}
           onCommit={(v) => tableState.setFilter("level", v)}
           options={[
             { value: "DEBUG", label: "DEBUG" },
@@ -117,113 +126,125 @@ export function ObservationsPage() {
           size="sm"
           variant="secondary"
           onClick={() => {
-            nameFilterRef.current?.commit();
-            environmentFilterRef.current?.commit();
+            nameFilterRef?.commit();
+            environmentFilterRef?.commit();
           }}
         >
-          <Search className="h-4 w-4" />
+          <Search class="h-4 w-4" size={16} />
           Search
         </Button>
-        {tableState.activeFilterCount > 0 && (
+        <Show when={tableState.activeFilterCount() > 0}>
           <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
-            <Search className="h-4 w-4" />
-            Clear ({tableState.activeFilterCount})
+            <Search class="h-4 w-4" size={16} />
+            Clear ({tableState.activeFilterCount()})
           </Button>
-        )}
-        <div className="ml-auto">
+        </Show>
+        <div class="ml-auto">
           <AutoRefreshControl />
         </div>
       </div>
 
-      {query.isLoading ? (
-        <LoadingRows />
-      ) : query.error ? (
-        <ErrorState error={query.error} />
-      ) : observations.length === 0 ? (
-        <EmptyState
-          message={
-            tableState.activeFilterCount > 0
-              ? "No observations match the current filters."
-              : "No observations found."
+      <Show when={!query.isPending} fallback={<TableLoadingRows class="flex-1 px-4" columns={8} />}>
+        <Show
+          when={!query.isError}
+          fallback={
+            <div class="px-4 py-3">
+              <TableInlineError error={query.error} onRetry={() => void query.refetch()} />
+            </div>
           }
-        />
-      ) : (
-        <>
-          <div className="flex-1 overflow-auto px-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Level</TableHead>
-                  <TableHead>Detail</TableHead>
-                  <TableHead>Start time</TableHead>
-                  <TableHead>Model</TableHead>
-                  <TableHead className="text-right">Tokens</TableHead>
-                  <TableHead>Trace</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {observations.map((o) => (
-                  <TableRow key={o.id}>
-                    <TableCell className="max-w-[220px] truncate font-medium">
-                      {o.name ?? <span className="text-muted-foreground">(unnamed)</span>}
-                    </TableCell>
-                    <TableCell>
-                      <ObservationTypeBadge type={o.type} />
-                    </TableCell>
-                    <TableCell>
-                      <LevelBadge level={o.level} />
-                    </TableCell>
-                    <TableCell className="max-w-[360px] text-muted-foreground">
-                      {o.level === "ERROR" ? (
-                        <span
-                          className="block truncate text-danger"
-                          title={o.statusMessage || "No status message recorded"}
-                        >
-                          {o.statusMessage || "No status message recorded"}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {formatDateTime(o.startTime)}
-                    </TableCell>
-                    <TableCell className="max-w-[140px] truncate text-muted-foreground">
-                      {o.model ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
-                      {o.totalTokens > 0 ? formatTokens(o.totalTokens) : "—"}
-                    </TableCell>
-                    <TableCell className="max-w-[120px]">
-                      {o.traceId ? (
-                        <Link
-                          to={`/traces/${encodeURIComponent(o.traceId)}`}
-                          className="truncate font-mono text-xs text-primary hover:underline"
-                          title={o.traceId}
-                        >
-                          {o.traceId.slice(0, 8)}…
-                        </Link>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
+        >
+          <Show
+            when={observations().length > 0}
+            fallback={
+              <EmptyState
+                variant="inline"
+                class="mx-4 flex-1"
+                title={
+                  tableState.activeFilterCount() > 0
+                    ? "No observations match the current filters."
+                    : "No observations found."
+                }
+              />
+            }
+          >
+            <div class="flex-1 overflow-auto px-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Level</TableHead>
+                    <TableHead>Detail</TableHead>
+                    <TableHead>Start time</TableHead>
+                    <TableHead>Model</TableHead>
+                    <TableHead class="text-right">Tokens</TableHead>
+                    <TableHead>Trace</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="border-t border-border px-4 py-2">
-            <Pagination
-              meta={query.data?.meta}
-              page={tableState.page}
-              pageSize={PAGE_SIZE}
-              onPageChange={tableState.setPage}
-            />
-          </div>
-        </>
-      )}
+                </TableHeader>
+                <TableBody>
+                  <For each={observations()}>
+                    {(o) => (
+                      <TableRow>
+                        <TableCell class="max-w-[220px] truncate font-medium">
+                          {o.name ?? <span class="text-fg-tertiary">(unnamed)</span>}
+                        </TableCell>
+                        <TableCell>
+                          <MonitorObservationTypeBadge type={o.type} />
+                        </TableCell>
+                        <TableCell>
+                          <MonitorObservationLevelBadge level={o.level} />
+                        </TableCell>
+                        <TableCell class="max-w-[360px] text-fg-tertiary">
+                          {o.level === "ERROR" ? (
+                            <span
+                              class="block truncate text-danger"
+                              title={o.statusMessage || "No status message recorded"}
+                            >
+                              {o.statusMessage || "No status message recorded"}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell class="whitespace-nowrap text-fg-tertiary">
+                          {formatDateTime(o.startTime)}
+                        </TableCell>
+                        <TableCell class="max-w-[140px] truncate text-fg-tertiary">
+                          {o.model ?? "—"}
+                        </TableCell>
+                        <TableCell class="text-right text-fg-tertiary">
+                          {o.totalTokens > 0 ? formatTokens(o.totalTokens) : "—"}
+                        </TableCell>
+                        <TableCell class="max-w-[120px]">
+                          {o.traceId ? (
+                            <A
+                              href={`/traces/${encodeURIComponent(o.traceId)}`}
+                              class="truncate font-mono text-xs text-brand hover:underline"
+                              title={o.traceId}
+                            >
+                              {o.traceId.slice(0, 8)}…
+                            </A>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </For>
+                </TableBody>
+              </Table>
+            </div>
+            <div class="border-t border-border px-4 py-2">
+              <PaginationControls
+                current={tableState.page()}
+                pageSize={PAGE_SIZE}
+                total={query.data?.meta.totalItems ?? 0}
+                onChange={(page) => tableState.setPage(page)}
+              />
+            </div>
+          </Show>
+        </Show>
+      </Show>
     </div>
   );
-}
+};

@@ -1,61 +1,68 @@
-import { ArrowLeft, ChevronDown, ChevronUp, ExternalLink, Loader2 } from "lucide-react";
-import type * as React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { EmptyState } from "@/shared/components/state";
-import { Button } from "@/shared/components/ui/button";
-import { Dialog, DialogContent } from "@/shared/components/ui/dialog";
+import { Dialog, DialogContent, EmptyState } from "@peri/ui";
+import { useNavigate } from "@solidjs/router";
+import { Loader2 } from "lucide-solid";
+import {
+  type Component,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
+import { SessionSearchContextPanel } from "@/features/sessions/session-search-context-panel";
+import { HitRow } from "@/features/sessions/session-search-dialog-components";
+import { SessionSearchFilters } from "@/features/sessions/session-search-filters";
 import { ApiError, getSessionSearchContext, searchSessions } from "@/shared/lib/api";
 import type {
   SessionContextMessage,
   SessionSearchContext,
-  SessionSearchGroup,
   SessionSearchHit,
   SessionSearchResponse,
   SessionSearchTimeRange,
 } from "@/shared/lib/types";
 import { useProjectContext } from "@/shared/store/project";
-import { ContextMessage, HitRow } from "./session-search-dialog-components";
-import { SessionSearchFilters } from "./session-search-filters";
 
-export function SessionSearchDialog({
-  open,
-  onOpenChange,
-}: {
+export const SessionSearchDialog: Component<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+}> = (props) => {
   const navigate = useNavigate();
   const project = useProjectContext();
-  const [query, setQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
-  const [range, setRange] = useState<SessionSearchTimeRange>({ kind: "relative", seconds: 3600 });
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
-  const [result, setResult] = useState<{
-    data: SessionSearchGroup[];
+  const [query, setQuery] = createSignal("");
+  const [submittedQuery, setSubmittedQuery] = createSignal("");
+  const [range, setRange] = createSignal<SessionSearchTimeRange>({
+    kind: "relative",
+    seconds: 3600,
+  });
+  const [customFrom, setCustomFrom] = createSignal("");
+  const [customTo, setCustomTo] = createSignal("");
+  const [result, setResult] = createSignal<{
+    data: SessionSearchResponse["data"];
     meta: SessionSearchResponse["meta"];
   } | null>(null);
-  const [searchState, setSearchState] = useState<"idle" | "loading" | "error">("idle");
-  const [error, setError] = useState("");
-  const [selected, setSelected] = useState<SessionSearchHit | null>(null);
-  const [context, setContext] = useState<SessionSearchContext["data"] | null>(null);
-  const [contextMeta, setContextMeta] = useState<SessionSearchContext["meta"] | null>(null);
-  const [contextState, setContextState] = useState<"idle" | "loading" | "error">("idle");
-  const [contextError, setContextError] = useState("");
-  const searchAbort = useRef<AbortController | null>(null);
-  const searchRequest = useRef(0);
-  const contextAbort = useRef<AbortController | null>(null);
-  const contextRequest = useRef(0);
-  const entryRef = useRef<HTMLButtonElement>(null);
-  const allHits = useMemo(() => result?.data.flatMap((group) => group.hits) ?? [], [result]);
+  const [searchState, setSearchState] = createSignal<"idle" | "loading" | "error">("idle");
+  const [error, setError] = createSignal("");
+  const [selected, setSelected] = createSignal<SessionSearchHit | null>(null);
+  const [context, setContext] = createSignal<SessionSearchContext["data"] | null>(null);
+  const [contextMeta, setContextMeta] = createSignal<SessionSearchContext["meta"] | null>(null);
+  const [contextState, setContextState] = createSignal<"idle" | "loading" | "error">("idle");
+  const [contextError, setContextError] = createSignal("");
 
-  useEffect(() => {
-    void project?.projectId;
-    searchAbort.current?.abort();
-    contextAbort.current?.abort();
-    searchRequest.current += 1;
-    contextRequest.current += 1;
+  let searchAbort: AbortController | null = null;
+  let searchRequest = 0;
+  let contextAbort: AbortController | null = null;
+  let contextRequest = 0;
+
+  const allHits = createMemo(() => result()?.data.flatMap((group) => group.hits) ?? []);
+
+  createEffect(() => {
+    void project()?.projectId;
+    const open = props.open;
+    searchAbort?.abort();
+    contextAbort?.abort();
+    searchRequest += 1;
+    contextRequest += 1;
     setResult(null);
     setSelected(null);
     setContext(null);
@@ -65,29 +72,29 @@ export function SessionSearchDialog({
       setSubmittedQuery("");
       setSearchState("idle");
       setContextState("idle");
-      entryRef.current?.focus();
     }
-    return () => {
-      searchAbort.current?.abort();
-      contextAbort.current?.abort();
-    };
-  }, [open, project?.projectId]);
+  });
+
+  onCleanup(() => {
+    searchAbort?.abort();
+    contextAbort?.abort();
+  });
 
   const submit = async () => {
-    const value = query.trim();
+    const value = query().trim();
     if ([...value].length < 3 || [...value].length > 128) {
       setError("Search text must be 3–128 characters.");
       setSearchState("error");
       return;
     }
     const rawChosen =
-      range.kind === "absolute"
-        ? ({
-            kind: "absolute",
-            fromTimestamp: customFrom,
-            toTimestamp: customTo,
-          } as const)
-        : range;
+      range().kind === "absolute"
+        ? {
+            kind: "absolute" as const,
+            fromTimestamp: customFrom(),
+            toTimestamp: customTo(),
+          }
+        : range();
     if (
       rawChosen.kind === "absolute" &&
       (!rawChosen.fromTimestamp ||
@@ -108,12 +115,13 @@ export function SessionSearchDialog({
             toTimestamp: new Date(rawChosen.toTimestamp).toISOString(),
           }
         : rawChosen;
-    searchAbort.current?.abort();
-    contextAbort.current?.abort();
-    contextRequest.current += 1;
+
+    searchAbort?.abort();
+    contextAbort?.abort();
+    contextRequest += 1;
     const controller = new AbortController();
-    searchAbort.current = controller;
-    const requestId = ++searchRequest.current;
+    searchAbort = controller;
+    const requestId = ++searchRequest;
     setSelected(null);
     setContext(null);
     setContextMeta(null);
@@ -122,7 +130,7 @@ export function SessionSearchDialog({
     setError(" ");
     try {
       const response = await searchSessions(value, chosen, controller.signal);
-      if (requestId !== searchRequest.current) return;
+      if (requestId !== searchRequest) return;
       setResult(response);
       setSearchState("idle");
     } catch (err) {
@@ -131,18 +139,18 @@ export function SessionSearchDialog({
       setError(err instanceof ApiError ? err.message : "Search failed. Try again.");
     }
   };
+
   const cancelSearch = () => {
-    searchAbort.current?.abort();
-    searchRequest.current += 1;
+    searchAbort?.abort();
+    searchRequest += 1;
     setSearchState("idle");
   };
 
   const choose = async (hit: SessionSearchHit) => {
-    contextAbort.current?.abort();
-    contextRequest.current += 1;
+    contextAbort?.abort();
     const controller = new AbortController();
-    contextAbort.current = controller;
-    const requestId = ++contextRequest.current;
+    contextAbort = controller;
+    const requestId = ++contextRequest;
     setSelected(hit);
     setContext(null);
     setContextState("loading");
@@ -152,16 +160,16 @@ export function SessionSearchDialog({
         hit.occurrenceId,
         hit.sourceVersion,
         controller.signal,
-        { query: submittedQuery },
+        { query: submittedQuery() },
       );
-      if (requestId === contextRequest.current) {
+      if (requestId === contextRequest) {
         setContext(response.data);
         setContextMeta(response.meta);
         setContextState("idle");
       }
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
-      if (requestId === contextRequest.current) {
+      if (requestId === contextRequest) {
         setContextState("error");
         setContextError(err instanceof ApiError ? err.message : "Preview unavailable.");
       }
@@ -169,32 +177,37 @@ export function SessionSearchDialog({
   };
 
   const openFull = () => {
-    if (!selected) return;
+    const hit = selected();
+    if (!hit) return;
     const params = new URLSearchParams();
-    if (selected.sourceAnchor.traceId) params.set("traceId", selected.sourceAnchor.traceId);
-    if (selected.sourceKind === "observation") params.set("observationId", selected.sourceId);
-    onOpenChange(false);
+    if (hit.sourceAnchor.traceId) params.set("traceId", hit.sourceAnchor.traceId);
+    if (hit.sourceKind === "observation") params.set("observationId", hit.sourceId);
+    props.onOpenChange(false);
     navigate(
-      `/sessions/${encodeURIComponent(selected.sessionId)}${params.toString() ? `?${params}` : ""}`,
+      `/sessions/${encodeURIComponent(hit.sessionId)}${params.toString() ? `?${params}` : ""}`,
     );
   };
+
   const loadMore = async (direction: "before" | "after") => {
-    if (!selected || !context) return;
-    const cursor = direction === "before" ? contextMeta?.beforeCursor : contextMeta?.afterCursor;
+    const hit = selected();
+    const ctx = context();
+    const meta = contextMeta();
+    if (!hit || !ctx) return;
+    const cursor = direction === "before" ? meta?.beforeCursor : meta?.afterCursor;
     if (!cursor) return;
-    contextAbort.current?.abort();
+    contextAbort?.abort();
     const controller = new AbortController();
-    contextAbort.current = controller;
-    const requestId = ++contextRequest.current;
+    contextAbort = controller;
+    const requestId = ++contextRequest;
     setContextState("loading");
     try {
       const response = await getSessionSearchContext(
-        selected.occurrenceId,
-        selected.sourceVersion,
+        hit.occurrenceId,
+        hit.sourceVersion,
         controller.signal,
-        { direction, cursor, query: submittedQuery },
+        { direction, cursor, query: submittedQuery() },
       );
-      if (requestId !== contextRequest.current) return;
+      if (requestId !== contextRequest) return;
       setContext((previous) =>
         previous
           ? {
@@ -217,30 +230,32 @@ export function SessionSearchDialog({
       setContextState("idle");
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
-      if (requestId === contextRequest.current) {
+      if (requestId === contextRequest) {
         setContextState("error");
         setContextError(err instanceof ApiError ? err.message : "Preview unavailable.");
       }
     }
   };
+
   const loadBlock = async (message: SessionContextMessage, direction: "before" | "after") => {
-    if (!selected) return;
+    const hit = selected();
+    if (!hit) return;
     const cursor = direction === "before" ? message.blockBeforeCursor : message.blockCursor;
     if (!cursor) return;
-    contextAbort.current?.abort();
+    contextAbort?.abort();
     const controller = new AbortController();
-    contextAbort.current = controller;
-    const requestId = ++contextRequest.current;
+    contextAbort = controller;
+    const requestId = ++contextRequest;
     const response = await getSessionSearchContext(
-      selected.occurrenceId,
-      selected.sourceVersion,
+      hit.occurrenceId,
+      hit.sourceVersion,
       controller.signal,
       {
         ...(direction === "after" ? { blockCursor: cursor } : { blockBeforeCursor: cursor }),
-        query: submittedQuery,
+        query: submittedQuery(),
       },
     );
-    if (requestId !== contextRequest.current) return;
+    if (requestId !== contextRequest) return;
     setContext((previous) => {
       if (!previous) return previous;
       const incoming = response.data.messages.find(
@@ -276,8 +291,8 @@ export function SessionSearchDialog({
       };
     });
   };
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    // Keep native controls' segmented editing and selection behavior intact.
+
+  const onKeyDown = (event: KeyboardEvent) => {
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
@@ -293,182 +308,114 @@ export function SessionSearchDialog({
     ) {
       return;
     }
-    if (event.key === "ArrowDown" && allHits.length) {
+    const hits = allHits();
+    const current = selected();
+    if (event.key === "ArrowDown" && hits.length) {
       event.preventDefault();
-      void choose(
-        allHits[Math.min((selected ? allHits.indexOf(selected) : -1) + 1, allHits.length - 1)],
-      );
+      void choose(hits[Math.min((current ? hits.indexOf(current) : -1) + 1, hits.length - 1)]);
     }
-    if (event.key === "ArrowUp" && allHits.length) {
+    if (event.key === "ArrowUp" && hits.length) {
       event.preventDefault();
-      void choose(
-        allHits[Math.max((selected ? allHits.indexOf(selected) : allHits.length) - 1, 0)],
-      );
+      void choose(hits[Math.max((current ? hits.indexOf(current) : hits.length) - 1, 0)]);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent
         onKeyDown={onKeyDown}
-        className="flex h-[80vh] max-h-[800px] max-w-[1200px] flex-col gap-0 overflow-hidden p-0"
+        class="flex h-[80vh] max-h-[800px] max-w-[1200px] flex-col gap-0 overflow-hidden p-0"
         aria-describedby="session-search-description"
       >
         <SessionSearchFilters
-          query={query}
+          query={query()}
           onQueryChange={setQuery}
-          range={range}
+          range={range()}
           onRangeChange={setRange}
-          customFrom={customFrom}
-          customTo={customTo}
+          customFrom={customFrom()}
+          customTo={customTo()}
           onCustomFromChange={setCustomFrom}
           onCustomToChange={setCustomTo}
-          searchState={searchState}
-          error={error}
+          searchState={searchState()}
+          error={error()}
           onSubmit={() => void submit()}
           onCancel={cancelSearch}
         />
-        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[35%_65%]">
+        <div class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[35%_65%]">
           <section
-            className={`${selected ? "hidden md:flex" : "flex"} min-h-0 flex-col border-r border-border`}
+            class={`${selected() ? "hidden md:flex" : "flex"} min-h-0 flex-col border-r border-border`}
             aria-label="Search results"
           >
-            <div className="border-b border-border px-3 py-2 text-xs text-fg-tertiary">
-              {result ? `${result.data.length} sessions` : "Results"}
-              {result?.meta.limited && " · Limited results"}
-              {result?.meta.indexState && ` · Index: ${result.meta.indexState}`}
-              {result?.meta.coverage !== undefined && ` · Coverage: ${result.meta.coverage}`}
+            <div class="border-b border-border px-3 py-2 text-xs text-fg-tertiary">
+              {result() ? `${result()!.data.length} sessions` : "Results"}
+              {result()?.meta.limited && " · Limited results"}
+              {result()?.meta.indexState && ` · Index: ${result()!.meta.indexState}`}
+              {result()?.meta.coverage !== undefined && ` · Coverage: ${result()!.meta.coverage}`}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {searchState === "loading" ? (
-                <div className="flex items-center justify-center gap-2 py-12 text-sm text-fg-tertiary">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Searching…
-                </div>
-              ) : result && result.data.length === 0 ? (
-                <EmptyState message="No sessions found." />
-              ) : !result ? (
-                <EmptyState message="Enter at least 3 characters to search." />
-              ) : (
-                result.data.map((group) => (
-                  <div key={group.sessionId}>
-                    <div className="sticky top-0 z-[1] border-b border-border bg-surface-raised px-3 py-2 text-xs font-medium">
-                      {group.sessionId}
-                      {group.userId && (
-                        <span className="ml-2 text-fg-tertiary">{group.userId}</span>
-                      )}
-                    </div>
-                    {group.hits.slice(0, 2).map((hit) => (
-                      <HitRow
-                        key={hit.occurrenceId}
-                        hit={hit}
-                        query={submittedQuery}
-                        selected={selected?.occurrenceId === hit.occurrenceId}
-                        onClick={() => void choose(hit)}
-                      />
-                    ))}
+            <div class="min-h-0 flex-1 overflow-y-auto">
+              <Show
+                when={searchState() !== "loading"}
+                fallback={
+                  <div class="flex items-center justify-center gap-2 py-12 text-sm text-fg-tertiary">
+                    <Loader2 class="h-4 w-4 animate-spin" size={16} />
+                    Searching…
                   </div>
-                ))
-              )}
-            </div>
-          </section>
-          <section
-            className={`${selected ? "flex" : "hidden md:flex"} min-h-0 flex-col`}
-            aria-label="Context preview"
-          >
-            {selected ? (
-              <>
-                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-sm font-medium">
-                      <button
-                        type="button"
-                        className="md:hidden"
-                        onClick={() => setSelected(null)}
-                        aria-label="Back to results"
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                      </button>
-                      <span className="truncate">{selected.sessionId}</span>
-                    </div>
-                    <p className="text-xs text-fg-tertiary">
-                      {selected.role} · Message {selected.messageOrder + 1}
-                    </p>
-                  </div>
-                  <Button size="sm" variant="outline" onClick={openFull}>
-                    <ExternalLink />
-                    Open full session
-                  </Button>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                  <p className="mb-3 text-xs text-fg-tertiary">
-                    Only user and AI messages are shown. This is a partial preview of the source
-                    sequence; earlier context may be outside the search time range.
-                  </p>
-                  {contextState === "loading" ? (
-                    <div className="flex items-center justify-center gap-2 py-12 text-sm text-fg-tertiary">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading context…
-                    </div>
-                  ) : contextState === "error" ? (
-                    <div className="rounded border border-danger/30 bg-danger-subtle p-3 text-sm text-danger">
-                      {contextError}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="ml-2"
-                        onClick={() => void choose(selected)}
-                      >
-                        Retry
-                      </Button>
-                    </div>
-                  ) : context ? (
-                    <div className="space-y-2">
-                      {context.messages.map((message, index) => (
-                        <ContextMessage
-                          key={`${message.occurrenceId}-${message.messageOrder ?? index}`}
-                          message={message}
-                          query={submittedQuery}
-                          onLoadBlock={loadBlock}
-                        />
-                      ))}
-                      <div className="flex justify-between pt-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!contextMeta?.beforeCursor}
-                          onClick={() => void loadMore("before")}
-                        >
-                          <ChevronUp />
-                          Load earlier messages
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!contextMeta?.afterCursor}
-                          onClick={() => void loadMore("after")}
-                        >
-                          <ChevronDown />
-                          Load later messages
-                        </Button>
-                      </div>
-                      {contextMeta?.truncated && (
-                        <p className="pt-2 text-center text-xs text-fg-tertiary">
-                          This preview is incomplete.
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <EmptyState message="Select a result to view context." />
+                }
+              >
+                <Show
+                  when={result()}
+                  fallback={
+                    <EmptyState variant="inline" title="Enter at least 3 characters to search." />
+                  }
+                >
+                  {(res) => (
+                    <Show
+                      when={res().data.length > 0}
+                      fallback={<EmptyState variant="inline" title="No sessions found." />}
+                    >
+                      <For each={res().data}>
+                        {(group) => (
+                          <div>
+                            <div class="sticky top-0 z-[1] border-b border-border bg-surface-raised px-3 py-2 text-xs font-medium">
+                              {group.sessionId}
+                              {group.userId && (
+                                <span class="ml-2 text-fg-tertiary">{group.userId}</span>
+                              )}
+                            </div>
+                            <For each={group.hits.slice(0, 2)}>
+                              {(hit) => (
+                                <HitRow
+                                  hit={hit}
+                                  query={submittedQuery()}
+                                  selected={selected()?.occurrenceId === hit.occurrenceId}
+                                  onClick={() => void choose(hit)}
+                                />
+                              )}
+                            </For>
+                          </div>
+                        )}
+                      </For>
+                    </Show>
                   )}
-                </div>
-              </>
-            ) : (
-              <EmptyState message="Select a result to view context." />
-            )}
+                </Show>
+              </Show>
+            </div>
           </section>
+          <SessionSearchContextPanel
+            selected={selected}
+            onClearSelected={() => setSelected(null)}
+            contextState={contextState}
+            contextError={contextError}
+            context={context}
+            contextMeta={contextMeta}
+            submittedQuery={submittedQuery}
+            onRetry={(hit) => void choose(hit)}
+            onOpenFull={openFull}
+            onLoadBlock={loadBlock}
+            onLoadMore={(direction) => loadMore(direction)}
+          />
         </div>
       </DialogContent>
     </Dialog>
   );
-}
+};

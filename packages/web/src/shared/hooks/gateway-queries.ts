@@ -1,8 +1,8 @@
 /**
- * React Query hooks for the PeriGateway Admin API.
+ * TanStack Solid Query hooks for the PeriGateway Admin API.
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import {
   gwAuditLogs,
   gwCreateModel,
@@ -42,39 +42,39 @@ export const gwQueryKeys = {
 // ---------------------------------------------------------------------------
 
 export function useGwProvidersQuery() {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: gwQueryKeys.providers,
     queryFn: () => gwListProviders().then((r) => r.data),
-  });
+  }));
 }
 
 export function useGwCreateProviderMutation() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation(() => ({
     mutationFn: gwCreateProvider,
     onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.providers }),
-  });
+  }));
 }
 
 export function useGwUpdateProviderMutation() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation(() => ({
     mutationFn: ({ id, body }: { id: string; body: Parameters<typeof gwUpdateProvider>[1] }) =>
       gwUpdateProvider(id, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.providers }),
-  });
+  }));
 }
 
 export function useGwDeleteProviderMutation() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation(() => ({
     mutationFn: gwDeleteProvider,
     onSuccess: () =>
       Promise.all([
         qc.invalidateQueries({ queryKey: gwQueryKeys.providers }),
         qc.invalidateQueries({ queryKey: gwQueryKeys.models }),
       ]),
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -82,35 +82,35 @@ export function useGwDeleteProviderMutation() {
 // ---------------------------------------------------------------------------
 
 export function useGwModelsQuery() {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: gwQueryKeys.models,
     queryFn: () => gwListModels().then((r) => r.data),
-  });
+  }));
 }
 
 export function useGwCreateModelMutation() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation(() => ({
     mutationFn: gwCreateModel,
     onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.models }),
-  });
+  }));
 }
 
 export function useGwUpdateModelMutation() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation(() => ({
     mutationFn: ({ id, body }: { id: string; body: Parameters<typeof gwUpdateModel>[1] }) =>
       gwUpdateModel(id, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.models }),
-  });
+  }));
 }
 
 export function useGwDeleteModelMutation() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation(() => ({
     mutationFn: gwDeleteModel,
     onSuccess: () => qc.invalidateQueries({ queryKey: gwQueryKeys.models }),
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -118,31 +118,31 @@ export function useGwDeleteModelMutation() {
 // ---------------------------------------------------------------------------
 
 export function useGwUsageSummaryQuery(params: { startDate: string; endDate: string }) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: gwQueryKeys.usageSummary(params),
     queryFn: () => gwUsageSummary(params),
-  });
+  }));
 }
 
 export function useGwUsageDailyQuery(params: { startDate: string; endDate: string }) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: gwQueryKeys.usageDaily(params),
     queryFn: () => gwUsageDaily({ ...params, limit: 200 }).then((r) => r.data),
-  });
+  }));
 }
 
 export function useGwUsageByModelQuery(params: { startDate: string; endDate: string }) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: gwQueryKeys.usageByModel(params),
     queryFn: () => gwUsageByModel(params).then((r) => r.data),
-  });
+  }));
 }
 
 export function useGwUsageByProviderQuery(params: { startDate: string; endDate: string }) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: gwQueryKeys.usageByProvider(params),
     queryFn: () => gwUsageByProvider(params).then((r) => r.data),
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -156,11 +156,11 @@ export function useGwRequestLogsQuery(params: {
   limit?: number;
   offset?: number;
 }) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: gwQueryKeys.requestLogs(params as Record<string, string | number>),
     queryFn: () => gwRequestLogs(params),
     placeholderData: (prev) => prev,
-  });
+  }));
 }
 
 export function useGwErrorLogsQuery(params: {
@@ -169,11 +169,11 @@ export function useGwErrorLogsQuery(params: {
   limit?: number;
   offset?: number;
 }) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: gwQueryKeys.errorLogs(params as Record<string, string | number>),
     queryFn: () => gwErrorLogs(params),
     placeholderData: (prev) => prev,
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -181,8 +181,8 @@ export function useGwErrorLogsQuery(params: {
 // ---------------------------------------------------------------------------
 
 export function useGwAuditLogsQuery(params: { tableName?: string; limit?: number }) {
-  return useQuery({
+  return useQuery(() => ({
     queryKey: gwQueryKeys.auditLogs(params as Record<string, string | number>),
     queryFn: () => gwAuditLogs(params).then((r) => r.data),
-  });
+  }));
 }

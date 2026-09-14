@@ -37,11 +37,9 @@ export default async function setup(): Promise<void> {
 
   // Seed auth data through the Drizzle client (schema is applied at this point).
   const { prisma } = await import("@peri-fuse/shared/src/db");
-  const {
-    organizations,
-    projects,
-    apiKeys,
-  } = await import("@peri-fuse/shared/src/db/schema/index.js");
+  const { organizations, projects, apiKeys } = await import(
+    "@peri-fuse/shared/src/db/schema/index.js"
+  );
   const { hashSecretKey, createShaHash } = await import("@peri-fuse/shared/src/server");
 
   await prisma.insert(organizations).values({

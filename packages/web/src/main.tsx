@@ -1,16 +1,11 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
+import { render } from "solid-js/web";
 import "./index.css";
-import { Toaster } from "@/shared/components/toast";
 import App from "./App";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Lite-server reads are cheap local SQLite queries; keep data fresh but
-      // avoid hammering the server on every focus.
       refetchOnWindowFocus: false,
       staleTime: 5_000,
       retry: 1,
@@ -18,13 +13,16 @@ const queryClient = new QueryClient({
   },
 });
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
+const root = document.getElementById("root");
+if (!root) {
+  throw new Error("Root element #root not found");
+}
+
+render(
+  () => (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-      <Toaster />
+      <App />
     </QueryClientProvider>
-  </StrictMode>,
+  ),
+  root,
 );

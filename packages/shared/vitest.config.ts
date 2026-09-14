@@ -6,6 +6,9 @@ export default defineConfig({
     dir: "./src",
     include: ["**/*.test.ts"],
     pool: "forks",
+    env: {
+      LANGFUSE_MODE: "lite",
+    },
     server: {
       deps: {
         // Process the Vertex provider through vite so vi.mock can replace its

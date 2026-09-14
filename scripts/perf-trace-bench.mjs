@@ -3,9 +3,13 @@
  * against ~/.peri-fuse/telemetry.db to locate the bottleneck.
  */
 import { createRequire } from "node:module";
+
 const require = createRequire(import.meta.url);
+
 import DatabaseModule from "/Users/konghayao/code/ai/langfuse-lite/node_modules/.pnpm/better-sqlite3@11.10.0/node_modules/better-sqlite3/lib/index.js";
+
 const Database = DatabaseModule.default ?? DatabaseModule;
+
 import { performance } from "node:perf_hooks";
 
 const DB = process.env.DB_PATH ?? `${process.env.HOME}/.peri-fuse/telemetry.db`;
@@ -87,7 +91,9 @@ console.log(`  rows=${obsWithIO.length} io=${(ioBytes / 1048576).toFixed(2)}MB`)
 
 // 4. JSON round-trip: what the API must serialize (parse + stringify)
 bench("JSON.parse+stringify of obs io", () =>
-  JSON.stringify(obsWithIO.map((o) => ({ ...o, input: JSON.parse(o.input), output: JSON.parse(o.output) }))),
+  JSON.stringify(
+    obsWithIO.map((o) => ({ ...o, input: JSON.parse(o.input), output: JSON.parse(o.output) })),
+  ),
 );
 
 // 5. score query (liteGetScoresForTraces)

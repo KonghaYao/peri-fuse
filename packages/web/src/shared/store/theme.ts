@@ -2,9 +2,9 @@
  * Theme store — dark-first, persisted to localStorage.
  *
  * The initial class is applied by the inline script in index.html before
- * first paint; this module keeps React in sync and handles toggling.
+ * first paint; this module keeps the app in sync and handles toggling.
  */
-import { useSyncExternalStore } from "react";
+import { createSignal } from "solid-js";
 
 export type Theme = "dark" | "light";
 
@@ -22,38 +22,28 @@ function apply(theme: Theme) {
   document.documentElement.classList.toggle("dark", theme === "dark");
 }
 
-let cache: Theme = read();
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const l of listeners) l();
-}
+const [theme, setThemeSignal] = createSignal<Theme>(read());
+apply(theme());
 
 export function getTheme(): Theme {
-  return cache;
+  return theme();
 }
 
-export function setTheme(theme: Theme): void {
-  cache = theme;
-  apply(theme);
+export function setTheme(next: Theme): void {
+  setThemeSignal(next);
+  apply(next);
   try {
-    localStorage.setItem(STORAGE_KEY, theme);
+    localStorage.setItem(STORAGE_KEY, next);
   } catch {
     // ignore (private mode)
   }
-  emit();
 }
 
 export function toggleTheme(): void {
-  setTheme(cache === "dark" ? "light" : "dark");
+  setTheme(theme() === "dark" ? "light" : "dark");
 }
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
-/** React hook returning the current theme (re-renders on change). */
-export function useTheme(): Theme {
-  return useSyncExternalStore(subscribe, getTheme, getTheme);
+/** Reactive accessor for the current theme. */
+export function useTheme() {
+  return theme;
 }

@@ -18,13 +18,17 @@ export type GatewayQueryState<T> =
       isFetching: boolean;
     };
 
+function hasError(error: unknown): boolean {
+  return error !== null && error !== undefined;
+}
+
 /** Resolve the async state exposed by the shared Gateway query UI seam. */
 export function resolveGatewayQueryState<T>(
   snapshot: GatewayQuerySnapshot<T>,
   isEmpty: (data: T) => boolean,
 ): GatewayQueryState<T> {
   if (snapshot.data === undefined) {
-    if (snapshot.error !== null && snapshot.error !== undefined) {
+    if (hasError(snapshot.error)) {
       return { kind: "error", error: snapshot.error, isFetching: snapshot.isFetching };
     }
     return { kind: "loading", isFetching: snapshot.isFetching };
@@ -34,7 +38,7 @@ export function resolveGatewayQueryState<T>(
     kind: "content",
     data: snapshot.data,
     isEmpty: isEmpty(snapshot.data),
-    staleError: snapshot.error !== null && snapshot.error !== undefined ? snapshot.error : null,
+    staleError: hasError(snapshot.error) ? snapshot.error : null,
     isFetching: snapshot.isFetching,
   };
 }

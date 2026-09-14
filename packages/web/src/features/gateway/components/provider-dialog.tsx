@@ -1,37 +1,23 @@
-/**
- * Create/Edit Provider dialog form.
- *
- * Form behavior & validation via React Hook Form + Zod (shadcn/ui Form).
- */
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
-import { useEffect } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
-import { Button } from "@/shared/components/ui/button";
 import {
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/shared/components/ui/dialog";
-import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/shared/components/ui/form";
-import { Input } from "@/shared/components/ui/input";
-import {
+  Input,
   Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/components/ui/select";
+} from "@peri/ui";
+import { Loader2 } from "lucide-solid";
+import { type Component, createEffect, createSignal } from "solid-js";
+import { z } from "zod";
 import type { GatewayProvider } from "@/shared/lib/gateway-api";
 
 const providerFormSchema = z.object({
@@ -47,13 +33,36 @@ const providerFormSchema = z.object({
 
 type ProviderFormValues = z.infer<typeof providerFormSchema>;
 
-export function ProviderDialog({
-  open,
-  onOpenChange,
-  provider,
-  onSubmit,
-  isPending,
-}: {
+const emptyValues: ProviderFormValues = {
+  name: "",
+  type: "openai",
+  baseUrl: "",
+  apiKey: "",
+  budgetLimit: "",
+  budgetPeriod: "",
+};
+
+function valuesFromProvider(provider: GatewayProvider): ProviderFormValues {
+  return {
+    name: provider.name,
+    type: provider.type,
+    baseUrl: provider.baseUrl,
+    apiKey: "",
+    budgetLimit: provider.budgetLimit != null ? String(provider.budgetLimit) : "",
+    budgetPeriod: provider.budgetPeriod ?? "",
+  };
+}
+
+function fieldErrors(error: z.ZodError): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const issue of error.issues) {
+    const key = issue.path[0];
+    if (typeof key === "string" && !out[key]) out[key] = issue.message;
+  }
+  return out;
+}
+
+export const ProviderDialog: Component<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   provider?: GatewayProvider | null;
@@ -66,184 +75,164 @@ export function ProviderDialog({
     budgetPeriod?: string | null;
   }) => void;
   isPending: boolean;
-}) {
-  const isEdit = !!provider;
+}> = (props) => {
+  const [values, setValues] = createSignal<ProviderFormValues>(emptyValues);
+  const [errors, setErrors] = createSignal<Record<string, string>>({});
+  const isEdit = () => Boolean(props.provider);
 
-  const form = useForm<ProviderFormValues>({
-    resolver: zodResolver(providerFormSchema),
-    defaultValues: {
-      name: "",
-      type: "openai",
-      baseUrl: "",
-      apiKey: "",
-      budgetLimit: "",
-      budgetPeriod: "",
-    },
+  createEffect(() => {
+    if (!props.open) return;
+    setErrors({});
+    setValues(props.provider ? valuesFromProvider(props.provider) : emptyValues);
   });
 
-  useEffect(() => {
-    if (open) {
-      form.reset(
-        provider
-          ? {
-              name: provider.name,
-              type: provider.type,
-              baseUrl: provider.baseUrl,
-              apiKey: "",
-              budgetLimit: provider.budgetLimit != null ? String(provider.budgetLimit) : "",
-              budgetPeriod: provider.budgetPeriod ?? "",
-            }
-          : {
-              name: "",
-              type: "openai",
-              baseUrl: "",
-              apiKey: "",
-              budgetLimit: "",
-              budgetPeriod: "",
-            },
-      );
-    }
-  }, [open, provider, form]);
+  const setField = (key: keyof ProviderFormValues, value: string) => {
+    setValues((current) => ({ ...current, [key]: value }));
+  };
 
-  const handleSubmit = (values: ProviderFormValues) => {
-    onSubmit({
-      name: values.name,
-      type: values.type,
-      baseUrl: values.baseUrl,
-      apiKey: values.apiKey || undefined,
-      budgetLimit: values.budgetLimit ? Number(values.budgetLimit) : null,
-      budgetPeriod: values.budgetPeriod || null,
+  const handleSubmit = (event: Event) => {
+    event.preventDefault();
+    const parsed = providerFormSchema.safeParse(values());
+    if (!parsed.success) {
+      setErrors(fieldErrors(parsed.error));
+      return;
+    }
+    setErrors({});
+    const v = parsed.data;
+    props.onSubmit({
+      name: v.name,
+      type: v.type,
+      baseUrl: v.baseUrl,
+      apiKey: v.apiKey || undefined,
+      budgetLimit: v.budgetLimit ? Number(v.budgetLimit) : null,
+      budgetPeriod: v.budgetPeriod || null,
     });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent class="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Provider" : "Add Provider"}</DialogTitle>
+          <DialogTitle>{isEdit() ? "Edit Provider" : "Add Provider"}</DialogTitle>
           <DialogDescription>
-            {isEdit ? "Update provider configuration." : "Connect an LLM provider to the gateway."}
+            {isEdit()
+              ? "Update provider configuration."
+              : "Connect an LLM provider to the gateway."}
           </DialogDescription>
         </DialogHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. openai-prod" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+        <Form errors={errors()} onSubmit={handleSubmit} class="space-y-4">
+          <FormField name="name">
+            <FormItem>
+              <FormLabel>Name</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="e.g. openai-prod"
+                  value={values().name}
+                  onInput={(e) => setField("name", e.currentTarget.value)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          </FormField>
 
-            <FormField
-              control={form.control}
-              name="type"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Type</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="openai">OpenAI-compatible</SelectItem>
-                      <SelectItem value="anthropic">Anthropic</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          <FormField name="type">
+            <FormItem>
+              <FormLabel>Type</FormLabel>
+              <FormControl>
+                <Select
+                  value={values().type}
+                  onChange={(value) => setField("type", value)}
+                  options={[
+                    { value: "openai", label: "OpenAI-compatible" },
+                    { value: "anthropic", label: "Anthropic" },
+                  ]}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          </FormField>
 
-            <FormField
-              control={form.control}
-              name="baseUrl"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Base URL</FormLabel>
-                  <FormControl>
-                    <Input placeholder="https://api.openai.com/v1" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          <FormField name="baseUrl">
+            <FormItem>
+              <FormLabel>Base URL</FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="https://api.openai.com/v1"
+                  value={values().baseUrl}
+                  onInput={(e) => setField("baseUrl", e.currentTarget.value)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          </FormField>
 
-            <FormField
-              control={form.control}
-              name="apiKey"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    API Key{" "}
-                    {isEdit && (
-                      <span className="font-normal text-fg-tertiary">
-                        (leave blank to keep current)
-                      </span>
-                    )}
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      type="password"
-                      placeholder={isEdit ? "••••••••" : "sk-..."}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-2 gap-3">
-              <FormField
-                control={form.control}
-                name="budgetLimit"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Budget Limit ($)</FormLabel>
-                    <FormControl>
-                      <Input type="number" placeholder="Optional" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+          <FormField name="apiKey">
+            <FormItem>
+              <FormLabel>
+                API Key{" "}
+                {isEdit() && (
+                  <span class="font-normal text-fg-tertiary">(leave blank to keep current)</span>
                 )}
-              />
-              <FormField
-                control={form.control}
-                name="budgetPeriod"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Budget Period</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g. 30d, 24h" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+              </FormLabel>
+              <FormControl>
+                <Input
+                  type="password"
+                  placeholder={isEdit() ? "••••••••" : "sk-..."}
+                  value={values().apiKey}
+                  onInput={(e) => setField("apiKey", e.currentTarget.value)}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          </FormField>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isPending}>
-                {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isEdit ? "Save" : "Create"}
-              </Button>
-            </div>
-          </form>
+          <div class="grid grid-cols-2 gap-3">
+            <FormField name="budgetLimit">
+              <FormItem>
+                <FormLabel>Budget Limit ($)</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    placeholder="Optional"
+                    value={values().budgetLimit}
+                    onInput={(e) => setField("budgetLimit", e.currentTarget.value)}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            </FormField>
+            <FormField name="budgetPeriod">
+              <FormItem>
+                <FormLabel>Budget Period</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="e.g. 30d, 24h"
+                    value={values().budgetPeriod}
+                    onInput={(e) => setField("budgetPeriod", e.currentTarget.value)}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            </FormField>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="default" onClick={() => props.onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={props.isPending}
+              busy={props.isPending}
+            >
+              {props.isPending ? <Loader2 class="h-4 w-4 animate-spin" size={16} /> : null}
+              {isEdit() ? "Save" : "Create"}
+            </Button>
+          </div>
         </Form>
       </DialogContent>
     </Dialog>
   );
-}
+};

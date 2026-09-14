@@ -19,10 +19,11 @@
     "svc:stop": "pnpm --filter peri-fuse exec peri-fuse stop",
     "svc:status": "pnpm --filter peri-fuse exec peri-fuse status",
     "svc:logs": "pnpm --filter peri-fuse exec peri-fuse logs",
-    "typecheck": "pnpm -r run typecheck",
+    "typecheck": "pnpm --filter @peri-fuse/langfuse-mcp run build && pnpm --filter './packages/*' run typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "test": "pnpm -r run test",
+    "test": "pnpm --filter './packages/*' run test",
+    "precheck": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build",
     "db:generate": "pnpm --filter @peri-fuse/shared run db:generate",
     "release": "node scripts/release.mjs"
   },

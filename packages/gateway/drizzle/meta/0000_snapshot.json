@@ -120,16 +120,12 @@
       "indexes": {
         "ApiKey_publicKey_unique": {
           "name": "ApiKey_publicKey_unique",
-          "columns": [
-            "publicKey"
-          ],
+          "columns": ["publicKey"],
           "isUnique": true
         },
         "ApiKey_publicKey_idx": {
           "name": "ApiKey_publicKey_idx",
-          "columns": [
-            "publicKey"
-          ],
+          "columns": ["publicKey"],
           "isUnique": false
         }
       },
@@ -138,12 +134,8 @@
           "name": "ApiKey_budgetId_Budget_id_fk",
           "tableFrom": "ApiKey",
           "tableTo": "Budget",
-          "columnsFrom": [
-            "budgetId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["budgetId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -216,17 +208,12 @@
       "indexes": {
         "AuditLog_tableName_objectId_idx": {
           "name": "AuditLog_tableName_objectId_idx",
-          "columns": [
-            "tableName",
-            "objectId"
-          ],
+          "columns": ["tableName", "objectId"],
           "isUnique": false
         },
         "AuditLog_createdAt_idx": {
           "name": "AuditLog_createdAt_idx",
-          "columns": [
-            "createdAt"
-          ],
+          "columns": ["createdAt"],
           "isUnique": false
         }
       },
@@ -371,9 +358,7 @@
       "indexes": {
         "Credential_name_unique": {
           "name": "Credential_name_unique",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         }
       },
@@ -493,34 +478,22 @@
       "indexes": {
         "DailySpend_apiKey_date_model_provider_key": {
           "name": "DailySpend_apiKey_date_model_provider_key",
-          "columns": [
-            "apiKey",
-            "date",
-            "model",
-            "provider"
-          ],
+          "columns": ["apiKey", "date", "model", "provider"],
           "isUnique": true
         },
         "DailySpend_date_idx": {
           "name": "DailySpend_date_idx",
-          "columns": [
-            "date"
-          ],
+          "columns": ["date"],
           "isUnique": false
         },
         "DailySpend_apiKey_date_idx": {
           "name": "DailySpend_apiKey_date_idx",
-          "columns": [
-            "apiKey",
-            "date"
-          ],
+          "columns": ["apiKey", "date"],
           "isUnique": false
         },
         "DailySpend_model_idx": {
           "name": "DailySpend_model_idx",
-          "columns": [
-            "model"
-          ],
+          "columns": ["model"],
           "isUnique": false
         }
       },
@@ -621,9 +594,7 @@
       "indexes": {
         "ErrorLog_startTime_idx": {
           "name": "ErrorLog_startTime_idx",
-          "columns": [
-            "startTime"
-          ],
+          "columns": ["startTime"],
           "isUnique": false
         }
       },
@@ -704,10 +675,7 @@
       "indexes": {
         "ModelDeployment_modelName_isEnabled_idx": {
           "name": "ModelDeployment_modelName_isEnabled_idx",
-          "columns": [
-            "modelName",
-            "isEnabled"
-          ],
+          "columns": ["modelName", "isEnabled"],
           "isUnique": false
         }
       },
@@ -716,12 +684,8 @@
           "name": "ModelDeployment_providerId_Provider_id_fk",
           "tableFrom": "ModelDeployment",
           "tableTo": "Provider",
-          "columnsFrom": [
-            "providerId"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["providerId"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -845,9 +809,7 @@
       "indexes": {
         "Provider_name_unique": {
           "name": "Provider_name_unique",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         }
       },
@@ -1053,32 +1015,22 @@
       "indexes": {
         "SpendLog_startTime_idx": {
           "name": "SpendLog_startTime_idx",
-          "columns": [
-            "startTime"
-          ],
+          "columns": ["startTime"],
           "isUnique": false
         },
         "SpendLog_apiKey_startTime_idx": {
           "name": "SpendLog_apiKey_startTime_idx",
-          "columns": [
-            "apiKey",
-            "startTime"
-          ],
+          "columns": ["apiKey", "startTime"],
           "isUnique": false
         },
         "SpendLog_model_startTime_idx": {
           "name": "SpendLog_model_startTime_idx",
-          "columns": [
-            "model",
-            "startTime"
-          ],
+          "columns": ["model", "startTime"],
           "isUnique": false
         },
         "SpendLog_sessionId_idx": {
           "name": "SpendLog_sessionId_idx",
-          "columns": [
-            "sessionId"
-          ],
+          "columns": ["sessionId"],
           "isUnique": false
         }
       },

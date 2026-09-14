@@ -101,13 +101,15 @@ export class OpenAIAdapter extends BaseProviderAdapter {
       },
       finishReason: choice.finish_reason ?? null,
       // Attach usage if present (some providers include it in the final chunk)
-      ...(raw.usage ? {
-        usage: {
-          promptTokens: raw.usage.prompt_tokens ?? 0,
-          completionTokens: raw.usage.completion_tokens ?? 0,
-          totalTokens: raw.usage.total_tokens ?? 0,
-        },
-      } : {}),
+      ...(raw.usage
+        ? {
+            usage: {
+              promptTokens: raw.usage.prompt_tokens ?? 0,
+              completionTokens: raw.usage.completion_tokens ?? 0,
+              totalTokens: raw.usage.total_tokens ?? 0,
+            },
+          }
+        : {}),
     };
   }
 

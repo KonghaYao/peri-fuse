@@ -1,30 +1,30 @@
 /**
- * Users page — Spectra §8 workflow screen.
- *
- * Focus is filter + table (no stat cards — aggregates belong to the
- * dashboard). Each row links through to the traces list pre-filtered by
- * `userId`. State is URL-synced via useTableState.
+ * Users list — filters + table; rows link to traces pre-filtered by userId.
  */
 
-import { Globe, Search } from "lucide-react";
-import { useRef } from "react";
-import { Link } from "react-router-dom";
-import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
-import { DateFilterInput } from "@/shared/components/date-filter-input";
-import { FilterInput, type FilterInputHandle } from "@/shared/components/filter-input";
-import { Pagination } from "@/shared/components/pagination";
-import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
-import { Button } from "@/shared/components/ui/button";
 import {
+  Button,
+  DateFilterInput,
+  EmptyState,
+  FilterInput,
+  type FilterInputHandle,
+  PageHeaderShell,
+  PaginationControls,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
+  TableInlineError,
+  TableLoadingRows,
   TableRow,
-} from "@/shared/components/ui/table";
+} from "@peri/ui";
+import { A } from "@solidjs/router";
+import { Globe, Search } from "lucide-solid";
+import { type Component, For, Show } from "solid-js";
+import { AutoRefreshControl } from "@/features/users/components/auto-refresh-control";
+import { useTableState } from "@/features/users/use-table-state";
 import { useUsersQuery } from "@/shared/hooks/queries";
-import { useTableState } from "@/shared/hooks/use-table-state";
 import { formatDateTime, formatNumber, formatTokens } from "@/shared/lib/format";
 import type { UserRow } from "@/shared/lib/types";
 
@@ -37,58 +37,71 @@ type UserFilters = {
   toTimestamp?: string;
 };
 
-export function UsersPage() {
-  const userFilterRef = useRef<FilterInputHandle>(null);
-  const environmentFilterRef = useRef<FilterInputHandle>(null);
+function tracesHref(userId: string, filters: UserFilters) {
+  const params = new URLSearchParams();
+  params.set("userId", userId);
+  if (filters.environment) params.set("environment", filters.environment);
+  if (filters.fromTimestamp) params.set("fromTimestamp", filters.fromTimestamp);
+  if (filters.toTimestamp) params.set("toTimestamp", filters.toTimestamp);
+  return `/traces?${params.toString()}`;
+}
+
+export const UsersPage: Component = () => {
+  let userFilterRef: FilterInputHandle | undefined;
+  let environmentFilterRef: FilterInputHandle | undefined;
   const tableState = useTableState<UserFilters>({
     filterKeys: ["userId", "environment", "fromTimestamp", "toTimestamp"],
     defaultSort: "lastSeen.desc",
   });
 
   const query = useUsersQuery({
-    page: tableState.page,
+    page: tableState.page(),
     limit: PAGE_SIZE,
-    orderBy: tableState.orderBy,
-    ...tableState.filters,
+    orderBy: tableState.orderBy(),
+    ...tableState.filters(),
   });
 
-  const users: UserRow[] = query.data?.data ?? [];
+  const users = () => (query.data?.data ?? []) as UserRow[];
 
   return (
-    <div className="flex h-full flex-col">
-      <PageHeader
+    <div class="flex h-full flex-col">
+      <PageHeaderShell
         title="Users"
         description="End users and usage derived from traces in the selected window."
       />
 
-      <div className="flex flex-wrap items-center gap-2 px-6 py-3">
+      <div class="flex flex-wrap items-center gap-2 px-6 py-3">
         <FilterInput
-          ref={userFilterRef}
-          className="w-52"
+          ref={(handle) => {
+            userFilterRef = handle;
+          }}
+          class="w-52"
           placeholder="Filter by user id…"
           icon={Search}
-          value={tableState.filters.userId}
+          value={tableState.filters().userId}
           onCommit={(v) => tableState.setFilter("userId", v)}
         />
         <FilterInput
-          ref={environmentFilterRef}
-          className="w-44"
+          ref={(handle) => {
+            environmentFilterRef = handle;
+          }}
+          class="w-44"
           placeholder="Filter by environment…"
           icon={Globe}
-          value={tableState.filters.environment}
+          value={tableState.filters().environment}
           onCommit={(v) => tableState.setFilter("environment", v)}
         />
         <DateFilterInput
-          className="w-36"
-          value={tableState.filters.fromTimestamp}
+          class="w-36"
+          value={tableState.filters().fromTimestamp}
           onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
           placeholder="From date…"
           title="User activity start date"
           boundary="start"
         />
         <DateFilterInput
-          className="w-36"
-          value={tableState.filters.toTimestamp}
+          class="w-36"
+          value={tableState.filters().toTimestamp}
           onCommit={(v) => tableState.setFilter("toTimestamp", v)}
           placeholder="To date…"
           title="User activity end date"
@@ -98,95 +111,100 @@ export function UsersPage() {
           size="sm"
           variant="secondary"
           onClick={() => {
-            userFilterRef.current?.commit();
-            environmentFilterRef.current?.commit();
+            userFilterRef?.commit();
+            environmentFilterRef?.commit();
           }}
         >
-          <Search className="h-4 w-4" />
+          <Search class="h-4 w-4" size={16} />
           Search
         </Button>
-        {tableState.activeFilterCount > 0 && (
+        <Show when={tableState.activeFilterCount() > 0}>
           <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
-            <Search className="h-4 w-4" />
-            Clear ({tableState.activeFilterCount})
+            <Search class="h-4 w-4" size={16} />
+            Clear ({tableState.activeFilterCount()})
           </Button>
-        )}
-        <div className="ml-auto">
+        </Show>
+        <div class="ml-auto">
           <AutoRefreshControl />
         </div>
       </div>
 
-      {query.isLoading ? (
-        <LoadingRows />
-      ) : query.error ? (
-        <ErrorState error={query.error} />
-      ) : users.length === 0 ? (
-        <EmptyState
-          message={
-            tableState.activeFilterCount > 0
-              ? "No users match the current filters."
-              : "No users found."
+      <Show when={!query.isPending} fallback={<TableLoadingRows class="flex-1 px-4" columns={6} />}>
+        <Show
+          when={!query.isError}
+          fallback={
+            <div class="px-4 py-3">
+              <TableInlineError error={query.error} onRetry={() => void query.refetch()} />
+            </div>
           }
-        />
-      ) : (
-        <>
-          <div className="flex-1 overflow-auto px-4">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>First seen</TableHead>
-                  <TableHead>Last seen</TableHead>
-                  <TableHead className="text-right">Traces</TableHead>
-                  <TableHead className="text-right">Observations</TableHead>
-                  <TableHead className="text-right">Tokens</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell className="max-w-[240px]">
-                      <Link
-                        to={`/traces?${new URLSearchParams(
-                          Object.entries({
-                            userId: u.id,
-                            environment: tableState.filters.environment,
-                            fromTimestamp: tableState.filters.fromTimestamp,
-                            toTimestamp: tableState.filters.toTimestamp,
-                          }).filter((entry): entry is [string, string] => Boolean(entry[1])),
-                        ).toString()}`}
-                        className="truncate font-medium text-brand hover:underline"
-                        title={`View traces for ${u.id}`}
-                      >
-                        {u.id}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-fg-tertiary">
-                      {formatDateTime(u.firstSeen)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-fg-tertiary">
-                      {formatDateTime(u.lastSeen)}
-                    </TableCell>
-                    <TableCell className="tnum text-right">{formatNumber(u.countTraces)}</TableCell>
-                    <TableCell className="tnum text-right">
-                      {formatNumber(u.countObservations)}
-                    </TableCell>
-                    <TableCell className="tnum text-right">{formatTokens(u.totalTokens)}</TableCell>
+        >
+          <Show
+            when={users().length > 0}
+            fallback={
+              <EmptyState
+                variant="inline"
+                class="mx-4 flex-1"
+                title={
+                  tableState.activeFilterCount() > 0
+                    ? "No users match the current filters."
+                    : "No users found."
+                }
+              />
+            }
+          >
+            <div class="flex-1 overflow-auto px-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>User</TableHead>
+                    <TableHead>First seen</TableHead>
+                    <TableHead>Last seen</TableHead>
+                    <TableHead class="text-right">Traces</TableHead>
+                    <TableHead class="text-right">Observations</TableHead>
+                    <TableHead class="text-right">Tokens</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="border-t border-border px-4 py-2">
-            <Pagination
-              meta={query.data?.meta}
-              page={tableState.page}
-              pageSize={PAGE_SIZE}
-              onPageChange={tableState.setPage}
-            />
-          </div>
-        </>
-      )}
+                </TableHeader>
+                <TableBody>
+                  <For each={users()}>
+                    {(u) => (
+                      <TableRow>
+                        <TableCell class="max-w-[240px]">
+                          <A
+                            href={tracesHref(u.id, tableState.filters())}
+                            class="truncate font-medium text-brand hover:underline"
+                            title={`View traces for ${u.id}`}
+                          >
+                            {u.id}
+                          </A>
+                        </TableCell>
+                        <TableCell class="whitespace-nowrap text-fg-tertiary">
+                          {formatDateTime(u.firstSeen)}
+                        </TableCell>
+                        <TableCell class="whitespace-nowrap text-fg-tertiary">
+                          {formatDateTime(u.lastSeen)}
+                        </TableCell>
+                        <TableCell class="tnum text-right">{formatNumber(u.countTraces)}</TableCell>
+                        <TableCell class="tnum text-right">
+                          {formatNumber(u.countObservations)}
+                        </TableCell>
+                        <TableCell class="tnum text-right">{formatTokens(u.totalTokens)}</TableCell>
+                      </TableRow>
+                    )}
+                  </For>
+                </TableBody>
+              </Table>
+            </div>
+            <div class="border-t border-border px-4 py-2">
+              <PaginationControls
+                current={tableState.page()}
+                pageSize={PAGE_SIZE}
+                total={query.data?.meta.totalItems ?? 0}
+                onChange={(page) => tableState.setPage(page)}
+              />
+            </div>
+          </Show>
+        </Show>
+      </Show>
     </div>
   );
-}
+};

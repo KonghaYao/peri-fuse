@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import * as fs from "node:fs";
+import * as path from "node:path";
 /**
  * Peri-Fuse CLI entry point.
  *
@@ -6,17 +8,15 @@
  * Commands: start / stop / restart / status / logs.
  */
 import { Command } from "commander";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { logsCommand } from "./commands/logs";
 import { restartCommand } from "./commands/restart";
 import { startCommand } from "./commands/start";
 import { statusCommand } from "./commands/status";
 import { stopCommand } from "./commands/stop";
 
-const pkg = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"),
-) as { version: string };
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")) as {
+  version: string;
+};
 
 const program = new Command();
 
@@ -30,20 +30,11 @@ program
   .description("Start the server as a background daemon")
   .action(startCommand);
 
-program
-  .command("stop")
-  .description("Stop the background server")
-  .action(stopCommand);
+program.command("stop").description("Stop the background server").action(stopCommand);
 
-program
-  .command("restart")
-  .description("Restart the background server")
-  .action(restartCommand);
+program.command("restart").description("Restart the background server").action(restartCommand);
 
-program
-  .command("status")
-  .description("Show whether the server is running")
-  .action(statusCommand);
+program.command("status").description("Show whether the server is running").action(statusCommand);
 
 program
   .command("logs")

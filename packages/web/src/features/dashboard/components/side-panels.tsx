@@ -1,189 +1,134 @@
 /**
- * Secondary dashboard panels: cache hit-rate trend, score trend, top users by
- * token consumption, and the recent-errors list.
+ * Secondary dashboard panels: cache, scores, top users, recent errors.
  */
 
-import { AlertTriangle, ArrowUpRight } from "lucide-react";
-import { Link } from "react-router-dom";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { A } from "@solidjs/router";
+import { AlertTriangle, ArrowUpRight } from "lucide-solid";
+import { type Component, For, Show } from "solid-js";
 import { formatDateTime, formatNumber, formatPercent, formatTokens } from "@/shared/lib/format";
 import type { DashboardDaily, DashboardRecentError, DashboardUserBucket } from "@/shared/lib/types";
-import { ChartCard, TOOLTIP_LABEL_STYLE, TOOLTIP_STYLE } from "./chart-card";
+import { ChartCard } from "./chart-card";
+import { HorizontalBarChart, MultiLineChart } from "./svg-charts";
 
-const dayTick = (d: string) => d.slice(5);
-
-export function CacheTrendChart({ data }: { data: DashboardDaily[] }) {
-  const rows = data.filter((d) => d.observations > 0);
+export const CacheTrendChart: Component<{ data: DashboardDaily[] }> = (props) => {
+  const rows = () => props.data.filter((d) => d.observations > 0);
+  const labels = () => rows().map((d) => d.date);
   return (
     <ChartCard
       title="Cache hit rate"
       description="Cached read tokens / gross input tokens per day."
-      isEmpty={rows.length === 0}
+      isEmpty={rows().length === 0}
     >
-      <div className="h-56 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={rows}>
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={dayTick} />
-            <YAxis
-              tick={{ fontSize: 11 }}
-              domain={[0, 1]}
-              tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
-              width={44}
-            />
-            <Tooltip
-              labelFormatter={(d) => String(d)}
-              formatter={(value) => [formatPercent(Number(value)), "hit rate"]}
-              contentStyle={TOOLTIP_STYLE}
-              labelStyle={TOOLTIP_LABEL_STYLE}
-            />
-            <Line
-              type="monotone"
-              dataKey="cacheHitRate"
-              name="hit rate"
-              stroke="var(--chart-4)"
-              strokeWidth={2}
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      <MultiLineChart
+        labels={labels()}
+        yDomain={[0, 1]}
+        formatY={(v) => formatPercent(v)}
+        series={[
+          {
+            name: "hit rate",
+            color: "var(--chart-4)",
+            values: rows().map((d) => d.cacheHitRate),
+          },
+        ]}
+      />
     </ChartCard>
   );
-}
+};
 
-export function ScoreTrendChart({ data }: { data: DashboardDaily[] }) {
-  const rows = data.filter((d) => d.avgScore !== null);
+export const ScoreTrendChart: Component<{ data: DashboardDaily[] }> = (props) => {
+  const rows = () => props.data.filter((d) => d.avgScore !== null);
+  const labels = () => rows().map((d) => d.date);
   return (
     <ChartCard
       title="Score trend"
       description="Average score value per day."
-      isEmpty={rows.length === 0}
+      isEmpty={rows().length === 0}
       emptyMessage="No scores in the selected range."
     >
-      <div className="h-56 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={rows}>
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={dayTick} />
-            <YAxis tick={{ fontSize: 11 }} domain={[0, 1]} width={40} />
-            <Tooltip
-              labelFormatter={(d) => String(d)}
-              formatter={(value) => [Number(value).toFixed(3), "avg score"]}
-              contentStyle={TOOLTIP_STYLE}
-              labelStyle={TOOLTIP_LABEL_STYLE}
-            />
-            <Line
-              type="monotone"
-              dataKey="avgScore"
-              name="avg score"
-              stroke="var(--chart-5)"
-              strokeWidth={2}
-              dot={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+      <MultiLineChart
+        labels={labels()}
+        yDomain={[0, 1]}
+        formatY={(v) => v.toFixed(3)}
+        series={[
+          {
+            name: "avg score",
+            color: "var(--chart-5)",
+            values: rows().map((d) => d.avgScore ?? 0),
+          },
+        ]}
+      />
     </ChartCard>
   );
-}
+};
 
-export function TopUsersChart({ data }: { data: DashboardUserBucket[] }) {
-  return (
-    <ChartCard
-      title="Top users"
-      description="Token consumption by user."
-      isEmpty={data.length === 0}
-      emptyMessage="No user-attributed usage."
-    >
-      <div className="h-56 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16 }}>
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} horizontal={false} />
-            <XAxis
-              type="number"
-              tick={{ fontSize: 11 }}
-              tickFormatter={(v: number) => formatTokens(v)}
-            />
-            <YAxis type="category" dataKey="userId" width={130} tick={{ fontSize: 11 }} />
-            <Tooltip
-              formatter={(value, name) =>
-                name === "tokens"
-                  ? [formatTokens(Number(value)), "tokens"]
-                  : [formatNumber(Number(value)), String(name)]
-              }
-              contentStyle={TOOLTIP_STYLE}
-              labelStyle={TOOLTIP_LABEL_STYLE}
-            />
-            <Bar
-              dataKey="tokens"
-              name="tokens"
-              fill="var(--chart-1)"
-              radius={[0, 3, 3, 0]}
-              barSize={14}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    </ChartCard>
-  );
-}
+export const TopUsersChart: Component<{ data: DashboardUserBucket[] }> = (props) => (
+  <ChartCard
+    title="Top users"
+    description="Token consumption by user."
+    isEmpty={props.data.length === 0}
+    emptyMessage="No user-attributed usage."
+  >
+    <HorizontalBarChart
+      labels={props.data.map((d) => d.userId)}
+      formatX={(v) => formatTokens(v)}
+      series={[
+        {
+          name: "tokens",
+          color: "var(--chart-1)",
+          values: props.data.map((d) => d.tokens),
+        },
+      ]}
+    />
+  </ChartCard>
+);
 
-export function RecentErrorsPanel({ data }: { data: DashboardRecentError[] }) {
-  return (
-    <ChartCard
-      title="Recent errors"
-      description="Latest error-level observations."
-      isEmpty={data.length === 0}
-      emptyMessage="No errors in the selected range."
-    >
-      <ul className="divide-y divide-border">
-        {data.map((e) => (
-          <li key={e.id} className="flex items-start gap-2.5 py-2.5">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--danger)]" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-sm font-medium text-fg-primary">
-                  {e.name ?? "(unnamed)"}
-                  {e.type ? (
-                    <span className="ml-1.5 text-xs font-normal text-fg-tertiary">{e.type}</span>
-                  ) : null}
+export const RecentErrorsPanel: Component<{ data: DashboardRecentError[] }> = (props) => (
+  <ChartCard
+    title="Recent errors"
+    description="Latest error-level observations."
+    isEmpty={props.data.length === 0}
+    emptyMessage="No errors in the selected range."
+  >
+    <ul class="divide-y divide-border">
+      <For each={props.data}>
+        {(error) => (
+          <li class="flex items-start gap-2.5 py-2.5">
+            <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-danger" size={16} />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="truncate text-sm font-medium text-fg-primary">
+                  {error.name ?? "(unnamed)"}
+                  <Show when={error.type}>
+                    <span class="ml-1.5 text-xs font-normal text-fg-tertiary">{error.type}</span>
+                  </Show>
                 </span>
-                <span className="shrink-0 text-xs text-fg-tertiary">
-                  {e.startTime ? formatDateTime(e.startTime) : "—"}
+                <span class="shrink-0 text-xs text-fg-tertiary">
+                  {error.startTime ? formatDateTime(error.startTime) : "—"}
                 </span>
               </div>
-              {e.statusMessage ? (
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{e.statusMessage}</p>
-              ) : null}
-              {e.traceId ? (
-                <Link
-                  to={`/traces/${encodeURIComponent(e.traceId)}`}
-                  className="mt-0.5 inline-flex items-center gap-0.5 text-xs text-primary hover:underline"
-                >
-                  View trace <ArrowUpRight className="h-3 w-3" />
-                </Link>
-              ) : null}
+              <Show when={error.statusMessage}>
+                <p class="mt-0.5 truncate text-xs text-fg-tertiary">{error.statusMessage}</p>
+              </Show>
+              <Show when={error.traceId}>
+                {(traceId) => (
+                  <A
+                    href={`/traces/${encodeURIComponent(traceId())}`}
+                    class="mt-0.5 inline-flex items-center gap-0.5 text-xs text-brand hover:underline"
+                  >
+                    View trace <ArrowUpRight class="h-3 w-3" size={12} />
+                  </A>
+                )}
+              </Show>
             </div>
           </li>
-        ))}
-      </ul>
-      <Link
-        to="/errors"
-        className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-danger hover:underline"
-      >
-        Investigate all errors <ArrowUpRight className="h-3 w-3" />
-      </Link>
-    </ChartCard>
-  );
-}
+        )}
+      </For>
+    </ul>
+    <A
+      href="/errors"
+      class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-danger hover:underline"
+    >
+      Investigate all errors <ArrowUpRight class="h-3 w-3" size={12} />
+    </A>
+  </ChartCard>
+);

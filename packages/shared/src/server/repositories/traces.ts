@@ -1,6 +1,6 @@
 import type { ClickHouseClientConfigOptions } from "@clickhouse/client";
-import snakeCase from "lodash/snakeCase";
 import { and, eq } from "drizzle-orm";
+import snakeCase from "lodash/snakeCase";
 import { prisma } from "../../db";
 import { projects } from "../../db/schema/index.js";
 import { LISTABLE_SCORE_TYPES } from "../../domain/scores";

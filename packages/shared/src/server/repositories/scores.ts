@@ -3,7 +3,6 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { prisma } from "../../db";
 import { scoreConfigs as scoreConfigsTable } from "../../db/schema/index.js";
-import { parseJsonPrioritised } from "../../utils/json";
 import {
   AGGREGATABLE_SCORE_TYPES,
   type AggregatableScoreDataType,
@@ -25,6 +24,7 @@ import type { OrderByState } from "../../interfaces/orderBy";
 import { findUiColumnMapping, matchesUiColumnMapping } from "../../tableDefinitions";
 import { scoresTableCols } from "../../tableDefinitions/scoresTable";
 import type { FilterCondition, FilterState, TimeFilter } from "../../types";
+import { parseJsonPrioritised } from "../../utils/json";
 import { isLiteMode } from "../adapters";
 import type { AnalyticsScoreEvent } from "../analytics-integrations/types";
 import {

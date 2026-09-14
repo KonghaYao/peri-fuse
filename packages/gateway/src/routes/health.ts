@@ -1,8 +1,9 @@
 /**
  * Health check route for PeriGateway.
  */
-import { Hono } from "hono";
+
 import { sql } from "drizzle-orm";
+import { Hono } from "hono";
 import { getDb } from "../db.js";
 
 const health = new Hono();

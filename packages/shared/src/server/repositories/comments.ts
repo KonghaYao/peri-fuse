@@ -1,5 +1,5 @@
 import { and, eq, like, notLike, sql } from "drizzle-orm";
-import { Prisma, type Db } from "../../db";
+import { type Db, Prisma } from "../../db";
 import { comments as commentsTable } from "../../db/schema/index.js";
 import type { filterOperators } from "../../interfaces/filters";
 
@@ -115,7 +115,7 @@ export async function getObjectIdsByCommentContent({
 
   // For other operators, use a case-insensitive LIKE match (SQLite).
   const pattern = `%${searchQuery}%`;
-  let contentCondition;
+  let contentCondition: ReturnType<typeof like>;
   if (operator === "does not contain") {
     contentCondition = notLike(commentsTable.content, pattern);
   } else if (operator === "starts with") {

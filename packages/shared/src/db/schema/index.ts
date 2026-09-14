@@ -9,5 +9,6 @@
  *   BigInt   -> integer (number; drizzle SQLite has no bigint mode)
  *   Decimal/Float -> real
  */
-export * from "./schema.js";
+
 export * from "./relations.js";
+export * from "./schema.js";

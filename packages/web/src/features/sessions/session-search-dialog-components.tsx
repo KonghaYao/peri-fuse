@@ -1,159 +1,149 @@
-import type * as React from "react";
-import { useState } from "react";
+import { type Component, createSignal, For, type JSX } from "solid-js";
 import type { SessionContextMessage, SessionSearchHit } from "@/shared/lib/types";
 
-export function HighlightedText({
-  text,
-  ranges,
-  query,
-}: {
+export function HighlightedText(props: {
   text: string;
   ranges?: Array<{ start: number; end: number }>;
   query: string;
-}) {
+}): JSX.Element {
   const safe =
-    ranges?.filter((r) => r.start >= 0 && r.end > r.start && r.start < text.length) ?? [];
-  if (!safe.length && query) {
-    const start = text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase());
-    if (start >= 0) safe.push({ start, end: start + query.length });
+    props.ranges?.filter((r) => r.start >= 0 && r.end > r.start && r.start < props.text.length) ??
+    [];
+  if (!safe.length && props.query) {
+    const start = props.text.toLocaleLowerCase().indexOf(props.query.toLocaleLowerCase());
+    if (start >= 0) safe.push({ start, end: start + props.query.length });
   }
-  if (!safe.length) return <>{text}</>;
-  const pieces: React.ReactNode[] = [];
+  if (!safe.length) return <>{props.text}</>;
+  const pieces: JSX.Element[] = [];
   let at = 0;
   safe
     .sort((a, b) => a.start - b.start)
     .forEach((range, index) => {
       const start = Math.max(at, range.start);
-      const end = Math.min(text.length, range.end);
-      if (start > at) pieces.push(<span key={`text-${index}`}>{text.slice(at, start)}</span>);
-      if (end > start)
+      const end = Math.min(props.text.length, range.end);
+      if (start > at) pieces.push(<span>{props.text.slice(at, start)}</span>);
+      if (end > start) {
         pieces.push(
-          <mark key={`hit-${index}`} className="rounded bg-warning/30 px-0.5">
-            {text.slice(start, end)}
-          </mark>,
+          <mark class="rounded bg-warning/30 px-0.5">{props.text.slice(start, end)}</mark>,
         );
+      }
       at = Math.max(at, end);
     });
-  if (at < text.length) pieces.push(<span key="tail">{text.slice(at)}</span>);
+  if (at < props.text.length) pieces.push(<span>{props.text.slice(at)}</span>);
   return <>{pieces}</>;
 }
 
-export function HitRow({
-  hit,
-  query,
-  selected,
-  onClick,
-}: {
+export const HitRow: Component<{
   hit: SessionSearchHit;
   query: string;
   selected: boolean;
   onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full border-b border-border px-3 py-3 text-left transition-colors ${selected ? "bg-surface-overlay" : "hover:bg-surface-overlay/60"}`}
-    >
-      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-fg-tertiary">
-        <span className="font-medium uppercase">{hit.role}</span>
-        <span>
-          {new Date(hit.recordTime).toLocaleString()} · Message {hit.messageOrder + 1}
-        </span>
-      </div>
-      <p className="line-clamp-3 text-sm text-fg-primary">
-        <HighlightedText text={hit.snippet} ranges={hit.highlight} query={query} />
-      </p>
-    </button>
-  );
-}
+}> = (props) => (
+  <button
+    type="button"
+    onClick={props.onClick}
+    class={`w-full border-b border-border px-3 py-3 text-left transition-colors ${props.selected ? "bg-surface-overlay" : "hover:bg-surface-overlay/60"}`}
+  >
+    <div class="mb-1 flex items-center justify-between gap-2 text-[11px] text-fg-tertiary">
+      <span class="font-medium uppercase">{props.hit.role}</span>
+      <span>
+        {new Date(props.hit.recordTime).toLocaleString()} · Message {props.hit.messageOrder + 1}
+      </span>
+    </div>
+    <p class="line-clamp-3 text-sm text-fg-primary">
+      <HighlightedText text={props.hit.snippet} ranges={props.hit.highlight} query={props.query} />
+    </p>
+  </button>
+);
 
-export function ContextMessage({
-  message,
-  query,
-  onLoadBlock,
-}: {
+export const ContextMessage: Component<{
   message: SessionContextMessage;
   query: string;
   onLoadBlock: (message: SessionContextMessage, direction: "before" | "after") => Promise<void>;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [loadingBlock, setLoadingBlock] = useState(false);
-  const [blockError, setBlockError] = useState(false);
-  const long = message.truncated || message.text.length > 2048;
-  const hasEarlierBlocks = Boolean(message.blockBeforeCursor);
-  const hasLaterBlocks = Boolean(message.blockCursor);
-  const visibleBlocks = message.blocks;
-  const text = expanded || !long ? message.text : `${message.text.slice(0, 2048)}…`;
-  const expand = () => setExpanded((value) => !value);
+}> = (props) => {
+  const [expanded, setExpanded] = createSignal(false);
+  const [loadingBlock, setLoadingBlock] = createSignal(false);
+  const [blockError, setBlockError] = createSignal(false);
+  const long = () => props.message.truncated || props.message.text.length > 2048;
+  const hasEarlierBlocks = () => Boolean(props.message.blockBeforeCursor);
+  const hasLaterBlocks = () => Boolean(props.message.blockCursor);
+  const text = () =>
+    expanded() || !long() ? props.message.text : `${props.message.text.slice(0, 2048)}…`;
+
   return (
     <div
-      className={`rounded-md border p-3 ${message.role === "user" ? "border-brand/20 bg-brand/5" : "border-border bg-surface-raised"}`}
+      class={`rounded-md border p-3 ${props.message.role === "user" ? "border-brand/20 bg-brand/5" : "border-border bg-surface-raised"}`}
     >
-      <div className="mb-1 flex items-center justify-between text-[11px] font-medium uppercase text-fg-tertiary">
-        <span>{message.role}</span>
-        {message.messageOrder !== undefined && <span>Message {message.messageOrder + 1}</span>}
+      <div class="mb-1 flex items-center justify-between text-[11px] font-medium uppercase text-fg-tertiary">
+        <span>{props.message.role}</span>
+        {props.message.messageOrder !== undefined && (
+          <span>Message {props.message.messageOrder + 1}</span>
+        )}
       </div>
-      <p className="whitespace-pre-wrap break-words text-sm text-fg-primary">
-        {message.blocks.length > 0 ? (
-          visibleBlocks.map((block) => (
-            <span key={block.chunkNo}>
-              <HighlightedText text={block.text} ranges={block.highlight} query={query} />
-            </span>
-          ))
+      <p class="whitespace-pre-wrap break-words text-sm text-fg-primary">
+        {props.message.blocks.length > 0 ? (
+          <For each={props.message.blocks}>
+            {(block) => (
+              <span>
+                <HighlightedText text={block.text} ranges={block.highlight} query={props.query} />
+              </span>
+            )}
+          </For>
         ) : (
-          <HighlightedText text={text} ranges={message.highlight} query={query} />
+          <HighlightedText text={text()} ranges={props.message.highlight} query={props.query} />
         )}
       </p>
-      {blockError && (
-        <p className="mt-2 text-xs text-danger">Could not load the rest of this message.</p>
+      {blockError() && (
+        <p class="mt-2 text-xs text-danger">Could not load the rest of this message.</p>
       )}
-      {long && !message.blocks.length && (
+      {long() && props.message.blocks.length === 0 && (
         <button
           type="button"
-          className="mt-2 text-xs text-brand hover:underline"
-          onClick={() => void expand()}
-          disabled={loadingBlock}
+          class="mt-2 text-xs text-brand hover:underline"
+          onClick={() => setExpanded((value) => !value)}
+          disabled={loadingBlock()}
         >
-          {loadingBlock ? "Loading message…" : expanded ? "Collapse message" : "Expand message"}
+          {loadingBlock() ? "Loading message…" : expanded() ? "Collapse message" : "Expand message"}
         </button>
       )}
-      {(hasEarlierBlocks || hasLaterBlocks) && (
-        <div className="mt-2 flex gap-3 text-xs text-brand">
-          {hasEarlierBlocks && (
+      {(hasEarlierBlocks() || hasLaterBlocks()) && (
+        <div class="mt-2 flex gap-3 text-xs text-brand">
+          {hasEarlierBlocks() && (
             <button
               type="button"
-              className="hover:underline"
+              class="hover:underline"
               onClick={() => {
                 setLoadingBlock(true);
                 setBlockError(false);
-                void onLoadBlock(message, "before")
+                void props
+                  .onLoadBlock(props.message, "before")
                   .catch(() => setBlockError(true))
                   .finally(() => setLoadingBlock(false));
               }}
-              disabled={loadingBlock}
+              disabled={loadingBlock()}
             >
-              {loadingBlock ? "Loading message…" : "Load earlier text"}
+              {loadingBlock() ? "Loading message…" : "Load earlier text"}
             </button>
           )}
-          {hasLaterBlocks && (
+          {hasLaterBlocks() && (
             <button
               type="button"
-              className="hover:underline"
+              class="hover:underline"
               onClick={() => {
                 setLoadingBlock(true);
                 setBlockError(false);
-                void onLoadBlock(message, "after")
+                void props
+                  .onLoadBlock(props.message, "after")
                   .catch(() => setBlockError(true))
                   .finally(() => setLoadingBlock(false));
               }}
-              disabled={loadingBlock}
+              disabled={loadingBlock()}
             >
-              {loadingBlock ? "Loading message…" : "Load later text"}
+              {loadingBlock() ? "Loading message…" : "Load later text"}
             </button>
           )}
         </div>
       )}
     </div>
   );
-}
+};

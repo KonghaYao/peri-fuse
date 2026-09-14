@@ -1,2 +1,4 @@
 packages:
   - "packages/*"
+  - "vendor/peri-studio/packages/ui"
+  - "vendor/peri-studio/packages/markdown"

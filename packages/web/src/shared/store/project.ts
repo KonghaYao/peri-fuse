@@ -4,7 +4,7 @@
  * The web UI always operates within a single project. Switching projects
  * calls the manage API to obtain fresh credentials, then updates this store.
  */
-import { useSyncExternalStore } from "react";
+import { createSignal } from "solid-js";
 
 export type ProjectContext = {
   projectId: string;
@@ -27,47 +27,35 @@ function read(): ProjectContext | null {
   }
 }
 
-let cache: ProjectContext | null = read();
-const listeners = new Set<() => void>();
-
-function emit() {
-  for (const l of listeners) l();
-}
+const [projectContext, setProjectContextSignal] = createSignal<ProjectContext | null>(read());
 
 export function getProjectContext(): ProjectContext | null {
-  return cache;
+  return projectContext();
 }
 
 export function setProjectContext(ctx: ProjectContext): void {
-  cache = ctx;
+  setProjectContextSignal(ctx);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(ctx));
   } catch {
     // localStorage may be unavailable (private mode); keep in-memory only.
   }
-  emit();
 }
 
 export function clearProjectContext(): void {
-  cache = null;
+  setProjectContextSignal(null);
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
     // ignore
   }
-  emit();
 }
 
 export function hasActiveProject(): boolean {
-  return cache !== null;
+  return projectContext() !== null;
 }
 
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
-/** React hook returning the current project context (re-renders on change). */
-export function useProjectContext(): ProjectContext | null {
-  return useSyncExternalStore(subscribe, getProjectContext, getProjectContext);
+/** Reactive accessor for the current project context. */
+export function useProjectContext() {
+  return projectContext;
 }

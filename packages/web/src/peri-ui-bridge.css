@@ -1,0 +1,23 @@
+/* Spectra → @peri/ui semantic token bridge (see peri-studio peri-fuse-ui-adoption.md §5).
+   Do not merge token files — map Spectra vars onto studio consumption names. */
+
+:root,
+.dark {
+  --content-primary: var(--fg-primary);
+  --content-secondary: var(--fg-secondary);
+  --content-muted: var(--fg-tertiary);
+  --content-faint: var(--fg-tertiary);
+  --surface-canvas: var(--surface-base);
+  --surface-overlay: var(--surface-raised);
+  --surface-sunken: var(--surface-inset);
+  --border-subtle: var(--line-default);
+  --border-strong: var(--line-strong);
+  --accent-solid: var(--brand);
+  --accent-soft: var(--brand-subtle);
+  --accent-ring: var(--ring);
+  --border-focus: var(--ring);
+  --danger-solid: var(--danger);
+  --success-solid: var(--success);
+  --warning-solid: var(--warning);
+  --interaction-hover: color-mix(in oklch, var(--surface-overlay) 70%, transparent);
+}

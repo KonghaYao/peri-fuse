@@ -154,9 +154,7 @@ export class DashboardService {
     if (!updatedDashboard) {
       // No matching row; also covers cross-project ids, so the 404 does not
       // leak whether the dashboard exists in another project.
-      throw new LangfuseNotFoundError(
-        `Dashboard ${dashboardId} not found in project ${projectId}`,
-      );
+      throw new LangfuseNotFoundError(`Dashboard ${dashboardId} not found in project ${projectId}`);
     }
 
     return DashboardDomainSchema.parse({
@@ -260,9 +258,7 @@ export class DashboardService {
     if (!deleted) {
       // No matching row; also covers cross-project ids, so the 404 does not
       // leak whether the dashboard exists in another project.
-      throw new LangfuseNotFoundError(
-        `Dashboard ${dashboardId} not found in project ${projectId}`,
-      );
+      throw new LangfuseNotFoundError(`Dashboard ${dashboardId} not found in project ${projectId}`);
     }
   }
 

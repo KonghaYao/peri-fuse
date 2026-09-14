@@ -1,266 +1,163 @@
-import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
-
-import { Layout } from "@/shared/components/layout";
-import { TooltipProvider } from "@/shared/components/ui/tooltip";
+import { Navigate, Route, Router } from "@solidjs/router";
+import { lazy, type ParentComponent, Show, Suspense } from "solid-js";
+import { OnboardingPage } from "@/pages/onboarding-page";
 import { hasActiveProject, useProjectContext } from "@/shared/store/project";
+import { Layout } from "@/shell/layout";
 
-// Route-level code splitting: each page is its own chunk.
-const DashboardPage = lazy(() =>
-  import("@/features/dashboard/dashboard-page").then((m) => ({ default: m.DashboardPage })),
-);
-const ErrorsPage = lazy(() =>
-  import("@/features/errors/errors-page").then((m) => ({ default: m.ErrorsPage })),
-);
-const TracesPage = lazy(() =>
-  import("@/features/traces/traces-page").then((m) => ({ default: m.TracesPage })),
-);
-const TraceDetailPage = lazy(() =>
-  import("@/features/traces/trace-detail-page").then((m) => ({ default: m.TraceDetailPage })),
-);
-const SessionsPage = lazy(() =>
-  import("@/features/sessions/sessions-page").then((m) => ({ default: m.SessionsPage })),
-);
-const SessionDetailPage = lazy(() =>
-  import("@/features/sessions/session-detail-page").then((m) => ({
-    default: m.SessionDetailPage,
-  })),
-);
-const UsersPage = lazy(() =>
-  import("@/features/users/users-page").then((m) => ({ default: m.UsersPage })),
-);
-const ObservationsPage = lazy(() =>
-  import("@/features/observations/observations-page").then((m) => ({
-    default: m.ObservationsPage,
-  })),
-);
-const ScoresPage = lazy(() =>
-  import("@/features/scores/scores-page").then((m) => ({ default: m.ScoresPage })),
-);
-const SettingsPage = lazy(() =>
-  import("@/features/settings/settings-page").then((m) => ({ default: m.SettingsPage })),
-);
-const OnboardingPage = lazy(() =>
-  import("@/features/onboarding/onboarding-page").then((m) => ({ default: m.OnboardingPage })),
-);
-const GatewayOverviewPage = lazy(() =>
-  import("@/features/gateway/gateway-overview-page").then((m) => ({
-    default: m.GatewayOverviewPage,
-  })),
-);
-const GatewayProvidersPage = lazy(() =>
-  import("@/features/gateway/gateway-providers-page").then((m) => ({
-    default: m.GatewayProvidersPage,
-  })),
-);
-const GatewayModelsPage = lazy(() =>
-  import("@/features/gateway/gateway-models-page").then((m) => ({
-    default: m.GatewayModelsPage,
-  })),
-);
-const GatewayUsagePage = lazy(() =>
-  import("@/features/gateway/gateway-usage-page").then((m) => ({ default: m.GatewayUsagePage })),
-);
-const GatewayLogsPage = lazy(() =>
-  import("@/features/gateway/gateway-logs-page").then((m) => ({ default: m.GatewayLogsPage })),
-);
+const DashboardPage = lazy(async () => {
+  const mod = await import("@/pages/dashboard-page");
+  return { default: mod.DashboardPage };
+});
+const ErrorsPage = lazy(async () => {
+  const mod = await import("@/pages/errors-page");
+  return { default: mod.ErrorsPage };
+});
+const TracesPage = lazy(async () => {
+  const mod = await import("@/pages/traces-page");
+  return { default: mod.TracesPage };
+});
+const TraceDetailPage = lazy(async () => {
+  const mod = await import("@/pages/trace-detail-page");
+  return { default: mod.TraceDetailPage };
+});
+const SessionsPage = lazy(async () => {
+  const mod = await import("@/pages/sessions-page");
+  return { default: mod.SessionsPage };
+});
+const SessionDetailPage = lazy(async () => {
+  const mod = await import("@/pages/session-detail-page");
+  return { default: mod.SessionDetailPage };
+});
+const UsersPage = lazy(async () => {
+  const mod = await import("@/pages/users-page");
+  return { default: mod.UsersPage };
+});
+const ObservationsPage = lazy(async () => {
+  const mod = await import("@/pages/observations-page");
+  return { default: mod.ObservationsPage };
+});
+const ScoresPage = lazy(async () => {
+  const mod = await import("@/pages/scores-page");
+  return { default: mod.ScoresPage };
+});
+const SettingsPage = lazy(async () => {
+  const mod = await import("@/pages/settings-page");
+  return { default: mod.SettingsPage };
+});
+const GatewayOverviewPage = lazy(async () => {
+  const mod = await import("@/pages/gateway-overview-page");
+  return { default: mod.GatewayOverviewPage };
+});
+const GatewayProvidersPage = lazy(async () => {
+  const mod = await import("@/pages/gateway-providers-page");
+  return { default: mod.GatewayProvidersPage };
+});
+const GatewayModelsPage = lazy(async () => {
+  const mod = await import("@/pages/gateway-models-page");
+  return { default: mod.GatewayModelsPage };
+});
+const GatewayUsagePage = lazy(async () => {
+  const mod = await import("@/pages/gateway-usage-page");
+  return { default: mod.GatewayUsagePage };
+});
+const GatewayLogsPage = lazy(async () => {
+  const mod = await import("@/pages/gateway-logs-page");
+  return { default: mod.GatewayLogsPage };
+});
 
-/**
- * Route-level suspense fallback: a page-shaped skeleton instead of a spinner.
- */
 function PageFallback() {
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border px-6 py-4">
-        <div className="h-5 w-32 animate-pulse rounded bg-muted" />
-        <div className="mt-2 h-3.5 w-56 animate-pulse rounded bg-muted/60" />
+    <div class="flex h-full flex-col">
+      <div class="border-b border-border px-6 py-4">
+        <div class="h-5 w-32 animate-pulse rounded bg-muted" />
+        <div class="mt-2 h-3.5 w-56 animate-pulse rounded bg-muted/60" />
       </div>
-      <div className="flex-1 space-y-3 p-6">
-        <div className="h-9 w-full animate-pulse rounded bg-muted/60" />
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="h-9 w-full animate-pulse rounded bg-muted/40" />
+      <div class="flex-1 space-y-3 p-6">
+        <div class="h-9 w-full animate-pulse rounded bg-muted/60" />
+        {Array.from({ length: 8 }).map(() => (
+          <div class="h-9 w-full animate-pulse rounded bg-muted/40" />
         ))}
       </div>
     </div>
   );
 }
 
-/**
- * Guards data pages — redirects to onboarding if no project is active.
- */
-function RequireProject({ children }: { children: React.ReactNode }) {
-  useProjectContext(); // subscribe to changes
-  if (!hasActiveProject()) {
-    return <Navigate to="/" replace />;
-  }
-  return <>{children}</>;
-}
-
-/**
- * Root route: if a project is already active, go straight to dashboard.
- */
-function RootRedirect() {
+const RequireProject: ParentComponent = (props) => {
   useProjectContext();
-  if (hasActiveProject()) {
-    return <Navigate to="/dashboard" replace />;
-  }
+  return (
+    <Show when={hasActiveProject()} fallback={<Navigate href="/" />}>
+      {props.children}
+    </Show>
+  );
+};
+
+function SuspensePage(props: { children: ParentComponent }) {
+  const Page = props.children;
   return (
     <Suspense fallback={<PageFallback />}>
-      <OnboardingPage />
+      <Page />
     </Suspense>
+  );
+}
+
+function GuardedPage(props: { children: ParentComponent }) {
+  const Page = props.children;
+  return (
+    <RequireProject>
+      <Suspense fallback={<PageFallback />}>
+        <Page />
+      </Suspense>
+    </RequireProject>
+  );
+}
+
+function RootRedirect() {
+  useProjectContext();
+  return (
+    <Show when={hasActiveProject()} fallback={<OnboardingPage />}>
+      <Navigate href="/dashboard" />
+    </Show>
   );
 }
 
 export default function App() {
   return (
-    <TooltipProvider delayDuration={200}>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<RootRedirect />} />
-          <Route
-            path="dashboard"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <DashboardPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          <Route
-            path="traces"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <TracesPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          <Route
-            path="errors"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <ErrorsPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          <Route
-            path="traces/:traceId"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <TraceDetailPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          <Route
-            path="sessions"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <SessionsPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          <Route
-            path="sessions/:sessionId"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <SessionDetailPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          <Route
-            path="observations"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <ObservationsPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          <Route
-            path="users"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <UsersPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          <Route
-            path="scores"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <ScoresPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          <Route
-            path="settings"
-            element={
-              <RequireProject>
-                <Suspense fallback={<PageFallback />}>
-                  <SettingsPage />
-                </Suspense>
-              </RequireProject>
-            }
-          />
-          {/* Gateway pages — independent of project context */}
-          <Route
-            path="gateway"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <GatewayOverviewPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="gateway/providers"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <GatewayProvidersPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="gateway/models"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <GatewayModelsPage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="gateway/usage"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <GatewayUsagePage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="gateway/logs"
-            element={
-              <Suspense fallback={<PageFallback />}>
-                <GatewayLogsPage />
-              </Suspense>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </TooltipProvider>
+    <Router root={Layout}>
+      <Route path="/" component={RootRedirect} />
+      <Route path="/dashboard" component={() => <GuardedPage>{DashboardPage}</GuardedPage>} />
+      <Route path="/traces" component={() => <GuardedPage>{TracesPage}</GuardedPage>} />
+      <Route path="/errors" component={() => <GuardedPage>{ErrorsPage}</GuardedPage>} />
+      <Route
+        path="/traces/:traceId"
+        component={() => <GuardedPage>{TraceDetailPage}</GuardedPage>}
+      />
+      <Route path="/sessions" component={() => <GuardedPage>{SessionsPage}</GuardedPage>} />
+      <Route
+        path="/sessions/:sessionId"
+        component={() => <GuardedPage>{SessionDetailPage}</GuardedPage>}
+      />
+      <Route path="/observations" component={() => <GuardedPage>{ObservationsPage}</GuardedPage>} />
+      <Route path="/users" component={() => <GuardedPage>{UsersPage}</GuardedPage>} />
+      <Route path="/scores" component={() => <GuardedPage>{ScoresPage}</GuardedPage>} />
+      <Route path="/settings" component={() => <GuardedPage>{SettingsPage}</GuardedPage>} />
+      <Route path="/gateway" component={() => <SuspensePage>{GatewayOverviewPage}</SuspensePage>} />
+      <Route
+        path="/gateway/providers"
+        component={() => <SuspensePage>{GatewayProvidersPage}</SuspensePage>}
+      />
+      <Route
+        path="/gateway/models"
+        component={() => <SuspensePage>{GatewayModelsPage}</SuspensePage>}
+      />
+      <Route
+        path="/gateway/usage"
+        component={() => <SuspensePage>{GatewayUsagePage}</SuspensePage>}
+      />
+      <Route
+        path="/gateway/logs"
+        component={() => <SuspensePage>{GatewayLogsPage}</SuspensePage>}
+      />
+      <Route path="*" component={() => <Navigate href="/" />} />
+    </Router>
   );
 }

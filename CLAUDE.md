@@ -88,14 +88,13 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 
 ### 前端地图（packages/web）
 
-- `src/main.tsx`：应用入口（React Query + BrowserRouter）。
-- `src/App.tsx`：路由定义（react-router-dom v7）。
-- `src/pages/`：页面组件（dashboard、traces、sessions、observations、scores、settings）。
-- `src/components/`：通用 UI 与业务组件。
-- `src/components/ui/`：基础 UI 组件（Radix UI + Tailwind）。
-- `src/lib/api.ts`：类型化 REST 客户端（调用 `/api/public/*`）。
-- `src/lib/types.ts`：前端类型定义。
-- `src/store/auth.ts`：认证状态管理（localStorage 持久化）。
+- `src/main.tsx`：应用入口（Solid Query + `@solidjs/router`）。
+- `src/App.tsx`：路由定义（lazy routes + `RequireProject` 守卫）。
+- `src/shell/`：应用壳（侧栏、布局；消费 `@peri/ui`）。
+- `src/pages/`：页面组件（Phase 0 多为占位页）。
+- `src/shared/lib/api.ts`：类型化 REST 客户端（调用 `/api/public/*`）。
+- `src/shared/store/`：项目/主题/刷新间隔等 localStorage 状态。
+- UI：`@peri/ui`（git submodule `vendor/peri-studio`）；Spectra token 桥接见 `peri-ui-bridge.css`。
 - 路径别名：`@` → `packages/web/src`。
 
 ## 开发工作流
@@ -189,9 +188,9 @@ pnpm run svc:logs             # 查看服务日志
 ### 前端边界与体验
 
 - 请求统一通过 `src/lib/api.ts` 的 `apiFetch<T>()`；已处理 auth header、JSON 解析和错误标准化。
-- 数据获取使用 TanStack React Query（`useQuery`），遵循现有 staleTime 和 retry 配置。
-- 基础组件优先复用 `src/components/ui/`（Radix UI 原语 + CVA 变体）。
-- 通用图标使用 `lucide-react`。
+- 数据获取使用 TanStack Solid Query（`useQuery`），遵循现有 staleTime 和 retry 配置。
+- 基础组件优先从 `@peri/ui` barrel 引入（禁止 deep import）。
+- 通用图标使用 `lucide-solid`。
 - 样式使用 Tailwind CSS 4（`@tailwindcss/postcss`），工具类优先。
 - 页面流程必须覆盖 loading（Skeleton）、empty、error 和 retry 状态。
 - 开发时 Vite 代理 `/api` 到 `http://localhost:23432`（dev 端口）；生产时 server 直接托管 `web/dist`（port 23332）。

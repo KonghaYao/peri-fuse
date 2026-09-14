@@ -1,13 +1,14 @@
-/**
- * Trace Peek View — Spectra §8.
- *
- * A wide side panel that pushes the table aside (not an overlay) when a trace
- * row is clicked. It surfaces the observation tree directly (like the full
- * trace-detail page) in a two-pane layout: a compact meta band on top, then
- * the selectable observation tree on the left driving the detail pane on the
- * right (trace-level IO + scores when the root is selected). "Open full view"
- * navigates to the dedicated trace-detail page.
- */
+import {
+  Badge,
+  Button,
+  InlineNotice,
+  LoadingState,
+  LocalIsoDate,
+  message,
+  ScrollArea,
+  Skeleton,
+} from "@peri/ui";
+import { A } from "@solidjs/router";
 import {
   ArrowUpRight,
   ChartNoAxesCombined,
@@ -18,278 +19,210 @@ import {
   ListTree,
   Star,
   X,
-} from "lucide-react";
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-
-import { LocalIsoDate } from "@/shared/components/local-iso-date";
+} from "lucide-solid";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import { ObservationTimelineDialog } from "@/shared/components/observations/observation-timeline-dialog";
+import { StatChip } from "@/shared/components/observations/stat-chip";
 import {
-  IoTabs,
-  ObservationDetail,
-  ScoreList,
-  StatChip,
-} from "@/shared/components/observation-detail";
-import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
-import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
-import { toast } from "@/shared/components/toast";
-import { Badge } from "@/shared/components/ui/badge";
-import { Button } from "@/shared/components/ui/button";
-import { ScrollArea } from "@/shared/components/ui/scroll-area";
-import { Separator } from "@/shared/components/ui/separator";
-import { Skeleton } from "@/shared/components/ui/skeleton";
-import {
-  useObservationDetailQuery,
-  useTraceIoQuery,
-  useTraceObservationsQuery,
-  useTraceQuery,
-} from "@/shared/hooks/queries";
+  TraceObservationDetailPane,
+  TraceObservationTreePane,
+  useTraceObservationState,
+} from "@/shared/components/observations/trace-observation-workspace";
 import { formatLatency, formatTokens } from "@/shared/lib/format";
-import { cn } from "@/shared/lib/utils";
 
-export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: () => void }) {
-  const query = useTraceQuery(traceId);
-  const trace = query.data;
+export const TracePeekView: Component<{
+  traceId: string;
+  onClose: () => void;
+}> = (props) => {
+  const [timelineOpen, setTimelineOpen] = createSignal(false);
+  const state = useTraceObservationState(props.traceId);
+  const trace = () => state.trace();
+  const totalTokens = createMemo(() =>
+    state.observations().reduce((acc, observation) => acc + (observation.totalTokens || 0), 0),
+  );
 
-  const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
-  const [omitNoise, setOmitNoise] = useState(true);
-  const [timelineOpen, setTimelineOpen] = useState(false);
-  const observationsQuery = useTraceObservationsQuery(traceId);
-  const observations = observationsQuery.data?.pages.flatMap((page) => page.data) ?? [];
-  const traceIoQuery = useTraceIoQuery(traceId, selectedId === null);
-  const selectedQuery = useObservationDetailQuery(selectedId);
-  const tree = useMemo(() => buildTree(observations, { omitNoise }), [observations, omitNoise]);
-
-  const copyId = () => {
-    navigator.clipboard.writeText(traceId);
-    toast.success("Trace ID copied");
+  const copyId = async () => {
+    await navigator.clipboard.writeText(props.traceId);
+    message.success("Trace ID copied");
   };
 
-  const totalTokens = observations.reduce((acc, o) => acc + (o.totalTokens || 0), 0);
-  const selected = selectedQuery.data ?? null;
-  const selectedScores = selected
-    ? (trace?.scores.filter((s) => s.observationId === selected.id) ?? [])
-    : [];
-  const traceView = trace
-    ? {
-        ...trace,
-        input: traceIoQuery.data?.input,
-        output: traceIoQuery.data?.output,
-        metadata: traceIoQuery.data?.metadata,
-        observations,
-      }
-    : null;
-
   return (
-    <aside className="flex h-full w-[760px] max-w-[85vw] shrink-0 flex-col border-l border-border bg-surface-raised animate-[spectra-slide-in-right_250ms_cubic-bezier(0.32,0.72,0,1)]">
-      {/* Header */}
-      <div className="flex h-[60px] shrink-0 items-center justify-between gap-2 border-b border-border px-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <ListTree className="h-4 w-4 shrink-0 text-brand" />
-          <h2 className="truncate text-[15px] font-semibold tracking-[-0.02em] text-fg-primary">
-            {trace?.name ?? (query.isLoading ? "Loading…" : "(unnamed trace)")}
+    <aside class="flex h-full w-[760px] max-w-[85vw] shrink-0 flex-col border-l border-border bg-surface-raised animate-[spectra-slide-in-right_250ms_cubic-bezier(0.32,0.72,0,1)]">
+      <div class="flex h-[60px] shrink-0 items-center justify-between gap-2 border-b border-border px-4">
+        <div class="flex min-w-0 items-center gap-2">
+          <ListTree class="h-4 w-4 shrink-0 text-brand" size={16} />
+          <h2 class="truncate text-[15px] font-semibold tracking-[-0.02em] text-fg-primary">
+            {trace()?.name ?? (state.traceQuery.isPending ? "Loading…" : "(unnamed trace)")}
           </h2>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div class="flex shrink-0 items-center gap-1">
           <Button
             variant="ghost"
-            size="icon"
-            className="h-8 w-8"
+            size="sm"
+            class="h-8 w-8 p-0"
             title="Timeline"
             onClick={() => setTimelineOpen(true)}
           >
-            <ChartNoAxesCombined className="h-4 w-4" />
+            <ChartNoAxesCombined class="h-4 w-4" size={16} />
           </Button>
-          <Link to={`/traces/${encodeURIComponent(traceId)}`} title="Open full view">
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <ArrowUpRight className="h-4 w-4" />
+          <A href={`/traces/${encodeURIComponent(props.traceId)}`} title="Open full view">
+            <Button variant="ghost" size="sm" class="h-8 w-8 p-0">
+              <ArrowUpRight class="h-4 w-4" size={16} />
             </Button>
-          </Link>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} title="Close">
-            <X className="h-4 w-4" />
+          </A>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-8 w-8 p-0"
+            onClick={props.onClose}
+            title="Close"
+          >
+            <X class="h-4 w-4" size={16} />
           </Button>
         </div>
       </div>
 
-      {/* Body */}
-      {query.isLoading ? (
-        <div className="space-y-3 p-4">
-          <Skeleton className="h-5 w-2/3" />
-          <Skeleton className="h-4 w-1/2" />
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-40 w-full" />
-        </div>
-      ) : query.error ? (
-        <p className="p-4 text-sm text-danger">
-          {query.error instanceof Error ? query.error.message : "Failed to load trace"}
-        </p>
-      ) : trace ? (
-        <>
-          {/* Compact meta band (full width) */}
-          <div className="shrink-0 space-y-1.5 border-b border-border px-4 py-2.5">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <button
-                type="button"
-                onClick={copyId}
-                className="group flex items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:bg-surface-overlay/60"
-                title="Copy trace ID"
-              >
-                <span className="font-mono text-xs text-fg-secondary">{trace.id}</span>
-                <Copy className="h-3 w-3 text-fg-tertiary opacity-0 transition-opacity group-hover:opacity-100" />
-              </button>
-              <span className="text-xs text-fg-tertiary">
-                <LocalIsoDate date={new Date(trace.timestamp)} />
-                {trace.userId ? ` · user: ${trace.userId}` : ""}
-                {trace.sessionId ? ` · session: ${trace.sessionId}` : ""}
-              </span>
-            </div>
-
-            {(trace.environment || trace.version || trace.release || trace.tags.length > 0) && (
-              <div className="flex flex-wrap gap-1.5 px-1">
-                {trace.environment && <Badge variant="muted">{trace.environment}</Badge>}
-                {trace.version && <Badge variant="outline">v: {trace.version}</Badge>}
-                {trace.release && <Badge variant="outline">rel: {trace.release}</Badge>}
-                {trace.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary">
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <StatChip icon={Clock} label="Latency" value={formatLatency(trace.latency)} />
-              <StatChip
-                icon={Layers}
-                label="Observations"
-                value={
-                  trace.observationCount >= 0
-                    ? `${observations.length} / ${trace.observationCount}`
-                    : String(observations.length)
-                }
-              />
-              <StatChip icon={Cpu} label="Tokens" value={formatTokens(totalTokens)} />
-            </div>
+      <Show
+        when={!state.traceQuery.isPending}
+        fallback={
+          <div class="space-y-3 p-4">
+            <Skeleton class="h-5 w-2/3" />
+            <Skeleton class="h-4 w-1/2" />
+            <Skeleton class="h-20 w-full" />
+            <Skeleton class="h-40 w-full" />
           </div>
-
-          {/* Two panes: tree (left) | detail (right) */}
-          <div className="flex min-h-0 flex-1">
-            {/* Observation tree */}
-            <div className="flex w-[320px] shrink-0 flex-col border-r border-border">
-              <div className="flex shrink-0 items-center gap-1.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-fg-tertiary">
-                <ListTree className="h-3.5 w-3.5" />
-                Observation tree
-                <span className="ml-auto">
-                  <OmitNoiseToggle omitNoise={omitNoise} onChange={setOmitNoise} />
-                </span>
-              </div>
-              <ScrollArea className="min-h-0 flex-1">
-                <div className="px-2 pb-2">
-                  {/* Virtual root representing the trace itself */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setSelectedId(null)}
-                    onKeyDown={(e) => e.key === "Enter" && setSelectedId(null)}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors",
-                      selectedId === null
-                        ? "bg-brand-subtle text-fg-primary shadow-[inset_2px_0_0_0_var(--brand)]"
-                        : "text-fg-secondary hover:bg-surface-overlay/50 hover:text-fg-primary",
-                    )}
+        }
+      >
+        <Show
+          when={!state.traceQuery.isError && trace()}
+          fallback={
+            <InlineNotice tone="danger" role="alert" class="m-4">
+              {state.traceQuery.error instanceof Error
+                ? state.traceQuery.error.message
+                : "Failed to load trace"}
+            </InlineNotice>
+          }
+        >
+          {(currentTrace) => (
+            <>
+              <div class="shrink-0 space-y-1.5 border-b border-border px-4 py-2.5">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <button
+                    type="button"
+                    onClick={() => void copyId()}
+                    class="group flex items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:bg-surface-overlay/60"
+                    title="Copy trace ID"
                   >
-                    <ListTree className="h-3.5 w-3.5 shrink-0 text-brand" />
-                    <span className="truncate font-medium">{trace.name ?? "trace root"}</span>
-                    <span className="tnum ml-auto shrink-0 font-mono text-[11px] text-fg-tertiary">
-                      {formatLatency(trace.latency)}
-                    </span>
-                  </div>
-                  {tree.map((node) => (
-                    <ObservationNode
-                      key={node.observation.id}
-                      node={node}
-                      depth={1}
-                      selectedId={selectedId ?? null}
-                      onSelect={setSelectedId}
+                    <span class="font-mono text-xs text-fg-secondary">{currentTrace().id}</span>
+                    <Copy
+                      class="h-3 w-3 text-fg-tertiary opacity-0 transition-opacity group-hover:opacity-100"
+                      size={12}
                     />
-                  ))}
-                  {tree.length === 0 && (
-                    <p className="px-2 py-4 text-sm text-fg-tertiary">
-                      {observationsQuery.isLoading
-                        ? "Loading observations…"
-                        : "No observations in this trace."}
-                    </p>
-                  )}
-                  {observationsQuery.hasNextPage && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mt-2 w-full"
-                      disabled={observationsQuery.isFetchingNextPage}
-                      onClick={() => observationsQuery.fetchNextPage()}
-                    >
-                      {observationsQuery.isFetchingNextPage ? "Loading…" : "Load more observations"}
-                    </Button>
-                  )}
+                  </button>
+                  <span class="text-xs text-fg-tertiary">
+                    <LocalIsoDate date={new Date(currentTrace().timestamp)} />
+                    {currentTrace().userId ? ` · user: ${currentTrace().userId}` : ""}
+                    {currentTrace().sessionId ? ` · session: ${currentTrace().sessionId}` : ""}
+                  </span>
                 </div>
-              </ScrollArea>
-            </div>
 
-            {/* Detail pane — follows the tree selection */}
-            <ScrollArea className="min-h-0 min-w-0 flex-1">
-              <div className="min-w-0 p-4">
-                {selectedId === undefined ? (
-                  <div className="flex h-40 items-center justify-center text-sm text-fg-tertiary">
-                    Select the trace root or an observation to load its details.
+                <Show
+                  when={
+                    currentTrace().environment ||
+                    currentTrace().version ||
+                    currentTrace().release ||
+                    currentTrace().tags.length > 0
+                  }
+                >
+                  <div class="flex flex-wrap gap-1.5 px-1">
+                    <Show when={currentTrace().environment}>
+                      {(value) => <Badge tone="neutral">{value()}</Badge>}
+                    </Show>
+                    <Show when={currentTrace().version}>
+                      {(value) => <Badge tone="neutral">v: {value()}</Badge>}
+                    </Show>
+                    <Show when={currentTrace().release}>
+                      {(value) => <Badge tone="neutral">rel: {value()}</Badge>}
+                    </Show>
+                    <For each={currentTrace().tags}>
+                      {(tag) => <Badge tone="neutral">{tag}</Badge>}
+                    </For>
                   </div>
-                ) : selectedQuery.isLoading ? (
-                  <Skeleton className="h-52 w-full" />
-                ) : selectedQuery.error ? (
-                  <p className="text-sm text-danger">
-                    {selectedQuery.error instanceof Error
-                      ? selectedQuery.error.message
-                      : "Failed to load observation"}
-                  </p>
-                ) : selected ? (
-                  <ObservationDetail observation={selected} scores={selectedScores} />
-                ) : traceIoQuery.isLoading ? (
-                  <Skeleton className="h-52 w-full" />
-                ) : traceIoQuery.error ? (
-                  <p className="text-sm text-danger">
-                    {traceIoQuery.error instanceof Error
-                      ? traceIoQuery.error.message
-                      : "Failed to load trace IO"}
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    <IoTabs
-                      input={traceView?.input}
-                      output={traceView?.output}
-                      metadata={traceView?.metadata}
-                    />
-                    <Separator />
-                    <div>
-                      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-fg-primary">
-                        <Star className="h-3.5 w-3.5 text-fg-tertiary" />
-                        Scores ({trace.scores.length})
-                      </h3>
-                      <ScoreList scores={trace.scores} />
-                    </div>
-                  </div>
-                )}
+                </Show>
+
+                <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <StatChip
+                    icon={Clock}
+                    label="Latency"
+                    value={formatLatency(currentTrace().latency)}
+                  />
+                  <StatChip
+                    icon={Layers}
+                    label="Observations"
+                    value={
+                      currentTrace().observationCount >= 0
+                        ? `${state.observations().length} / ${currentTrace().observationCount}`
+                        : String(state.observations().length)
+                    }
+                  />
+                  <StatChip icon={Cpu} label="Tokens" value={formatTokens(totalTokens())} />
+                </div>
               </div>
-            </ScrollArea>
-          </div>
-        </>
-      ) : null}
 
-      {traceView && (
-        <ObservationTimelineDialog
-          trace={traceView}
-          open={timelineOpen}
-          onOpenChange={setTimelineOpen}
-          omitNoise={omitNoise}
-        />
-      )}
+              <div class="flex min-h-0 flex-1">
+                <div class="flex w-[320px] shrink-0 flex-col border-r border-border">
+                  <div class="flex shrink-0 items-center gap-1.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-fg-tertiary">
+                    <ListTree class="h-3.5 w-3.5" size={14} />
+                    Observation tree
+                  </div>
+                  <ScrollArea class="min-h-0 flex-1">
+                    <Show
+                      when={!state.observationsQuery.isPending}
+                      fallback={<LoadingState label="Loading observations…" class="p-8" />}
+                    >
+                      <TraceObservationTreePane
+                        compact
+                        traceName={currentTrace().name}
+                        traceLatency={currentTrace().latency}
+                        flatObservations={state.flatObservations()}
+                        selectedId={state.selectedId}
+                        onSelect={state.setSelectedId}
+                        omitNoise={state.omitNoise}
+                        onOmitNoiseChange={state.setOmitNoise}
+                        observationsQuery={state.observationsQuery}
+                      />
+                    </Show>
+                  </ScrollArea>
+                </div>
+
+                <ScrollArea class="min-h-0 min-w-0 flex-1">
+                  <div class="min-w-0 p-4">
+                    <TraceObservationDetailPane
+                      selectedId={state.selectedId}
+                      selectedQuery={state.selectedQuery}
+                      selected={state.selected}
+                      selectedScores={state.selectedScores}
+                      traceIoQuery={state.traceIoQuery}
+                      traceView={state.traceView}
+                    />
+                  </div>
+                </ScrollArea>
+              </div>
+
+              <Show when={state.traceView()}>
+                {(traceView) => (
+                  <ObservationTimelineDialog
+                    trace={traceView()}
+                    open={timelineOpen()}
+                    onOpenChange={setTimelineOpen}
+                    omitNoise={state.omitNoise()}
+                  />
+                )}
+              </Show>
+            </>
+          )}
+        </Show>
+      </Show>
     </aside>
   );
-}
+};

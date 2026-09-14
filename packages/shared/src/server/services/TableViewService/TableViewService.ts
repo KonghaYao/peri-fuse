@@ -141,12 +141,7 @@ export class TableViewService {
           orderBy: input.orderBy ? JSON.stringify(input.orderBy) : null,
           updatedBy,
         })
-        .where(
-          and(
-            eq(preset.id, input.id),
-            eq(preset.projectId, input.projectId),
-          ),
-        )
+        .where(and(eq(preset.id, input.id), eq(preset.projectId, input.projectId)))
         .returning()
         .then((rows) => rows[0]);
 
@@ -193,12 +188,7 @@ export class TableViewService {
           tableName: input.tableName,
           updatedBy,
         })
-        .where(
-          and(
-            eq(preset.id, input.id),
-            eq(preset.projectId, input.projectId),
-          ),
-        )
+        .where(and(eq(preset.id, input.id), eq(preset.projectId, input.projectId)))
         .returning()
         .then((rows) => rows[0]);
 
@@ -220,12 +210,7 @@ export class TableViewService {
   ): Promise<void> {
     await prisma
       .delete(preset)
-      .where(
-        and(
-          eq(preset.id, TableViewPresetsId),
-          eq(preset.projectId, projectId),
-        ),
-      );
+      .where(and(eq(preset.id, TableViewPresetsId), eq(preset.projectId, projectId)));
   }
 
   /**
@@ -338,12 +323,7 @@ export class TableViewService {
     const foundPreset = await prisma
       .select()
       .from(preset)
-      .where(
-        and(
-          eq(preset.id, id),
-          eq(preset.projectId, projectId),
-        ),
-      )
+      .where(and(eq(preset.id, id), eq(preset.projectId, projectId)))
       .limit(1)
       .then((rows) => rows[0]);
 
