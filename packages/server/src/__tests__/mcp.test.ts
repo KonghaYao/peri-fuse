@@ -20,7 +20,7 @@ async function mcpRequest(
   method: string,
   params: Record<string, unknown> = {},
   auth: string | null = basicAuth(),
-  path = "/mcp",
+  path = "/api/mcp",
   extraHeaders: Record<string, string> = {},
 ): Promise<{ status: number; body: JsonRpcResponse | Record<string, unknown> | null }> {
   const headers: Record<string, string> = {
@@ -96,7 +96,7 @@ describe("MCP mounted on the lite server", () => {
   });
 
   it("rejects the legacy initialize handshake on the strict endpoint", async () => {
-    const response = await getApp().request("/mcp", {
+    const response = await getApp().request("/api/mcp", {
       method: "POST",
       headers: { Authorization: basicAuth(), "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -170,12 +170,12 @@ describe("MCP mounted on the lite server", () => {
   });
 
   it("enforces request limits and JSON 404 semantics on the MCP mount", async () => {
-    const oversized = await mcpRequest("server/discover", {}, basicAuth(), "/mcp", {
+    const oversized = await mcpRequest("server/discover", {}, basicAuth(), "/api/mcp", {
       "Content-Length": String(17 * 1024 * 1024),
     });
     expect(oversized.status).toBe(413);
 
-    const unmatched = await getApp().request("/mcp/unknown", {
+    const unmatched = await getApp().request("/api/mcp/unknown", {
       method: "POST",
       headers: { Authorization: basicAuth(), "Content-Type": "application/json" },
       body: "{}",
@@ -189,7 +189,7 @@ describe("MCP mounted on the lite server", () => {
     process.env.LITE_MAX_ACTIVE_REQUESTS = "1";
     const app = createApp();
     try {
-      const response = await app.request("/mcp", {
+      const response = await app.request("/api/mcp", {
         method: "GET",
         headers: { Authorization: basicAuth() },
       });
@@ -204,8 +204,23 @@ describe("MCP mounted on the lite server", () => {
     }
   });
 
+  it("returns an API response when opened by a browser", async () => {
+    const response = await getApp().request("/api/mcp", {
+      headers: { Accept: "text/html" },
+    });
+    expect(response.status).toBe(401);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(await response.json()).toHaveProperty("message");
+  });
+
+  it("returns JSON instead of the SPA for the retired MCP path", async () => {
+    const response = await getApp().request("/mcp");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ message: "Not Found" });
+  });
+
   it("rejects unsupported HTTP methods without SPA fallback", async () => {
-    const response = await getApp().request("/mcp", {
+    const response = await getApp().request("/api/mcp", {
       method: "GET",
       headers: { Authorization: basicAuth() },
     });
@@ -214,7 +229,7 @@ describe("MCP mounted on the lite server", () => {
   });
 
   it("answers MCP CORS preflight with the requested headers", async () => {
-    const response = await getApp().request("/mcp", {
+    const response = await getApp().request("/api/mcp", {
       method: "OPTIONS",
       headers: {
         Origin: "https://client.example",

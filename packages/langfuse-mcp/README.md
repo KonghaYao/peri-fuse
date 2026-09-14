@@ -5,7 +5,7 @@
 - **协议**：MCP `2026-07-28`（由 `createMcpHandler` / `createMcppServerFactory` 承载，旧版协议请求会被拒绝）
 - **挂载**：`skillsDir` 指向包内 `skills/`；更新 skill 时直接替换 `skills/langfuse/` 即可，无需改仓库根 `.claude`
 
-生产使用时，推荐连接 Peri-Fuse 主 server 的 `/mcp` HTTP 端点。它与 dashboard/API 共用同一端口和项目级 Basic API key；默认端口为 `23332`，源码开发端口为 `23432`。
+生产使用时，推荐连接 Peri-Fuse 主 server 的 `/api/mcp` HTTP 端点。它与 dashboard/API 共用同一端口和项目级 Basic API key；默认端口为 `23332`，源码开发端口为 `23432`。
 
 ## 资源 URI 示例
 

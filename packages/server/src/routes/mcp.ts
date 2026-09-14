@@ -7,7 +7,7 @@ import { authMiddleware } from "../auth";
 export function createMcpRoutes(options: { skillsDir?: string } = {}) {
   const mcpHandler = createLangfuseMcpHandler(options);
   const routes = new Hono<LiteServerEnv>();
-  routes.all("/mcp", authMiddleware, async (c) => mcpHandler.fetch(c.req.raw));
+  routes.all("/api/mcp", authMiddleware, async (c) => mcpHandler.fetch(c.req.raw));
   return { routes, close: () => mcpHandler.close() };
 }
 

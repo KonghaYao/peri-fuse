@@ -48,9 +48,7 @@ export function createApp(): LiteApp {
   const limits = requestLimits();
   app.use("/api/*", limits);
   app.use("/v1/*", limits);
-  app.use("/mcp/*", limits);
   app.use("/api/*", largeResponseLogger());
-  app.use("/mcp/*", largeResponseLogger());
 
   // Mirror web's permissive CORS (origin: true, credentials: false) so SDKs
   // and browser-based clients can call the public API cross-origin.
@@ -79,7 +77,7 @@ export function createApp(): LiteApp {
   });
   app.use("/api/public/*", corsConfig);
   app.use("/v1/*", corsConfig);
-  app.use("/mcp/*", corsConfig);
+  app.use("/api/mcp/*", corsConfig);
 
   // Global error handler: map BaseError subclasses (incl. 404) to their
   // HTTP codes; everything else becomes a 500.
@@ -152,6 +150,7 @@ export function createApp(): LiteApp {
   app.use("/api/*", async (c) => {
     return c.notFound();
   });
+  // Retired MCP path must not fall through to the SPA.
   app.use("/mcp/*", async (c) => c.notFound());
 
   // Serve the web SPA build when present. In development the frontend runs
