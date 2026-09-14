@@ -51,6 +51,15 @@ fs.cpSync(sharedDrizzle, path.join(__dirname, "drizzle"), { recursive: true });
 // Gateway migrations → <cli>/dist/drizzle/
 fs.cpSync(gatewayDrizzle, path.join(__dirname, "dist/drizzle"), { recursive: true });
 
+// Keep the Langfuse skill available in the published, self-contained CLI.
+const langfuseSkill = path.resolve(__dirname, "../langfuse-mcp/skills/langfuse");
+if (fs.existsSync(path.join(langfuseSkill, "SKILL.md"))) {
+  console.log("[cli build] Copying Langfuse skill resources…");
+  fs.cpSync(langfuseSkill, path.join(__dirname, "dist/skills/langfuse"), {
+    recursive: true,
+  });
+}
+
 // Step 4: copy web SPA build so the bundled server can serve the frontend.
 // Server checks __dirname/web/ first (bundled), then ../../web/dist (monorepo).
 const webDist = path.resolve(__dirname, "../web/dist");

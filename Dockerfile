@@ -25,6 +25,7 @@ FROM toolchain AS deps
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/cli/package.json packages/cli/
 COPY packages/gateway/package.json packages/gateway/
+COPY packages/langfuse-mcp/package.json packages/langfuse-mcp/
 COPY packages/server/package.json packages/server/
 COPY packages/shared/package.json packages/shared/
 COPY packages/web/package.json packages/web/
@@ -52,6 +53,7 @@ WORKDIR /app
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/cli/package.json packages/cli/
 COPY packages/gateway/package.json packages/gateway/
+COPY packages/langfuse-mcp/package.json packages/langfuse-mcp/
 COPY packages/server/package.json packages/server/
 COPY packages/shared/package.json packages/shared/
 COPY packages/web/package.json packages/web/
@@ -64,6 +66,8 @@ COPY --from=build /app/packages/shared/dist /app/packages/shared/dist
 COPY --from=build /app/packages/shared/drizzle /app/packages/shared/drizzle
 COPY --from=build /app/packages/gateway/dist /app/packages/gateway/dist
 COPY --from=build /app/packages/gateway/drizzle /app/packages/gateway/drizzle
+COPY --from=build /app/packages/langfuse-mcp/dist /app/packages/langfuse-mcp/dist
+COPY --from=build /app/packages/langfuse-mcp/skills /app/packages/langfuse-mcp/skills
 COPY --from=build /app/packages/server/dist /app/packages/server/dist
 COPY --from=build /app/packages/web/dist /app/packages/server/dist/web
 

@@ -11,6 +11,7 @@ Peri-Fuse runs entirely on **SQLite** with no external dependencies (no ClickHou
 - Public REST API compatible with Langfuse SDKs
 - Lightweight web dashboard (Vite + React)
 - Self-contained deployment through Docker or the repository-local service CLI
+- MCP resources and HTTP integration through the built-in `/mcp` endpoint
 
 ## Quick Start
 
@@ -97,6 +98,16 @@ See [`.env.example`](.env.example) for a ready-to-copy set of common options. Ke
 The checked-in [`.env.example`](.env.example) explicitly selects port `23432` for source
 development. Copying it unchanged also overrides the CLI and Compose defaults, so adjust or
 comment out `LITE_SERVER_PORT` when you want the production default.
+
+## MCP
+
+Peri-Fuse exposes the Langfuse skill as MCP resources from the same server as the dashboard and
+API. Start the production service with `pnpm svc:start` and configure an MCP client with
+`http://localhost:23332/mcp`; source development uses `http://localhost:23432/mcp`. Send a
+project-scoped API key using HTTP Basic authentication (`publicKey:secretKey`, base64 encoded).
+The checked-in [`.mcp.json`](.mcp.json) contains both endpoints with placeholders. See
+[`packages/langfuse-mcp/README.md`](packages/langfuse-mcp/README.md) for the optional Node stdio
+adapter.
 
 ## Performance
 

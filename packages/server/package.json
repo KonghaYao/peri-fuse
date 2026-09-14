@@ -23,6 +23,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.14",
     "@peri-fuse/shared": "workspace:*",
+    "@peri-fuse/langfuse-mcp": "workspace:*",
     "@peri/gateway": "workspace:*",
     "bcryptjs": "^2.4.3",
     "decimal.js": "^10.4.3",

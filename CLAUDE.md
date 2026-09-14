@@ -21,7 +21,7 @@ Langfuse Lite（包名 `peri-fuse`）是 Langfuse 的轻量级自包含版本，
 
 - 主要能力：LLM 可观测性（traces/spans/generations/scores）、OpenTelemetry (OTLP) 数据接入、兼容 Langfuse SDK 的 REST API、轻量 Web 仪表盘、LLM 代理网关（PeriGateway）。
 - pnpm monorepo + Turbo 构建编排，Node.js >= 22。
-- `packages/` 包含 5 个内部包：`shared`、`server`、`web`、`gateway`、`cli`；跨包能力应通过包导出的稳定接口复用，不得依赖包内实现细节。
+- `packages/` 包含 6 个内部包：`shared`、`server`、`web`、`gateway`、`cli`、`langfuse-mcp`；跨包能力应通过包导出的稳定接口复用，不得依赖包内实现细节。
 
 ### 后端地图（packages/server）
 
@@ -52,6 +52,14 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 - `src/spend/`：花费计算、同步事务记账（保留 SpendFlusher 接口）、预算重置。
 - `drizzle/`：SQL 增量迁移文件（含 DailySpend 项目隔离索引迁移）。
 - `test/integration.test.ts`：集成测试（31 个用例，覆盖多项目隔离）。
+
+### MCP 地图（packages/langfuse-mcp）
+
+- 主 server 的 `/mcp` 端点共用服务端口和项目级 Basic API key，不启动额外进程。
+- MCP 包封装 MCPP 协议与 skill 资源注册；server 负责认证和 HTTP 请求边界。
+- `skills/langfuse/` 是可分发的文档和分析脚本，通过 `skill://langfuse/…` 读取；不注入项目凭据或遥测数据。
+- 分析脚本由客户端运行，使用客户端自己的 Langfuse 环境变量访问现有 REST API。
+- MCP 构建必须先于 server；CLI 分发包必须同时包含 skill 文件。
 
 ### CLI 地图（packages/cli）
 

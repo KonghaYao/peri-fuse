@@ -25,6 +25,7 @@ import gatewayProxyRoutes from "./routes/gateway-proxy";
 import healthRoutes from "./routes/health";
 import ingestionRoutes from "./routes/ingestion";
 import manageRoutes from "./routes/manage";
+import { createMcpRoutes } from "./routes/mcp";
 import metricsV2Routes from "./routes/metrics-v2";
 import observationsRoutes from "./routes/observations";
 import observationsV2Routes from "./routes/observations-v2";
@@ -39,13 +40,17 @@ import sessionsRoutes from "./routes/sessions";
 import tracesRoutes from "./routes/traces";
 import usersRoutes from "./routes/users";
 
-export function createApp(): Hono<LiteServerEnv> {
+export type LiteApp = Hono<LiteServerEnv> & { close: () => Promise<void> };
+
+export function createApp(): LiteApp {
   const app = new Hono<LiteServerEnv>();
 
   const limits = requestLimits();
   app.use("/api/*", limits);
   app.use("/v1/*", limits);
+  app.use("/mcp/*", limits);
   app.use("/api/*", largeResponseLogger());
+  app.use("/mcp/*", largeResponseLogger());
 
   // Mirror web's permissive CORS (origin: true, credentials: false) so SDKs
   // and browser-based clients can call the public API cross-origin.
@@ -61,12 +66,20 @@ export function createApp(): Hono<LiteServerEnv> {
       "x-langfuse-public-key",
       "x-langfuse-secret-key",
       "x-langfuse-session-id",
+      "MCP-Protocol-Version",
+      "Mcp-Method",
+      "Mcp-Name",
+      "MCP-Session-Id",
+      "Last-Event-ID",
+      "Accept",
     ],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    exposeHeaders: ["MCP-Session-Id", "MCP-Protocol-Version"],
     credentials: false,
   });
   app.use("/api/public/*", corsConfig);
   app.use("/v1/*", corsConfig);
+  app.use("/mcp/*", corsConfig);
 
   // Global error handler: map BaseError subclasses (incl. 404) to their
   // HTTP codes; everything else becomes a 500.
@@ -92,6 +105,15 @@ export function createApp(): Hono<LiteServerEnv> {
 
   app.route("/", healthRoutes);
   app.route("/", manageRoutes);
+  const mcpSkillsCandidates = [
+    path.resolve(__dirname, "skills"),
+    path.resolve(__dirname, "../../langfuse-mcp/skills"),
+  ];
+  const mcpSkillsDir = mcpSkillsCandidates.find((directory) =>
+    fs.existsSync(path.join(directory, "langfuse", "SKILL.md")),
+  );
+  const mcp = createMcpRoutes(mcpSkillsDir ? { skillsDir: mcpSkillsDir } : {});
+  app.route("/", mcp.routes);
   app.route("/", ingestionRoutes);
   app.route("/", otelRoutes);
   app.route("/", tracesRoutes);
@@ -130,6 +152,7 @@ export function createApp(): Hono<LiteServerEnv> {
   app.use("/api/*", async (c) => {
     return c.notFound();
   });
+  app.use("/mcp/*", async (c) => c.notFound());
 
   // Serve the web SPA build when present. In development the frontend runs
   // on its own Vite dev server, so the dist folder may not exist — in that
@@ -159,5 +182,5 @@ export function createApp(): Hono<LiteServerEnv> {
   // SPA build exists, etc.) — Hono's default fallback is text/plain.
   app.notFound((c) => c.json({ message: "Not Found" }, 404));
 
-  return app;
+  return Object.assign(app, { close: mcp.close });
 }

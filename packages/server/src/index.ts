@@ -63,6 +63,7 @@ main().catch((err) => {
 // Graceful shutdown — close HTTP server and SQLite connections so tsx watch can restart cleanly
 async function shutdown() {
   server.close();
+  await app.close();
   stopStatsMaintenance();
   stopRetentionJob();
   await sessionSearch?.stop();

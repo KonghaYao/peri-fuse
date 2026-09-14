@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "langfuse": {
+      "type": "http",
+      "url": "http://localhost:23332/mcp",
+      "headers": { "Authorization": "Basic <base64(publicKey:secretKey)>" },
+      "protocolVersion": "2026-07-28"
+    },
+    "langfuse-dev": {
+      "type": "http",
+      "url": "http://localhost:23432/mcp",
+      "headers": { "Authorization": "Basic <base64(publicKey:secretKey)>" },
+      "protocolVersion": "2026-07-28"
+    },
+    "langfuse-stdio": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/cli.js", "--stdio"],
+      "cwd": "packages/langfuse-mcp",
+      "protocolVersion": "2026-07-28"
+    }
+  }
+}
