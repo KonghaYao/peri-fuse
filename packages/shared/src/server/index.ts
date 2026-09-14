@@ -78,6 +78,7 @@ export * from "./repositories/traces";
 export { getTraceByIdFromTracesTable as getTraceById } from "./repositories/traces";
 // S3 stubs
 export { getS3EventStorageClient } from "./s3";
+export * from "./session-search";
 // Table mappings
 export * from "./tableMappings";
 export * from "./utils/compareVersions";

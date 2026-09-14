@@ -14,6 +14,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import Database from "better-sqlite3";
 import { logger } from "../logger";
+import { isSessionSearchAvailable } from "../session-search/schema";
+import { SessionSearchStorage } from "../session-search/storage";
 import {
   DEFAULT_MAX_RESULT_BYTES,
   DEFAULT_MAX_RESULT_ROWS,
@@ -231,6 +233,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       const insertMany = this.db.transaction((records: T[]) => {
         for (const record of records) {
           stmt.run(record as Record<string, unknown>);
+          this.markSearchDirty(opts.table, record as Record<string, unknown>);
         }
       });
       insertMany(opts.records);
@@ -277,12 +280,38 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       const insertMany = this.db.transaction((records: T[]) => {
         for (const record of records) {
           stmt.run(record as Record<string, unknown>);
+          this.markSearchDirty(opts.table, record as Record<string, unknown>);
         }
       });
       insertMany(opts.records);
       this.maybeReanalyze();
     } catch (error) {
       logger.error(`[SQLiteTelemetryAdapter] MergeInsert into ${opts.table} failed`, error);
+      throw error;
+    }
+  }
+
+  private markSearchDirty(table: string, record: Record<string, unknown>): void {
+    if (table !== "traces" && table !== "observations") return;
+    if (!isSessionSearchAvailable(this.db)) return;
+    const projectId = record.project_id;
+    const id = record.id;
+    if (typeof projectId !== "string" || typeof id !== "string") return;
+    const raw = record.updated_at ?? record.event_ts ?? record.created_at;
+    const eventTime = record.start_time ?? record.timestamp ?? record.event_ts;
+    const revision = typeof raw === "number" ? raw : Date.parse(String(raw ?? "")) || Date.now();
+    try {
+      new SessionSearchStorage(this.db).markDirty({
+        projectId,
+        id,
+        revision,
+        kind: table === "traces" ? "trace" : "observation",
+        eventTime: typeof eventTime === "string" ? eventTime : undefined,
+      });
+    } catch (error) {
+      // Dirty marking is part of the write contract: swallowing this would make
+      // a successful telemetry update permanently invisible to search.
+      logger.error(`[SQLiteTelemetryAdapter] Failed to mark ${table} source dirty`, error);
       throw error;
     }
   }
@@ -318,6 +347,11 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   /** Queue occupancy and worker lifecycle for process diagnostics. */
   getReadPoolStats() {
     return this.readPool?.stats() ?? null;
+  }
+
+  /** Main connection for the bounded session-search lifecycle worker. */
+  getDatabase(): Database.Database {
+    return this.db;
   }
 
   async healthCheck(): Promise<boolean> {

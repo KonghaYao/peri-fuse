@@ -6,10 +6,10 @@
  *    using esbuild so the published CLI is self-contained.
  */
 import { execFileSync } from "node:child_process";
-import * as esbuild from "esbuild";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as esbuild from "esbuild";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverEntry = path.resolve(__dirname, "../server/src/index.ts");
@@ -39,6 +39,12 @@ await esbuild.build({
 console.log("[cli build] Copying migration SQL…");
 const sharedDrizzle = path.resolve(__dirname, "../shared/drizzle");
 const gatewayDrizzle = path.resolve(__dirname, "../gateway/drizzle");
+const sharedSearch = path.resolve(__dirname, "../shared/dist/src/server/session-search");
+if (fs.existsSync(sharedSearch)) {
+  fs.cpSync(sharedSearch, path.join(__dirname, "dist/src/server/session-search"), {
+    recursive: true,
+  });
+}
 
 // Shared migrations → <cli>/drizzle/
 fs.cpSync(sharedDrizzle, path.join(__dirname, "drizzle"), { recursive: true });

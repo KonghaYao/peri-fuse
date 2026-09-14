@@ -9,6 +9,9 @@ import "./env";
 import { serve } from "@hono/node-server";
 import { startGatewayServices, stopGatewayServices } from "@peri/gateway/services";
 import { logger } from "@peri-fuse/shared/src/server";
+import { getTelemetryDB, SQLiteTelemetryAdapter } from "@peri-fuse/shared/src/server/adapters";
+import { stopSessionSearchReadPool } from "@peri-fuse/shared/src/server/session-search";
+import { SessionSearchLifecycle } from "@peri-fuse/shared/src/server/session-search/lifecycle";
 import { startDailyStatsMaintenance } from "@peri-fuse/shared/src/server/stats/daily-stats";
 import { startRetentionJob } from "@peri-fuse/shared/src/server/stats/retention";
 import { createApp } from "./app";
@@ -30,6 +33,12 @@ startGatewayServices();
 const stopStatsMaintenance = startDailyStatsMaintenance();
 // Optional retention purge (PERIFUSE_TELEMETRY_RETENTION_DAYS; off by default)
 const stopRetentionJob = startRetentionJob();
+const telemetryAdapter = getTelemetryDB();
+const sessionSearch =
+  telemetryAdapter instanceof SQLiteTelemetryAdapter
+    ? new SessionSearchLifecycle(telemetryAdapter.getDatabase())
+    : undefined;
+sessionSearch?.start();
 
 const app = createApp();
 
@@ -56,6 +65,8 @@ async function shutdown() {
   server.close();
   stopStatsMaintenance();
   stopRetentionJob();
+  await sessionSearch?.stop();
+  await stopSessionSearchReadPool(telemetryAdapter);
   try {
     await stopGatewayServices();
   } catch {

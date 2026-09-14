@@ -25,6 +25,9 @@ import type {
   SessionDetail,
   SessionListParams,
   SessionRow,
+  SessionSearchContext,
+  SessionSearchResponse,
+  SessionSearchTimeRange,
   Trace,
   TraceListParams,
   TraceMetrics,
@@ -99,6 +102,38 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
     throw new ApiError(res.status, message);
   }
 
+  return (await res.json()) as T;
+}
+
+async function publicJsonRequest<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const ctx = getProjectContext();
+  if (!ctx) throw new ApiError(0, "No active project");
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      signal,
+      headers: {
+        Authorization: basicAuthHeader(ctx.publicKey, ctx.secretKey),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(0, `Network error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const responseBody = (await res.json()) as { message?: string; error?: string };
+      message = responseBody.message ?? responseBody.error ?? message;
+    } catch {
+      /* non-JSON */
+    }
+    if (res.status === 401) clearProjectContext();
+    throw new ApiError(res.status, message);
+  }
   return (await res.json()) as T;
 }
 
@@ -268,6 +303,47 @@ export function getSession(
 ): Promise<SessionDetail> {
   return request<SessionDetail>(
     `/api/public/sessions/${encodeURIComponent(sessionId)}?includeObservations=false&includeIo=false&page=${page}&limit=50`,
+    signal,
+  );
+}
+
+export function searchSessions(
+  query: string,
+  timeRange: SessionSearchTimeRange,
+  signal?: AbortSignal,
+): Promise<SessionSearchResponse> {
+  return publicJsonRequest<SessionSearchResponse>(
+    "/api/public/session-search",
+    { query, timeRange, limit: 20 },
+    signal,
+  );
+}
+
+export function getSessionSearchContext(
+  occurrenceId: string,
+  sourceVersion: number,
+  signal?: AbortSignal,
+  options?: {
+    direction?: "before" | "after";
+    cursor?: string;
+    blockCursor?: string;
+    blockBeforeCursor?: string;
+    query?: string;
+  },
+): Promise<SessionSearchContext> {
+  return publicJsonRequest<SessionSearchContext>(
+    "/api/public/session-search/context",
+    {
+      occurrenceId,
+      sourceVersion,
+      before: options?.blockCursor || options?.blockBeforeCursor ? 0 : 2,
+      after: options?.blockCursor || options?.blockBeforeCursor ? 0 : 2,
+      ...(options?.direction === "before" ? { beforeCursor: options.cursor } : {}),
+      ...(options?.direction === "after" ? { afterCursor: options.cursor } : {}),
+      ...(options?.blockCursor ? { blockCursor: options.blockCursor } : {}),
+      ...(options?.blockBeforeCursor ? { blockBeforeCursor: options.blockBeforeCursor } : {}),
+      ...(options?.query ? { query: options.query } : {}),
+    },
     signal,
   );
 }

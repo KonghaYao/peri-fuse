@@ -7,7 +7,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { Globe, Search, User } from "lucide-react";
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
 import { DataTable } from "@/shared/components/data-table";
@@ -23,6 +23,7 @@ import { useSessionsQuery } from "@/shared/hooks/queries";
 import { useTableState } from "@/shared/hooks/use-table-state";
 import { formatIntervalSeconds, numberFormatter } from "@/shared/lib/format";
 import type { SessionRow } from "@/shared/lib/types";
+import { SessionSearchDialog } from "./session-search-dialog";
 
 const PAGE_SIZE = 50;
 
@@ -225,6 +226,7 @@ type SessionFilters = {
 
 export function SessionsPage() {
   const navigate = useNavigate();
+  const [searchOpen, setSearchOpen] = useState(false);
   const userFilterRef = useRef<FilterInputHandle>(null);
   const environmentFilterRef = useRef<FilterInputHandle>(null);
   const tableState = useTableState<SessionFilters>({
@@ -246,6 +248,12 @@ export function SessionsPage() {
       <PageHeader
         title="Sessions"
         description="Groups of traces and usage in the selected window."
+        actions={
+          <Button size="sm" variant="secondary" onClick={() => setSearchOpen(true)}>
+            <Search />
+            Search sessions
+          </Button>
+        }
       />
 
       <div className="flex flex-1 flex-col overflow-hidden px-4 py-3">
@@ -325,6 +333,7 @@ export function SessionsPage() {
           }
         />
       </div>
+      <SessionSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );
 }

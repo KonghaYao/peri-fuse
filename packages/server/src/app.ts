@@ -34,6 +34,7 @@ import scoreConfigsRoutes from "./routes/score-configs";
 import scoresRoutes from "./routes/scores";
 import scoresV2Routes from "./routes/scores-v2";
 import scoresV3Routes from "./routes/scores-v3";
+import sessionSearchRoutes from "./routes/session-search";
 import sessionsRoutes from "./routes/sessions";
 import tracesRoutes from "./routes/traces";
 import usersRoutes from "./routes/users";
@@ -109,6 +110,7 @@ export function createApp(): Hono<LiteServerEnv> {
   app.route("/", scoresV3Routes);
   app.route("/", metricsV2Routes);
   app.route("/", sessionsRoutes);
+  app.route("/", sessionSearchRoutes);
   app.route("/", usersRoutes);
   app.route("/", dashboardRoutes);
   app.route("/", gatewayProxyRoutes);

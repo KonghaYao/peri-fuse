@@ -56,6 +56,8 @@ export interface TelemetryInsertOpts<T = Record<string, unknown>> {
  * - Lite mode: backed by SQLite (better-sqlite3)
  */
 export interface TelemetryDBAdapter {
+  /** Underlying database handle for bounded SQLite readers; absent for remote backends. */
+  getDatabase?: () => { name?: string };
   /** Execute a read query and return all rows. */
   query<T = Record<string, unknown>>(opts: TelemetryQueryOpts): Promise<T[]>;
 

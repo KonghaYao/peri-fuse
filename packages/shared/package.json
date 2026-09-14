@@ -38,6 +38,14 @@
       "import": "./dist/src/server/adapters/index.js",
       "require": "./dist/src/server/adapters/index.js"
     },
+    "./src/server/session-search/lifecycle": {
+      "import": "./dist/src/server/session-search/lifecycle.js",
+      "require": "./dist/src/server/session-search/lifecycle.js"
+    },
+    "./src/server/session-search": {
+      "import": "./dist/src/server/session-search/index.js",
+      "require": "./dist/src/server/session-search/index.js"
+    },
     "./src/server/stats/daily-stats": {
       "import": "./dist/src/server/stats/daily-stats.js",
       "require": "./dist/src/server/stats/daily-stats.js"

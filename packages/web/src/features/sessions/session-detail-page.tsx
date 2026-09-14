@@ -159,6 +159,8 @@ export function SessionDetailPage() {
       key={`${sessionId}:${page}`}
       sessionId={sessionId}
       page={page}
+      traceAnchor={searchParams.get("traceId")}
+      observationAnchor={searchParams.get("observationId")}
       onPageChange={(next) =>
         setSearchParams((previous) => {
           const params = new URLSearchParams(previous);
@@ -173,10 +175,14 @@ export function SessionDetailPage() {
 function SessionDetailContent({
   sessionId,
   page,
+  traceAnchor,
+  observationAnchor,
   onPageChange,
 }: {
   sessionId: string | undefined;
   page: number;
+  traceAnchor: string | null;
+  observationAnchor: string | null;
   onPageChange: (page: number) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -192,6 +198,19 @@ function SessionDetailContent({
   });
 
   const session = query.data;
+
+  useEffect(() => {
+    if (!session) return;
+    if (observationAnchor) setSelectedId(observationAnchor);
+    if (traceAnchor) {
+      setExpandedTraceIds((previous) => {
+        if (previous.has(traceAnchor)) return previous;
+        const next = new Set(previous);
+        next.add(traceAnchor);
+        return next;
+      });
+    }
+  }, [observationAnchor, session, traceAnchor]);
 
   const [omitNoise, setOmitNoise] = useState(true);
   const selectedQuery = useObservationDetailQuery(selectedId);
@@ -278,6 +297,18 @@ function SessionDetailContent({
           )}
         </div>
 
+        {session &&
+          (traceAnchor && !session.traces.some((trace) => trace.id === traceAnchor) ? (
+            <div className="mt-3 rounded border border-warning/30 bg-warning/10 p-3 text-sm">
+              The target trace is on another session page. Open its details directly to view it:
+              <Link
+                className="ml-2 text-brand underline"
+                to={`/traces/${encodeURIComponent(traceAnchor)}`}
+              >
+                Open target trace
+              </Link>
+            </div>
+          ) : null)}
         {session && (
           <div className="mt-4 flex flex-wrap gap-x-8 gap-y-3">
             <Stat label="Duration" value={formatIntervalSeconds(session.sessionDuration)} />

@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { initializeSessionSearchSchema } from "../session-search/schema";
 
 export function initializeTelemetrySchema(db: Database.Database): void {
   db.exec(`
@@ -224,5 +225,13 @@ export function initializeTelemetrySchema(db: Database.Database): void {
       -- Covers users list: GROUP BY user_id with timestamp aggregation
       CREATE INDEX IF NOT EXISTS idx_traces_deleted_user
         ON traces(project_id, is_deleted, user_id, timestamp, environment);
-    `);
+  `);
+  // Search is an optional projection: an SQLite build without FTS5 must not
+  // prevent telemetry ingestion from starting.
+  try {
+    initializeSessionSearchSchema(db);
+  } catch {
+    // Search is an optional projection; ingestion remains usable when FTS5 or
+    // another search DDL feature is unavailable. The adapter probes availability.
+  }
 }
