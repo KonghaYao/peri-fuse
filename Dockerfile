@@ -5,7 +5,7 @@
 # ---------- base ----------
 FROM node:22-bookworm-slim AS base
 ENV PNPM_HOME="/pnpm" \
-    PATH="$PNPM_HOME:$PATH" \
+    PATH="/pnpm:$PATH" \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /app
@@ -43,7 +43,7 @@ ENV NODE_ENV=production \
     LITE_SERVER_PORT=23332 \
     PERIFUSE_HOME=/app/data \
     PNPM_HOME="/pnpm" \
-    PATH="$PNPM_HOME:$PATH" \
+    PATH="/pnpm:$PATH" \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 

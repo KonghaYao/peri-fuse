@@ -9,7 +9,7 @@
   },
   "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "build": "pnpm --filter @peri-fuse/shared run build && pnpm --filter @peri/gateway run build && pnpm --filter @peri-fuse/server run build && pnpm --filter @peri-fuse/langfuse-mcp run build && pnpm --filter peri-fuse run build && pnpm --filter @peri-fuse/web run build",
+    "build": "pnpm --filter @peri-fuse/shared run build && pnpm --filter @peri/gateway run build && pnpm --filter @peri-fuse/langfuse-mcp run build && pnpm --filter @peri-fuse/server run build && pnpm --filter peri-fuse run build && pnpm --filter @peri-fuse/web run build",
     "dev": "concurrently \"LITE_SERVER_PORT=23432 pnpm --filter @peri-fuse/server run dev\" \"pnpm --filter @peri-fuse/web run dev\"",
     "dev:server": "LITE_SERVER_PORT=23432 pnpm --filter @peri-fuse/server run dev",
     "dev:web": "pnpm --filter @peri-fuse/web run dev",
