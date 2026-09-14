@@ -213,6 +213,11 @@ export function initializeTelemetrySchema(db: Database.Database): void {
       -- before time so ERROR-only windows do not scan every observation.
       CREATE INDEX IF NOT EXISTS idx_obs_error_start
         ON observations(project_id, is_deleted, level, start_time DESC, id DESC);
+      -- Public observations pagination filters type + level together. Keep both
+      -- before time so pages seek directly to matching rows and exact counts
+      -- stay in the index instead of reading every ERROR row to check its type.
+      CREATE INDEX IF NOT EXISTS idx_obs_type_level_start
+        ON observations(project_id, is_deleted, type, level, start_time DESC);
       -- Covers sessions list: GROUP BY session_id with timestamp/user aggregation
       CREATE INDEX IF NOT EXISTS idx_traces_deleted_session
         ON traces(project_id, is_deleted, session_id, timestamp, user_id, environment, tags);
