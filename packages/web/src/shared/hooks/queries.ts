@@ -70,26 +70,32 @@ export const queryKeys = {
 // Data queries (public API)
 // ---------------------------------------------------------------------------
 
-export function useTracesQuery(params: TraceListParams) {
+export function useTracesQuery(getParams: () => TraceListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery(() => ({
-    queryKey: queryKeys.traces(params),
-    queryFn: () => listTraces(params),
-    placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval() || false,
-  }));
+  return useQuery(() => {
+    const params = getParams();
+    return {
+      queryKey: queryKeys.traces(params),
+      queryFn: () => listTraces(params),
+      placeholderData: keepPreviousData,
+      refetchInterval: refetchInterval() || false,
+    };
+  });
 }
 
-export function useTracesMetricsQuery(traceIds: string[]) {
+export function useTracesMetricsQuery(getTraceIds: () => string[]) {
   const refetchInterval = useRefreshInterval();
-  const idsKey = traceIds.join(",");
-  return useQuery(() => ({
-    queryKey: queryKeys.tracesMetrics(idsKey),
-    queryFn: () => getTracesMetrics(traceIds),
-    enabled: traceIds.length > 0,
-    placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval() || false,
-  }));
+  return useQuery(() => {
+    const traceIds = getTraceIds();
+    const idsKey = traceIds.join(",");
+    return {
+      queryKey: queryKeys.tracesMetrics(idsKey),
+      queryFn: () => getTracesMetrics(traceIds),
+      enabled: traceIds.length > 0,
+      placeholderData: keepPreviousData,
+      refetchInterval: refetchInterval() || false,
+    };
+  });
 }
 
 export function useTraceQuery(traceId: string | undefined) {
@@ -126,14 +132,17 @@ export function useObservationDetailQuery(observationId: string | null | undefin
   }));
 }
 
-export function useSessionsQuery(params: SessionListParams) {
+export function useSessionsQuery(getParams: () => SessionListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery(() => ({
-    queryKey: queryKeys.sessions(params),
-    queryFn: () => listSessions(params),
-    placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval() || false,
-  }));
+  return useQuery(() => {
+    const params = getParams();
+    return {
+      queryKey: queryKeys.sessions(params),
+      queryFn: () => listSessions(params),
+      placeholderData: keepPreviousData,
+      refetchInterval: refetchInterval() || false,
+    };
+  });
 }
 
 export function useSessionQuery(sessionId: string | undefined) {
@@ -144,34 +153,43 @@ export function useSessionQuery(sessionId: string | undefined) {
   }));
 }
 
-export function useUsersQuery(params: UserListParams) {
+export function useUsersQuery(getParams: () => UserListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery(() => ({
-    queryKey: queryKeys.users(params),
-    queryFn: () => listUsers(params),
-    placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval() || false,
-  }));
+  return useQuery(() => {
+    const params = getParams();
+    return {
+      queryKey: queryKeys.users(params),
+      queryFn: () => listUsers(params),
+      placeholderData: keepPreviousData,
+      refetchInterval: refetchInterval() || false,
+    };
+  });
 }
 
-export function useObservationsQuery(params: ObservationListParams) {
+export function useObservationsQuery(getParams: () => ObservationListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery(() => ({
-    queryKey: queryKeys.observations(params),
-    queryFn: () => listObservations(params),
-    placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval() || false,
-  }));
+  return useQuery(() => {
+    const params = getParams();
+    return {
+      queryKey: queryKeys.observations(params),
+      queryFn: () => listObservations(params),
+      placeholderData: keepPreviousData,
+      refetchInterval: refetchInterval() || false,
+    };
+  });
 }
 
-export function useScoresQuery(params: ScoreListParams) {
+export function useScoresQuery(getParams: () => ScoreListParams) {
   const refetchInterval = useRefreshInterval();
-  return useQuery(() => ({
-    queryKey: queryKeys.scores(params),
-    queryFn: () => listScores(params),
-    placeholderData: keepPreviousData,
-    refetchInterval: refetchInterval() || false,
-  }));
+  return useQuery(() => {
+    const params = getParams();
+    return {
+      queryKey: queryKeys.scores(params),
+      queryFn: () => listScores(params),
+      placeholderData: keepPreviousData,
+      refetchInterval: refetchInterval() || false,
+    };
+  });
 }
 
 export function useDashboardQuery(params?: DashboardQueryParams) {
@@ -183,15 +201,18 @@ export function useDashboardQuery(params?: DashboardQueryParams) {
   }));
 }
 
-export function useErrorsQuery(params: ErrorQueryParams) {
+export function useErrorsQuery(getParams: () => ErrorQueryParams) {
   const refetchInterval = useRefreshInterval();
-  return useInfiniteQuery(() => ({
-    queryKey: queryKeys.errors(params),
-    queryFn: ({ pageParam }) => listErrors(params, pageParam),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.meta.cursor ?? undefined,
-    refetchInterval: refetchInterval() || false,
-  }));
+  return useInfiniteQuery(() => {
+    const params = getParams();
+    return {
+      queryKey: queryKeys.errors(params),
+      queryFn: ({ pageParam }) => listErrors(params, pageParam),
+      initialPageParam: null as string | null,
+      getNextPageParam: (page) => page.meta.cursor ?? undefined,
+      refetchInterval: refetchInterval() || false,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

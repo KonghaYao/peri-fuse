@@ -2,7 +2,7 @@
  * Minimal @peri/ui stand-in for Vitest. Avoids loading the full peri-studio barrel
  * (kobalte, xterm, mermaid, …) while still exercising page logic and fetch states.
  */
-import { type Component, type JSX, Show, splitProps } from "solid-js";
+import { type Component, For, type JSX, Show, splitProps } from "solid-js";
 import { vi } from "vitest";
 
 type DivProps = JSX.HTMLAttributes<HTMLDivElement>;
@@ -114,6 +114,26 @@ export const AlertDialogAction: Component<ButtonProps> = Button;
 type ChildrenProps = { children?: JSX.Element };
 
 export const Badge: Component<ChildrenProps> = (props) => <span>{props.children}</span>;
+export const StatChip: Component<{ label: string; value: string; icon?: JSX.Element }> = (
+  props,
+) => (
+  <div data-testid="stat-chip">
+    <span>{props.label}</span>
+    <span>{props.value}</span>
+  </div>
+);
+
+export const Statistic: Component<{
+  title?: string;
+  value?: number | string;
+}> = (props) => (
+  <div data-testid="statistic">
+    <Show when={props.title}>
+      <span>{props.title}</span>
+    </Show>
+    <span>{props.value}</span>
+  </div>
+);
 export const ScrollArea: Component<ChildrenProps> = (props) => <div>{props.children}</div>;
 export const InlineNotice: Component<ChildrenProps> = (props) => (
   <div role="alert">{props.children}</div>
@@ -148,8 +168,35 @@ export const ScoreListShell: Component = () => <div />;
 export const FilterInput: Component = () => <input />;
 export const FilterSelect: Component = () => <select />;
 export const DateFilterInput: Component = () => <input type="date" />;
+
+const InlineFormRoot: Component<JSX.FormHTMLAttributes<HTMLFormElement>> = (props) => {
+  const [local, rest] = splitProps(props, ["class", "children"]);
+  return (
+    <form class={local.class} {...rest}>
+      {local.children}
+    </form>
+  );
+};
+
+const InlineFormField: Component<DivProps> = (props) => {
+  const [local, rest] = splitProps(props, ["class", "children"]);
+  return (
+    <div class={local.class} {...rest}>
+      {local.children}
+    </div>
+  );
+};
+
+const InlineFormActions: Component<DivProps> = InlineFormField;
+
+export const InlineForm = Object.assign(InlineFormRoot, {
+  Field: InlineFormField,
+  Actions: InlineFormActions,
+});
 export const TableInlineError: Component = () => <div role="alert" />;
-export const EmptyState: Component<{ title: string }> = (props) => <div>{props.title}</div>;
+export const EmptyState: Component<{ title: string; variant?: string }> = (props) => (
+  <div>{props.title}</div>
+);
 export const AutoRefreshIntervalControl: Component = () => <div />;
 export const JsonTree: Component = () => <div />;
 export const LoadingState: Component<{ label?: string }> = (props) => <div>{props.label}</div>;
@@ -158,14 +205,208 @@ export const TruncatedIdCell: Component<{ value: string }> = (props) => <span>{p
 export const TokenUsageBadge: Component = () => <span>usage</span>;
 export const LevelCountsDisplay: Component = () => <span>levels</span>;
 export const IoPreviewCell: Component = () => <span>io</span>;
+export const formatCountLabelAsLevel = (countLabel: string) =>
+  countLabel.replace(/Count$/, "").toUpperCase();
+export const monitorLevelSymbol = () => "•";
 export const PaginationControls: Component = () => <div />;
+type EnhancedDataTableColumnStub<T> = {
+  id: string;
+  header?: string;
+  cell?: (row: T) => JSX.Element;
+  accessor?: (row: T) => unknown;
+};
+
 export const EnhancedDataTable: Component<{
   data?: unknown[];
+  columns?: EnhancedDataTableColumnStub<unknown>[];
   toolbar?: JSX.Element;
+  rowKey?: (row: unknown, index: number) => string;
+  pagination?: {
+    current: number;
+    pageSize: number;
+    total: number;
+    onChange: (page: number) => void;
+  };
 }> = (props) => (
-  <div data-trace-rows={props.data?.length ?? 0} data-has-toolbar={props.toolbar ? "1" : "0"} />
+  <div
+    data-table-rows={props.data?.length ?? 0}
+    data-trace-rows={props.data?.length ?? 0}
+    data-session-rows={props.data?.length ?? 0}
+    data-has-toolbar={props.toolbar ? "1" : "0"}
+  >
+    {props.toolbar}
+    <For each={props.data ?? []}>
+      {(row, index) => (
+        <div data-row-key={props.rowKey?.(row, index()) ?? String(index())}>
+          <For each={props.columns ?? []}>
+            {(column) => (
+              <span data-column={column.id}>
+                {column.cell
+                  ? column.cell(row)
+                  : String(column.accessor?.(row) ?? "")}
+              </span>
+            )}
+          </For>
+        </div>
+      )}
+    </For>
+    <Show when={props.pagination}>
+      {(pagination) => (
+        <button
+          type="button"
+          data-testid="table-next-page"
+          disabled={pagination().current * pagination().pageSize >= pagination().total}
+          onClick={() => pagination().onChange(pagination().current + 1)}
+        >
+          Next page
+        </button>
+      )}
+    </Show>
+  </div>
 );
+
+const TableViewRoot: Component<{ class?: string; children?: JSX.Element }> = (props) => (
+  <div data-slot="table-view" class={props.class}>
+    {props.children}
+  </div>
+);
+
+const TableViewToolbar: Component<{ children?: JSX.Element }> = (props) => (
+  <div data-slot="table-view-toolbar">{props.children}</div>
+);
+
+const TableViewBody: Component<{ children?: JSX.Element }> = (props) => (
+  <div data-slot="table-view-body">{props.children}</div>
+);
+
+const TableViewFooter: Component<{ children?: JSX.Element }> = (props) => (
+  <div data-slot="table-view-footer">{props.children}</div>
+);
+
+type TableViewServerTableProps = Parameters<typeof EnhancedDataTable>[0];
+
+export const TableView = Object.assign(TableViewRoot, {
+  Toolbar: TableViewToolbar,
+  Body: TableViewBody,
+  Footer: TableViewFooter,
+  ServerTable: EnhancedDataTable as Component<TableViewServerTableProps>,
+});
 export const TableLoadingRows: Component = () => <div data-loading-rows />;
+export const BlockLoadingRows: Component<{ rows?: number }> = (props) => (
+  <div data-block-loading-rows={props.rows ?? 4} role="status" />
+);
+
+export const PanelCard: Component<{
+  title: string;
+  description?: string;
+  isEmpty?: boolean;
+  emptyMessage?: string;
+  children?: JSX.Element;
+}> = (props) => (
+  <section data-panel-card={props.title}>
+    <h2>{props.title}</h2>
+    {props.isEmpty ? <p>{props.emptyMessage ?? "empty"}</p> : props.children}
+  </section>
+);
+
+export const StatusPill: Component<{ status: string }> = (props) => (
+  <span data-status-pill={props.status}>{props.status}</span>
+);
+
+export type QueryHandle<T> = {
+  data: T | undefined;
+  error: unknown;
+  isPending: boolean;
+  isFetching: boolean;
+  refetch: () => Promise<unknown>;
+};
+
+export function resolveQueryState<T>(
+  snapshot: QueryHandle<T>,
+  isEmpty: (data: T) => boolean,
+) {
+  if (snapshot.data === undefined) {
+    if (snapshot.error) {
+      return { kind: "error" as const, error: snapshot.error, isFetching: snapshot.isFetching };
+    }
+    return { kind: "loading" as const, isFetching: snapshot.isFetching };
+  }
+  return {
+    kind: "content" as const,
+    data: snapshot.data,
+    isEmpty: isEmpty(snapshot.data),
+    staleError: snapshot.error ?? null,
+    isFetching: snapshot.isFetching,
+  };
+}
+
+export const QuerySection: Component<{
+  label: string;
+  query: QueryHandle<unknown>;
+  isEmpty: (data: unknown) => boolean;
+  loading: JSX.Element;
+  empty: JSX.Element;
+  children: (data: unknown) => JSX.Element;
+}> = (props) => {
+  const state = resolveQueryState(props.query, props.isEmpty);
+  if (state.kind === "loading") {
+    return (
+      <div role="status" aria-label={`Loading ${props.label}`}>{props.loading}</div>
+    );
+  }
+  if (state.kind === "error") {
+    return (
+      <div role="alert">
+        <p>{`Could not load ${props.label}.`}</p>
+        <button
+          type="button"
+          aria-label={`Retry ${props.label}`}
+          disabled={props.query.isFetching}
+          onClick={() => void props.query.refetch()}
+        >
+          {props.query.isFetching ? "Retrying…" : "Retry"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div aria-busy={state.isFetching}>
+      {state.staleError && (
+        <div role="alert">
+          <p>{`Could not refresh ${props.label}; showing previous data.`}</p>
+          <button
+            type="button"
+            aria-label={`Retry ${props.label}`}
+            disabled={props.query.isFetching}
+            onClick={() => void props.query.refetch()}
+          >
+            {props.query.isFetching ? "Retrying…" : "Retry"}
+          </button>
+        </div>
+      )}
+      {state.isFetching && !state.staleError && (
+        <span role="status">Refreshing {props.label}</span>
+      )}
+      {state.isEmpty ? props.empty : props.children(state.data)}
+    </div>
+  );
+};
+
+const ChartPart: Component<ChildrenProps> = (props) => <div>{props.children}</div>;
+
+export const Chart = {
+  Cartesian: ChartPart,
+  Bars: ChartPart,
+  Line: ChartPart,
+  BarsHorizontal: ChartPart,
+  Donut: ChartPart,
+  Legend: ChartPart,
+};
+
+export const ACTIVITY_CHART_HEIGHT = 200;
+export const DUAL_AXIS_CHART_MARGIN = { top: 8, right: 8, bottom: 24, left: 40 };
+export const formatChartCompact = (value: number) => String(value);
+
 export const MonitorObservationTypeBadge: Component<{ type: string }> = (props) => (
   <span>{props.type}</span>
 );

@@ -7,9 +7,10 @@ import {
   Button,
   DateFilterInput,
   EmptyState,
-  EnhancedDataTable,
+  TableView,
   FilterInput,
   type FilterInputHandle,
+  InlineForm,
   PageHeaderShell,
   Skeleton,
   TableInlineError,
@@ -52,15 +53,15 @@ export const TracesPage: Component = () => {
     defaultSort: "timestamp.desc",
   });
 
-  const coreQuery = useTracesQuery({
+  const coreQuery = useTracesQuery(() => ({
     page: tableState.page(),
     limit: PAGE_SIZE,
     orderBy: tableState.orderBy(),
     ...tableState.filters(),
-  });
+  }));
 
   const traceIds = createMemo(() => (coreQuery.data?.data ?? []).map((trace) => trace.id));
-  const metricsQuery = useTracesMetricsQuery(traceIds());
+  const metricsQuery = useTracesMetricsQuery(() => traceIds());
   const rows = createMemo(() => joinCoreAndMetrics(coreQuery.data?.data ?? [], metricsQuery.data));
 
   createEffect(() => {
@@ -106,82 +107,88 @@ export const TracesPage: Component = () => {
   };
 
   const toolbar = () => (
-    <div class="flex flex-wrap items-center gap-8">
-      <FilterInput
-        ref={(handle) => {
-          nameFilterRef = handle;
-        }}
-        class="w-176"
-        placeholder="Filter by name…"
-        icon={Search}
-        value={tableState.filters().name}
-        onCommit={(value) => tableState.setFilter("name", value)}
-      />
-      <FilterInput
-        ref={(handle) => {
-          userIdFilterRef = handle;
-        }}
-        class="w-176"
-        placeholder="Filter by userId…"
-        icon={User}
-        value={tableState.filters().userId}
-        onCommit={(value) => tableState.setFilter("userId", value)}
-      />
-      <FilterInput
-        ref={(handle) => {
-          environmentFilterRef = handle;
-        }}
-        class="w-176"
-        placeholder="Filter by environment…"
-        icon={Globe}
-        value={tableState.filters().environment}
-        onCommit={(value) => tableState.setFilter("environment", value)}
-      />
-      <DateFilterInput
-        class="w-176"
-        title="From timestamp"
-        boundary="start"
-        placeholder="From date"
-        value={tableState.filters().fromTimestamp}
-        onCommit={(value) => tableState.setFilter("fromTimestamp", value)}
-      />
-      <DateFilterInput
-        class="w-176"
-        title="To timestamp"
-        boundary="end"
-        placeholder="To date"
-        value={tableState.filters().toTimestamp}
-        onCommit={(value) => tableState.setFilter("toTimestamp", value)}
-      />
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => {
-          nameFilterRef?.commit();
-          userIdFilterRef?.commit();
-          environmentFilterRef?.commit();
-        }}
-      >
-        <Search class="h-16 w-16" size={16} />
-        Search
-      </Button>
-      <Show when={tableState.activeFilterCount() > 0}>
-        <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
-          Clear ({tableState.activeFilterCount()})
+    <InlineForm
+      class="min-w-0 flex-1"
+      minTrack={144}
+      gap={8}
+      onSubmit={() => {
+        nameFilterRef?.commit();
+        userIdFilterRef?.commit();
+        environmentFilterRef?.commit();
+      }}
+    >
+      <InlineForm.Field span={2}>
+        <FilterInput
+          ref={(handle) => {
+            nameFilterRef = handle;
+          }}
+          placeholder="Filter by name…"
+          icon={Search}
+          value={tableState.filters().name}
+          onCommit={(value) => tableState.setFilter("name", value)}
+        />
+      </InlineForm.Field>
+      <InlineForm.Field>
+        <FilterInput
+          ref={(handle) => {
+            userIdFilterRef = handle;
+          }}
+          placeholder="Filter by userId…"
+          icon={User}
+          value={tableState.filters().userId}
+          onCommit={(value) => tableState.setFilter("userId", value)}
+        />
+      </InlineForm.Field>
+      <InlineForm.Field>
+        <FilterInput
+          ref={(handle) => {
+            environmentFilterRef = handle;
+          }}
+          placeholder="Filter by environment…"
+          icon={Globe}
+          value={tableState.filters().environment}
+          onCommit={(value) => tableState.setFilter("environment", value)}
+        />
+      </InlineForm.Field>
+      <InlineForm.Field>
+        <DateFilterInput
+          title="From timestamp"
+          boundary="start"
+          placeholder="From date"
+          value={tableState.filters().fromTimestamp}
+          onCommit={(value) => tableState.setFilter("fromTimestamp", value)}
+        />
+      </InlineForm.Field>
+      <InlineForm.Field>
+        <DateFilterInput
+          title="To timestamp"
+          boundary="end"
+          placeholder="To date"
+          value={tableState.filters().toTimestamp}
+          onCommit={(value) => tableState.setFilter("toTimestamp", value)}
+        />
+      </InlineForm.Field>
+      <InlineForm.Actions>
+        <Button type="submit" size="sm" variant="secondary">
+          <Search class="h-16 w-16" size={16} />
+          Search
         </Button>
-      </Show>
-      <div class="ml-auto">
+        <Show when={tableState.activeFilterCount() > 0}>
+          <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
+            Clear ({tableState.activeFilterCount()})
+          </Button>
+        </Show>
         <AutoRefreshControl />
-      </div>
-    </div>
+      </InlineForm.Actions>
+    </InlineForm>
   );
 
   return (
-    <div class="flex h-full flex-col">
+    <div class="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeaderShell title="Traces" description="All traces ingested into this lite project." />
 
-      <div class="flex min-h-0 flex-1">
-        <div class="flex min-w-0 flex-1 flex-col overflow-hidden px-16 py-12">
+      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-16 py-12">
           <Show
             when={!coreQuery.isPending}
             fallback={
@@ -217,7 +224,7 @@ export const TracesPage: Component = () => {
                 }
               >
                 <div
-                  class="traces-table min-h-0 flex-1"
+                  class="traces-table flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
                   onClick={handleTableClick}
                   style={{
                     "--peek-row-bg": "var(--brand-subtle)",
@@ -232,7 +239,7 @@ export const TracesPage: Component = () => {
                       cursor: pointer;
                     }
                   `}</style>
-                  <EnhancedDataTable
+                  <TableView.ServerTable
                     data={rows()}
                     columns={tracesTableColumns}
                     rowKey={(row) => row.id}

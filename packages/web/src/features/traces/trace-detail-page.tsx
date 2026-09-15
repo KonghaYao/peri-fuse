@@ -6,12 +6,12 @@ import {
   LocalIsoDate,
   message,
   Skeleton,
+  StatChip,
 } from "@peri/ui";
 import { A, useParams } from "@solidjs/router";
 import { ArrowLeft, ChartNoAxesCombined, Clock, Copy, Cpu, Layers, Star } from "lucide-solid";
 import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import { ObservationTimelineDialog } from "@/shared/components/observations/observation-timeline-dialog";
-import { StatChip } from "@/shared/components/observations/stat-chip";
 import { TraceObservationWorkspace } from "@/shared/components/observations/trace-observation-workspace";
 import { useTraceObservationsQuery, useTraceQuery } from "@/shared/hooks/queries";
 import { formatLatency, formatTokens } from "@/shared/lib/format";
@@ -28,9 +28,9 @@ const TraceDetailSkeleton: Component = () => (
         ))}
       </div>
     </div>
-    <div class="flex min-h-0 flex-1 gap-16 p-16">
-      <Skeleton class="w-[45%]" />
-      <Skeleton class="flex-1" />
+    <div class="flex min-h-0 flex-1">
+      <Skeleton class="w-[45%] rounded-none" />
+      <Skeleton class="flex-1 rounded-none" />
     </div>
   </div>
 );
@@ -119,12 +119,12 @@ export const TraceDetailPage: Component = () => {
 
               <div class="mt-12 flex flex-wrap gap-8">
                 <StatChip
-                  icon={Clock}
+                  icon={<Clock size={14} />}
                   label="Latency"
                   value={formatLatency(currentTrace().latency)}
                 />
                 <StatChip
-                  icon={Layers}
+                  icon={<Layers size={14} />}
                   label="Observations"
                   value={
                     currentTrace().observationCount >= 0
@@ -132,8 +132,12 @@ export const TraceDetailPage: Component = () => {
                       : String(observations().length)
                   }
                 />
-                <StatChip icon={Cpu} label="Tokens" value={formatTokens(totalTokens())} />
-                <StatChip icon={Star} label="Scores" value={String(currentTrace().scores.length)} />
+                <StatChip icon={<Cpu size={14} />} label="Tokens" value={formatTokens(totalTokens())} />
+                <StatChip
+                  icon={<Star size={14} />}
+                  label="Scores"
+                  value={String(currentTrace().scores.length)}
+                />
                 <Button
                   variant="secondary"
                   size="sm"
@@ -146,7 +150,7 @@ export const TraceDetailPage: Component = () => {
               </div>
             </div>
 
-            <div class="flex min-h-0 flex-1 p-16">
+            <div class="flex min-h-0 flex-1">
               <Show
                 when={traceId()}
                 fallback={<LoadingState label="Loading trace…" class="justify-center flex-1" />}

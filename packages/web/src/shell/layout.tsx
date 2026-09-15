@@ -88,7 +88,7 @@ export const Layout: ParentComponent = (props) => {
             </Show>
           </button>
 
-          <main class="min-w-0 flex-1 overflow-y-auto">{props.children}</main>
+          <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">{props.children}</main>
         </div>
       </div>
 

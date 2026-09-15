@@ -19,7 +19,7 @@ import type { ErrorEvent, Observation } from "@/shared/lib/types";
 function PathNode(props: { label: string; value: string; active?: boolean }) {
   return (
     <div class="min-w-0 rounded-md border border-line bg-surface-inset/60 px-12 py-8">
-      <div class="text-[10px] uppercase tracking-[0.08em] text-fg-tertiary">{props.label}</div>
+      <div class="text-10 font-medium text-fg-tertiary">{props.label}</div>
       <div
         class={`mt-2 truncate font-mono text-xs ${props.active ? "text-danger" : "text-fg-primary"}`}
       >
@@ -55,8 +55,8 @@ export const ErrorInvestigationPanel: Component<{
   const traceQuery = useTraceQuery(props.error.traceId ?? undefined);
 
   return (
-    <aside class="fixed inset-0 z-40 flex min-h-0 flex-col border-l border-line bg-surface-raised shadow-xl md:static md:z-auto md:w-[min(46vw,580px)] md:shadow-none">
-      <div class="flex shrink-0 items-start justify-between gap-12 border-b border-line px-16 py-12">
+    <aside class="flex h-full w-[min(46vw,580px)] max-w-[85vw] shrink-0 flex-col overflow-hidden border-l border-line bg-surface-raised">
+      <div class="flex shrink-0 items-start justify-between gap-12 border-b border-line px-24 py-12">
         <div class="min-w-0">
           <div class="flex items-center gap-8">
             <Badge class="border-danger/25 bg-danger-subtle text-danger">ERROR</Badge>
@@ -64,7 +64,7 @@ export const ErrorInvestigationPanel: Component<{
               {props.error.name ?? "Unnamed observation"}
             </span>
           </div>
-          <p class="mt-4 line-clamp-8 font-mono text-[11px] leading-4 text-fg-secondary">
+          <p class="mt-4 line-clamp-8 font-mono text-13 leading-normal text-fg-secondary">
             {props.error.statusMessage ?? "No status message recorded"}
           </p>
         </div>
@@ -73,9 +73,9 @@ export const ErrorInvestigationPanel: Component<{
         </Button>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto p-16">
+      <div class="min-h-0 flex-1 overflow-y-auto p-24">
         <section class="mb-20">
-          <div class="mb-8 flex items-center gap-8 text-xs font-semibold uppercase tracking-[0.08em] text-fg-secondary">
+          <div class="mb-8 flex items-center gap-8 text-12 font-semibold text-fg-secondary">
             <Route class="h-14 w-14" size={14} /> Investigation path
           </div>
           <div class="grid gap-6">

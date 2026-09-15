@@ -9,13 +9,13 @@ import { type Component, For, Show } from "solid-js";
 import { formatDateTime, formatNumber, formatPercent, formatTokens } from "@/shared/lib/format";
 import type { DashboardDaily, DashboardRecentError, DashboardUserBucket } from "@/shared/lib/types";
 import { dayTick } from "../chart-utils";
-import { ChartCard } from "./chart-card";
+import { PanelCard } from "@peri/ui";
 
 export const CacheTrendChart: Component<{ data: DashboardDaily[] }> = (props) => {
   const rows = () => props.data.filter((d) => d.observations > 0);
   const labels = () => rows().map((d) => d.date);
   return (
-    <ChartCard
+    <PanelCard
       title="Cache hit rate"
       description="Cached read tokens / gross input tokens per day."
       isEmpty={rows().length === 0}
@@ -33,7 +33,7 @@ export const CacheTrendChart: Component<{ data: DashboardDaily[] }> = (props) =>
           ]}
         />
       </Chart.Cartesian>
-    </ChartCard>
+    </PanelCard>
   );
 };
 
@@ -41,7 +41,7 @@ export const ScoreTrendChart: Component<{ data: DashboardDaily[] }> = (props) =>
   const rows = () => props.data.filter((d) => d.avgScore !== null);
   const labels = () => rows().map((d) => d.date);
   return (
-    <ChartCard
+    <PanelCard
       title="Score trend"
       description="Average score value per day."
       isEmpty={rows().length === 0}
@@ -60,12 +60,12 @@ export const ScoreTrendChart: Component<{ data: DashboardDaily[] }> = (props) =>
           ]}
         />
       </Chart.Cartesian>
-    </ChartCard>
+    </PanelCard>
   );
 };
 
 export const TopUsersChart: Component<{ data: DashboardUserBucket[] }> = (props) => (
-  <ChartCard
+  <PanelCard
     title="Top users"
     description="Token consumption by user."
     isEmpty={props.data.length === 0}
@@ -82,11 +82,11 @@ export const TopUsersChart: Component<{ data: DashboardUserBucket[] }> = (props)
         },
       ]}
     />
-  </ChartCard>
+  </PanelCard>
 );
 
 export const RecentErrorsPanel: Component<{ data: DashboardRecentError[] }> = (props) => (
-  <ChartCard
+  <PanelCard
     title="Recent errors"
     description="Latest error-level observations."
     isEmpty={props.data.length === 0}
@@ -133,5 +133,5 @@ export const RecentErrorsPanel: Component<{ data: DashboardRecentError[] }> = (p
     >
       Investigate all errors <ArrowUpRight class="h-12 w-12" size={12} />
     </A>
-  </ChartCard>
+  </PanelCard>
 );

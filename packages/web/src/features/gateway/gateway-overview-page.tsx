@@ -1,17 +1,21 @@
 /**
  * Gateway Overview — stat cards + provider status list.
  */
-import { Card, CardContent, CardHeader, CardTitle, PageHeaderShell } from "@peri/ui";
+import {
+  BlockLoadingRows,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  PageHeaderShell,
+  type QueryHandle,
+  QuerySection,
+  StatusPill,
+} from "@peri/ui";
 import { A } from "@solidjs/router";
 import { Boxes, DollarSign, Server, Zap } from "lucide-solid";
 import type { Component } from "solid-js";
 import { GatewayProjectGate } from "@/features/gateway/components/gateway-project-gate";
-import {
-  type GatewayQueryHandle,
-  GatewayQuerySection,
-} from "@/features/gateway/components/gateway-query-section";
-import { LoadingRows } from "@/features/gateway/components/loading-rows";
-import { StatusBadge } from "@/features/gateway/components/status-badge";
 import { useGwProvidersQuery, useGwUsageSummaryQuery } from "@/shared/hooks/gateway-queries";
 import type { GatewayProvider, UsageSummary } from "@/shared/lib/gateway-api";
 
@@ -45,12 +49,12 @@ const StatCard: Component<{
   </Card>
 );
 
-const UsageOverview: Component<{ query: GatewayQueryHandle<UsageSummary> }> = (props) => (
-  <GatewayQuerySection
+const UsageOverview: Component<{ query: QueryHandle<UsageSummary> }> = (props) => (
+  <QuerySection
     label="7-day usage"
     query={props.query}
     isEmpty={() => false}
-    loading={<LoadingRows rows={2} />}
+    loading={<BlockLoadingRows rows={2} />}
     empty={null}
   >
     {(usage) => (
@@ -59,7 +63,7 @@ const UsageOverview: Component<{ query: GatewayQueryHandle<UsageSummary> }> = (p
         <StatCard label="Requests (7d)" value={usage.totalRequests.toLocaleString()} icon={Zap} />
       </div>
     )}
-  </GatewayQuerySection>
+  </QuerySection>
 );
 
 const ProvidersContent: Component<{ providers: GatewayProvider[] }> = (props) => {
@@ -102,7 +106,7 @@ const ProvidersContent: Component<{ providers: GatewayProvider[] }> = (props) =>
                       {`${p.deploymentCount} deployment${p.deploymentCount === 1 ? "" : "s"}`}
                     </p>
                   </div>
-                  <StatusBadge status={p.isEnabled ? p.status : "disabled"} />
+                  <StatusPill status={p.isEnabled ? p.status : "disabled"} />
                 </div>
               ))}
             </div>
@@ -113,16 +117,16 @@ const ProvidersContent: Component<{ providers: GatewayProvider[] }> = (props) =>
   );
 };
 
-const ProvidersOverview: Component<{ query: GatewayQueryHandle<GatewayProvider[]> }> = (props) => (
-  <GatewayQuerySection
+const ProvidersOverview: Component<{ query: QueryHandle<GatewayProvider[]> }> = (props) => (
+  <QuerySection
     label="gateway providers"
     query={props.query}
     isEmpty={() => false}
-    loading={<LoadingRows rows={4} />}
+    loading={<BlockLoadingRows rows={4} />}
     empty={null}
   >
     {(providers) => <ProvidersContent providers={providers} />}
-  </GatewayQuerySection>
+  </QuerySection>
 );
 
 const QuickLinks: Component = () => (
@@ -154,8 +158,8 @@ const QuickLinks: Component = () => (
 
 /** Pure Gateway Overview view; query ownership remains in GatewayOverviewPage. */
 export const GatewayOverviewContent: Component<{
-  providersQuery: GatewayQueryHandle<GatewayProvider[]>;
-  usageQuery: GatewayQueryHandle<UsageSummary>;
+  providersQuery: QueryHandle<GatewayProvider[]>;
+  usageQuery: QueryHandle<UsageSummary>;
 }> = (props) => (
   <div class="flex h-full flex-col">
     <PageHeaderShell title="Gateway" description="LLM proxy gateway overview." />

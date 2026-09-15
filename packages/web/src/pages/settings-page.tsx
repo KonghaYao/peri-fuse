@@ -21,6 +21,13 @@ import {
   message,
   PageHeaderShell,
   Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableView,
 } from "@peri/ui";
 import { AlertTriangle, Copy, KeyRound, Loader2, Plus, Trash2 } from "lucide-solid";
 import { type Component, createSignal, For, Show } from "solid-js";
@@ -119,52 +126,73 @@ export const SettingsPage: Component = () => {
                         </p>
                       }
                     >
-                      <div class="space-y-8">
-                        <For each={keys()}>
-                          {(k) => (
-                            <div class="flex items-center justify-between rounded-lg border border-border bg-surface-raised px-16 py-12">
-                              <div class="min-w-0 flex-1">
-                                <div class="truncate font-mono text-sm text-fg-primary">
-                                  {k.publicKey}
-                                </div>
-                                <div class="text-xs text-fg-tertiary">
-                                  {k.displaySecretKey} ·{" "}
-                                  {new Date(k.createdAt).toLocaleDateString()}
-                                  {k.note ? ` · ${k.note}` : ""}
-                                </div>
-                                <div class="mt-2 text-xs text-fg-tertiary">
-                                  {k.expiresAt
-                                    ? `Expires ${new Date(k.expiresAt).toLocaleString()}`
-                                    : "No expiration"}
-                                </div>
-                              </div>
-                              <div class="flex items-center gap-4">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  title="Copy public key"
-                                  onClick={() => void copyToClipboard(k.publicKey, k.id)}
-                                >
-                                  <Copy class="h-14 w-14" size={14} />
-                                  <Show when={copied() === k.id}>
-                                    <span class="ml-4 text-xs">Copied</span>
-                                  </Show>
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  title="Delete key"
-                                  onClick={() =>
-                                    setDeleteCandidate({ id: k.id, publicKey: k.publicKey })
-                                  }
-                                >
-                                  <Trash2 class="h-14 w-14 text-danger" size={14} />
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </For>
-                      </div>
+                      <TableView>
+                        <TableView.Body>
+                          <Table wrapperClass="min-h-0 flex-1">
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Public key</TableHead>
+                                <TableHead>Secret preview</TableHead>
+                                <TableHead>Created</TableHead>
+                                <TableHead>Expires</TableHead>
+                                <TableHead class="text-right">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              <For each={keys()}>
+                                {(k) => (
+                                  <TableRow>
+                                    <TableCell class="max-w-[240px] truncate font-mono text-sm text-fg-primary">
+                                      {k.publicKey}
+                                      {k.note ? (
+                                        <span class="ml-8 text-xs font-sans text-fg-tertiary">
+                                          {k.note}
+                                        </span>
+                                      ) : null}
+                                    </TableCell>
+                                    <TableCell class="font-mono text-xs text-fg-tertiary">
+                                      {k.displaySecretKey}
+                                    </TableCell>
+                                    <TableCell class="whitespace-nowrap text-xs text-fg-tertiary">
+                                      {new Date(k.createdAt).toLocaleDateString()}
+                                    </TableCell>
+                                    <TableCell class="whitespace-nowrap text-xs text-fg-tertiary">
+                                      {k.expiresAt
+                                        ? new Date(k.expiresAt).toLocaleString()
+                                        : "No expiration"}
+                                    </TableCell>
+                                    <TableCell>
+                                      <div class="flex items-center justify-end gap-4">
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          title="Copy public key"
+                                          onClick={() => void copyToClipboard(k.publicKey, k.id)}
+                                        >
+                                          <Copy class="h-14 w-14" size={14} />
+                                          <Show when={copied() === k.id}>
+                                            <span class="ml-4 text-xs">Copied</span>
+                                          </Show>
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          title="Delete key"
+                                          onClick={() =>
+                                            setDeleteCandidate({ id: k.id, publicKey: k.publicKey })
+                                          }
+                                        >
+                                          <Trash2 class="h-14 w-14 text-danger" size={14} />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </For>
+                            </TableBody>
+                          </Table>
+                        </TableView.Body>
+                      </TableView>
                     </Show>
                   </Show>
                 }

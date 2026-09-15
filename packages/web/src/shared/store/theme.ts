@@ -1,5 +1,5 @@
 /**
- * Theme store — dark-first, persisted to localStorage.
+ * Theme store — light-first, persisted to localStorage.
  *
  * The initial class is applied by the inline script in index.html before
  * first paint; this module keeps the app in sync and handles toggling.
@@ -12,9 +12,9 @@ const STORAGE_KEY = "peri-fuse-theme";
 
 function read(): Theme {
   try {
-    return localStorage.getItem(STORAGE_KEY) === "light" ? "light" : "dark";
+    return localStorage.getItem(STORAGE_KEY) === "dark" ? "dark" : "light";
   } catch {
-    return "dark";
+    return "light";
   }
 }
 

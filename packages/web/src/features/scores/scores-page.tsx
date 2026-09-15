@@ -1,29 +1,22 @@
 import {
-  Badge,
   Button,
   DateFilterInput,
   EmptyState,
+  TableView,
   FilterInput,
   type FilterInputHandle,
   FilterSelect,
+  InlineForm,
   PageHeaderShell,
-  PaginationControls,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
+  Skeleton,
   TableInlineError,
-  TableLoadingRows,
-  TableRow,
 } from "@peri/ui";
-import { A } from "@solidjs/router";
 import { Globe, Search } from "lucide-solid";
 import { type Component, For, Show } from "solid-js";
+import { scoresTableColumns } from "@/features/scores/scores-table-columns";
 import { AutoRefreshControl } from "@/features/users/components/auto-refresh-control";
 import { useTableState } from "@/features/users/use-table-state";
 import { useScoresQuery } from "@/shared/hooks/queries";
-import { formatDateTime } from "@/shared/lib/format";
 import type { Score } from "@/shared/lib/types";
 
 const PAGE_SIZE = 25;
@@ -37,14 +30,6 @@ type ScoreFilters = {
   toTimestamp?: string;
 };
 
-function scoreDisplay(s: Score): string {
-  if (s.stringValue !== null && s.stringValue !== undefined) return s.stringValue;
-  if (s.value !== null && s.value !== undefined) {
-    return Number.isInteger(s.value) ? String(s.value) : s.value.toFixed(4);
-  }
-  return "—";
-}
-
 export const ScoresPage: Component = () => {
   let nameFilterRef: FilterInputHandle | undefined;
   let environmentFilterRef: FilterInputHandle | undefined;
@@ -54,33 +39,38 @@ export const ScoresPage: Component = () => {
     defaultSort: "timestamp.desc",
   });
 
-  const query = useScoresQuery({
+  const query = useScoresQuery(() => ({
     page: tableState.page(),
     limit: PAGE_SIZE,
     ...tableState.filters(),
-  });
+  }));
 
   const scores = () => (query.data?.data ?? []) as Score[];
 
-  return (
-    <div class="flex h-full flex-col">
-      <PageHeaderShell
-        title="Scores"
-        description="Evaluation scores attached to traces and observations."
-      />
-
-      <div class="flex flex-wrap items-center gap-8 px-24 py-12">
+  const toolbar = () => (
+    <InlineForm
+      class="min-w-0 flex-1"
+      minTrack={144}
+      gap={8}
+      onSubmit={() => {
+        nameFilterRef?.commit();
+        environmentFilterRef?.commit();
+      }}
+    >
+      <InlineForm.Field span={2}>
         <FilterInput
           ref={(handle) => {
             nameFilterRef = handle;
           }}
-          class="w-208"
           placeholder="Filter by name…"
           icon={Search}
           value={tableState.filters().name}
           onCommit={(v) => tableState.setFilter("name", v)}
         />
+      </InlineForm.Field>
+      <InlineForm.Field>
         <FilterSelect
+          class="w-full"
           placeholder="Source"
           allLabel="All sources"
           value={tableState.filters().source}
@@ -91,33 +81,39 @@ export const ScoresPage: Component = () => {
             { value: "ANNOTATION", label: "ANNOTATION" },
           ]}
         />
+      </InlineForm.Field>
+      <InlineForm.Field>
         <FilterInput
           ref={(handle) => {
             environmentFilterRef = handle;
           }}
-          class="w-176"
           placeholder="Environment…"
           icon={Globe}
           value={tableState.filters().environment}
           onCommit={(v) => tableState.setFilter("environment", v)}
         />
+      </InlineForm.Field>
+      <InlineForm.Field>
         <DateFilterInput
-          class="w-144"
           value={tableState.filters().fromTimestamp}
           onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
           placeholder="From date…"
           title="Score start date"
           boundary="start"
         />
+      </InlineForm.Field>
+      <InlineForm.Field>
         <DateFilterInput
-          class="w-144"
           value={tableState.filters().toTimestamp}
           onCommit={(v) => tableState.setFilter("toTimestamp", v)}
           placeholder="To date…"
           title="Score end date"
           boundary="end"
         />
+      </InlineForm.Field>
+      <InlineForm.Field>
         <FilterSelect
+          class="w-full"
           placeholder="Data type"
           allLabel="All types"
           value={tableState.filters().dataType}
@@ -128,14 +124,9 @@ export const ScoresPage: Component = () => {
             { value: "BOOLEAN", label: "BOOLEAN" },
           ]}
         />
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            nameFilterRef?.commit();
-            environmentFilterRef?.commit();
-          }}
-        >
+      </InlineForm.Field>
+      <InlineForm.Actions>
+        <Button type="submit" size="sm" variant="secondary">
           <Search class="h-16 w-16" size={16} />
           Search
         </Button>
@@ -145,95 +136,65 @@ export const ScoresPage: Component = () => {
             Clear ({tableState.activeFilterCount()})
           </Button>
         </Show>
-        <div class="ml-auto">
-          <AutoRefreshControl />
-        </div>
-      </div>
+        <AutoRefreshControl />
+      </InlineForm.Actions>
+    </InlineForm>
+  );
 
-      <Show when={!query.isPending} fallback={<TableLoadingRows class="flex-1 px-16" columns={7} />}>
+  return (
+    <div class="flex h-full flex-col">
+      <PageHeaderShell
+        title="Scores"
+        description="Evaluation scores attached to traces and observations."
+      />
+
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-16 py-12">
         <Show
-          when={!query.isError}
+          when={!query.isPending}
           fallback={
-            <div class="px-16 py-12">
-              <TableInlineError error={query.error} onRetry={() => void query.refetch()} />
+            <div class="space-y-8">
+              <Skeleton class="h-36 w-full" />
+              <For each={Array.from({ length: 8 }, (_, i) => i)}>
+                {() => <Skeleton class="h-36 w-full" />}
+              </For>
             </div>
           }
         >
           <Show
-            when={scores().length > 0}
-            fallback={
-              <EmptyState
-                variant="inline"
-                class="mx-16 flex-1"
-                title={
-                  tableState.activeFilterCount() > 0
-                    ? "No scores match the current filters."
-                    : "No scores found."
-                }
-              />
-            }
+            when={!query.isError}
+            fallback={<TableInlineError error={query.error} onRetry={() => void query.refetch()} />}
           >
-            <div class="flex-1 overflow-auto px-16">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead class="text-right">Value</TableHead>
-                    <TableHead>Data type</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Timestamp</TableHead>
-                    <TableHead>Trace</TableHead>
-                    <TableHead>Comment</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <For each={scores()}>
-                    {(s) => (
-                      <TableRow>
-                        <TableCell class="max-w-[200px] truncate font-medium">{s.name}</TableCell>
-                        <TableCell class="text-right font-mono">{scoreDisplay(s)}</TableCell>
-                        <TableCell>
-                          <Badge>{s.dataType}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge tone="neutral">{s.source}</Badge>
-                        </TableCell>
-                        <TableCell class="whitespace-nowrap text-fg-tertiary">
-                          {formatDateTime(s.timestamp)}
-                        </TableCell>
-                        <TableCell class="max-w-[120px]">
-                          {s.traceId ? (
-                            <A
-                              href={`/traces/${encodeURIComponent(s.traceId)}`}
-                              class="font-mono text-xs text-brand hover:underline"
-                              title={s.traceId}
-                            >
-                              {s.traceId.slice(0, 8)}…
-                            </A>
-                          ) : (
-                            <span class="text-fg-tertiary">Unlinked</span>
-                          )}
-                        </TableCell>
-                        <TableCell class="max-w-[240px] truncate text-fg-tertiary">
-                          {s.comment ?? "—"}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </For>
-                </TableBody>
-              </Table>
-            </div>
-            <div class="border-t border-border px-16 py-8">
-              <PaginationControls
-                current={tableState.page()}
-                pageSize={PAGE_SIZE}
-                total={query.data?.meta.totalItems ?? 0}
-                onChange={(page) => tableState.setPage(page)}
+            <Show
+              when={scores().length > 0}
+              fallback={
+                <EmptyState
+                  variant="inline"
+                  title={
+                    tableState.activeFilterCount() > 0
+                      ? "No scores match the current filters."
+                      : "No scores found."
+                  }
+                />
+              }
+            >
+              <TableView.ServerTable
+                data={scores()}
+                columns={scoresTableColumns}
+                rowKey={(row) => row.id}
+                pagination={{
+                  current: tableState.page(),
+                  pageSize: PAGE_SIZE,
+                  total: query.data?.meta.totalItems ?? 0,
+                  onChange: (page) => tableState.setPage(page),
+                }}
+                toolbar={toolbar()}
+                showColumnToggle
+                class="min-h-0 flex-1"
               />
-            </div>
+            </Show>
           </Show>
         </Show>
-      </Show>
+      </div>
     </div>
   );
 };

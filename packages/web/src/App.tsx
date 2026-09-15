@@ -1,7 +1,10 @@
 import { Navigate, Route, Router } from "@solidjs/router";
-import { lazy, type ParentComponent, Show, Suspense } from "solid-js";
+import { lazy, type ParentComponent, Suspense } from "solid-js";
 import { OnboardingPage } from "@/pages/onboarding-page";
-import { hasActiveProject, useProjectContext } from "@/shared/store/project";
+import {
+  ProjectCredentialGate,
+  RequireProjectRedirect,
+} from "@/shared/components/project-credential-gate";
 import { Layout } from "@/shell/layout";
 
 const DashboardPage = lazy(async () => {
@@ -82,15 +85,6 @@ function PageFallback() {
   );
 }
 
-const RequireProject: ParentComponent = (props) => {
-  useProjectContext();
-  return (
-    <Show when={hasActiveProject()} fallback={<Navigate href="/" />}>
-      {props.children}
-    </Show>
-  );
-};
-
 function SuspensePage(props: { children: ParentComponent }) {
   const Page = props.children;
   return (
@@ -103,20 +97,19 @@ function SuspensePage(props: { children: ParentComponent }) {
 function GuardedPage(props: { children: ParentComponent }) {
   const Page = props.children;
   return (
-    <RequireProject>
+    <RequireProjectRedirect>
       <Suspense fallback={<PageFallback />}>
         <Page />
       </Suspense>
-    </RequireProject>
+    </RequireProjectRedirect>
   );
 }
 
 function RootRedirect() {
-  useProjectContext();
   return (
-    <Show when={hasActiveProject()} fallback={<OnboardingPage />}>
+    <ProjectCredentialGate fallback={<OnboardingPage />}>
       <Navigate href="/dashboard" />
-    </Show>
+    </ProjectCredentialGate>
   );
 }
 

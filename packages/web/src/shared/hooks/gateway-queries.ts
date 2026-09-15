@@ -149,31 +149,41 @@ export function useGwUsageByProviderQuery(params: { startDate: string; endDate: 
 // Logs
 // ---------------------------------------------------------------------------
 
-export function useGwRequestLogsQuery(params: {
+export type GwRequestLogsParams = {
   model?: string;
   provider?: string;
   status?: string;
   limit?: number;
   offset?: number;
-}) {
-  return useQuery(() => ({
-    queryKey: gwQueryKeys.requestLogs(params as Record<string, string | number>),
-    queryFn: () => gwRequestLogs(params),
-    placeholderData: (prev) => prev,
-  }));
-}
+};
 
-export function useGwErrorLogsQuery(params: {
+export type GwErrorLogsParams = {
   modelGroup?: string;
   exceptionType?: string;
   limit?: number;
   offset?: number;
-}) {
-  return useQuery(() => ({
-    queryKey: gwQueryKeys.errorLogs(params as Record<string, string | number>),
-    queryFn: () => gwErrorLogs(params),
-    placeholderData: (prev) => prev,
-  }));
+};
+
+export function useGwRequestLogsQuery(getParams: () => GwRequestLogsParams) {
+  return useQuery(() => {
+    const params = getParams();
+    return {
+      queryKey: gwQueryKeys.requestLogs(params as Record<string, string | number>),
+      queryFn: () => gwRequestLogs(params),
+      placeholderData: (prev) => prev,
+    };
+  });
+}
+
+export function useGwErrorLogsQuery(getParams: () => GwErrorLogsParams) {
+  return useQuery(() => {
+    const params = getParams();
+    return {
+      queryKey: gwQueryKeys.errorLogs(params as Record<string, string | number>),
+      queryFn: () => gwErrorLogs(params),
+      placeholderData: (prev) => prev,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

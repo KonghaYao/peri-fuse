@@ -6,7 +6,7 @@ import { Chart } from "@peri/ui";
 import type { Component } from "solid-js";
 import { formatMs, formatTokens } from "@/shared/lib/format";
 import type { DashboardLevelBucket, DashboardModelBucket } from "@/shared/lib/types";
-import { ChartCard } from "./chart-card";
+import { PanelCard } from "@peri/ui";
 
 const LEVEL_COLORS: Record<string, string> = {
   ERROR: "var(--danger)",
@@ -16,7 +16,7 @@ const LEVEL_COLORS: Record<string, string> = {
 };
 
 export const TokensByModelChart: Component<{ data: DashboardModelBucket[] }> = (props) => (
-  <ChartCard
+  <PanelCard
     title="Tokens by model"
     description="Generation tokens grouped by model."
     isEmpty={props.data.length === 0}
@@ -33,13 +33,13 @@ export const TokensByModelChart: Component<{ data: DashboardModelBucket[] }> = (
         },
       ]}
     />
-  </ChartCard>
+  </PanelCard>
 );
 
 export const LatencyByModelChart: Component<{ data: DashboardModelBucket[] }> = (props) => {
   const rows = () => props.data.filter((d) => d.observations > 0);
   return (
-    <ChartCard
+    <PanelCard
       title="Latency by model"
       description="p50 vs p95 generation latency per model."
       isEmpty={rows().length === 0}
@@ -61,12 +61,12 @@ export const LatencyByModelChart: Component<{ data: DashboardModelBucket[] }> = 
           },
         ]}
       />
-    </ChartCard>
+    </PanelCard>
   );
 };
 
 export const LevelsDonut: Component<{ data: DashboardLevelBucket[] }> = (props) => (
-  <ChartCard
+  <PanelCard
     title="Observation levels"
     description="Distribution of observation severity levels."
     isEmpty={props.data.length === 0}
@@ -80,5 +80,5 @@ export const LevelsDonut: Component<{ data: DashboardLevelBucket[] }> = (props) 
         opacity: level.level === "DEFAULT" ? 0.4 : 0.9,
       }))}
     />
-  </ChartCard>
+  </PanelCard>
 );

@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { GatewayQueryHandle } from "@/features/gateway/components/gateway-query-section";
+import type { QueryHandle } from "@peri/ui";
 
 type QueryOptions = {
   error?: unknown;
@@ -7,7 +7,7 @@ type QueryOptions = {
   isFetching?: boolean;
 };
 
-export function gatewayQuery<T>(data?: T, options: QueryOptions = {}): GatewayQueryHandle<T> {
+export function gatewayQuery<T>(data?: T, options: QueryOptions = {}): QueryHandle<T> {
   return {
     data,
     error: options.error ?? null,

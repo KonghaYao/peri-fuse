@@ -11,13 +11,13 @@ import {
 import type { Component } from "solid-js";
 import { formatMs } from "@/shared/lib/format";
 import type { DashboardDaily } from "@/shared/lib/types";
+import { PanelCard } from "@peri/ui";
 import { dayTick } from "../chart-utils";
-import { ChartCard } from "./chart-card";
 
 export const ActivityChart: Component<{ data: DashboardDaily[] }> = (props) => {
   const labels = () => props.data.map((d) => d.date);
   return (
-    <ChartCard
+    <PanelCard
       title="Activity"
       description="Traces and observations per day, with token usage overlay."
       isEmpty={props.data.length === 0}
@@ -59,7 +59,7 @@ export const ActivityChart: Component<{ data: DashboardDaily[] }> = (props) => {
           ]}
         />
       </Chart.Cartesian>
-    </ChartCard>
+    </PanelCard>
   );
 };
 
@@ -67,7 +67,7 @@ export const LatencyTrendChart: Component<{ data: DashboardDaily[] }> = (props) 
   const rows = () => props.data.filter((d) => d.observations > 0);
   const labels = () => rows().map((d) => d.date);
   return (
-    <ChartCard
+    <PanelCard
       title="Generation latency"
       description="Average and p95 generation latency per day."
       isEmpty={rows().length === 0}
@@ -89,7 +89,7 @@ export const LatencyTrendChart: Component<{ data: DashboardDaily[] }> = (props) 
           ]}
         />
       </Chart.Cartesian>
-    </ChartCard>
+    </PanelCard>
   );
 };
 
@@ -98,7 +98,7 @@ export const ErrorsChart: Component<{ data: DashboardDaily[] }> = (props) => {
   const values = () => props.data.map((d) => d.errors);
   const hasErrors = () => values().some((v) => v > 0);
   return (
-    <ChartCard
+    <PanelCard
       title="Errors"
       description="Error-level observations per day."
       isEmpty={!hasErrors()}
@@ -115,6 +115,6 @@ export const ErrorsChart: Component<{ data: DashboardDaily[] }> = (props) => {
           ]}
         />
       </Chart.Cartesian>
-    </ChartCard>
+    </PanelCard>
   );
 };

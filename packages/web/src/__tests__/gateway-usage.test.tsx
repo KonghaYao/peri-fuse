@@ -1,7 +1,6 @@
 import { render } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
-import { GatewayQuerySection } from "@/features/gateway/components/gateway-query-section";
-import { resolveGatewayQueryState } from "@/features/gateway/components/gateway-query-state";
+import { QuerySection, resolveQueryState } from "@peri/ui";
 import { GatewayUsageContent } from "@/features/gateway/gateway-usage-page";
 import type {
   DailySpendRow,
@@ -41,17 +40,17 @@ function renderUsageHtml(overrides: Record<string, unknown> = {}) {
   return view.container.innerHTML;
 }
 
-describe("resolveGatewayQueryState", () => {
+describe("resolveQueryState", () => {
   it("keeps initial loading distinct from an empty result", () => {
     expect(
-      resolveGatewayQueryState(gatewayQuery<unknown[]>(undefined), (rows) => rows.length === 0),
+      resolveQueryState(gatewayQuery<unknown[]>(undefined), (rows) => rows.length === 0),
     ).toEqual({ kind: "loading", isFetching: true });
   });
 
   it("keeps an unavailable result distinct from an empty result", () => {
     const error = new Error("usage unavailable");
     expect(
-      resolveGatewayQueryState(
+      resolveQueryState(
         gatewayQuery<unknown[]>(undefined, { error, isPending: false, isFetching: false }),
         (rows) => rows.length === 0,
       ),
@@ -61,13 +60,13 @@ describe("resolveGatewayQueryState", () => {
   it("preserves cached data while a refresh is active or failed", () => {
     const error = new Error("refresh failed");
     expect(
-      resolveGatewayQueryState(
+      resolveQueryState(
         gatewayQuery(["gpt-5"], { isFetching: true }),
         (rows) => rows.length === 0,
       ),
     ).toMatchObject({ kind: "content", data: ["gpt-5"], isFetching: true });
     expect(
-      resolveGatewayQueryState(gatewayQuery(["gpt-5"], { error }), (rows) => rows.length === 0),
+      resolveQueryState(gatewayQuery(["gpt-5"], { error }), (rows) => rows.length === 0),
     ).toMatchObject({ kind: "content", data: ["gpt-5"], staleError: error });
   });
 });
@@ -119,7 +118,7 @@ describe("Gateway Usage async states", () => {
     expect(providerQuery.refetch).not.toHaveBeenCalled();
 
     const pendingView = render(() => (
-      <GatewayQuerySection
+      <QuerySection
         label="usage summary"
         query={{ ...summaryQuery, isFetching: true }}
         isEmpty={() => false}
@@ -127,7 +126,7 @@ describe("Gateway Usage async states", () => {
         empty={null}
       >
         {() => null}
-      </GatewayQuerySection>
+      </QuerySection>
     ));
     const pendingHtml = pendingView.container.innerHTML;
     expect(pendingHtml).toContain("disabled");

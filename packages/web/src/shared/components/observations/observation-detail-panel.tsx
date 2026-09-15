@@ -3,12 +3,12 @@ import {
   MonitorObservationTypeBadge,
   ScoreListShell,
   Separator,
+  StatChip,
 } from "@peri/ui";
 import { Clock, Cpu, Layers, ListTree, Star } from "lucide-solid";
 import { type Component, Show } from "solid-js";
 import type { ScoreSummary } from "@/shared/components/observations/observation-adapters";
 import { ObservationIoTabs } from "@/shared/components/observations/observation-io-tabs";
-import { StatChip } from "@/shared/components/observations/stat-chip";
 import { formatClockTime, formatDateTime, formatDuration, formatTokens } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 
@@ -27,7 +27,7 @@ export const ObservationDetailPanel: Component<{
 
       <div class="grid grid-cols-2 gap-8">
         <StatChip
-          icon={Clock}
+          icon={<Clock size={14} />}
           label={o().type === "EVENT" ? "At" : "Duration"}
           value={
             o().type === "EVENT"
@@ -35,9 +35,9 @@ export const ObservationDetailPanel: Component<{
               : formatDuration(o().startTime, o().endTime)
           }
         />
-        <StatChip icon={Cpu} label="Model" value={o().model ?? "—"} />
+        <StatChip icon={<Cpu size={14} />} label="Model" value={o().model ?? "—"} />
         <StatChip
-          icon={Layers}
+          icon={<Layers size={14} />}
           label="Tokens"
           value={
             o().totalTokens > 0

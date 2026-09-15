@@ -5,8 +5,9 @@ import {
   LoadingState,
   LocalIsoDate,
   message,
-  ScrollArea,
+  MonitorTraceTurnTreeShell,
   Skeleton,
+  StatChip,
 } from "@peri/ui";
 import { A } from "@solidjs/router";
 import {
@@ -17,12 +18,10 @@ import {
   Cpu,
   Layers,
   ListTree,
-  Star,
   X,
 } from "lucide-solid";
 import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import { ObservationTimelineDialog } from "@/shared/components/observations/observation-timeline-dialog";
-import { StatChip } from "@/shared/components/observations/stat-chip";
 import {
   TraceObservationDetailPane,
   TraceObservationTreePane,
@@ -105,7 +104,7 @@ export const TracePeekView: Component<{
         >
           {(currentTrace) => (
             <>
-              <div class="shrink-0 space-y-6 border-b border-border px-16 py-10">
+              <div class="shrink-0 space-y-8 border-b border-border px-16 py-10">
                 <div class="flex flex-wrap items-center gap-x-12 gap-y-4">
                   <button
                     type="button"
@@ -150,14 +149,14 @@ export const TracePeekView: Component<{
                   </div>
                 </Show>
 
-                <div class="grid grid-cols-2 gap-8 sm:grid-cols-3">
+                <div class="flex flex-wrap gap-8">
                   <StatChip
-                    icon={Clock}
+                    icon={<Clock size={14} />}
                     label="Latency"
                     value={formatLatency(currentTrace().latency)}
                   />
                   <StatChip
-                    icon={Layers}
+                    icon={<Layers size={14} />}
                     label="Observations"
                     value={
                       currentTrace().observationCount >= 0
@@ -165,20 +164,18 @@ export const TracePeekView: Component<{
                         : String(state.observations().length)
                     }
                   />
-                  <StatChip icon={Cpu} label="Tokens" value={formatTokens(totalTokens())} />
+                  <StatChip icon={<Cpu size={14} />} label="Tokens" value={formatTokens(totalTokens())} />
                 </div>
               </div>
 
               <div class="flex min-h-0 flex-1">
-                <div class="flex w-[320px] shrink-0 flex-col border-r border-border">
-                  <div class="flex shrink-0 items-center gap-6 px-16 py-8 text-[11px] font-semibold uppercase tracking-[0.06em] text-fg-tertiary">
-                    <ListTree class="h-14 w-14" size={14} />
-                    Observation tree
-                  </div>
-                  <ScrollArea class="min-h-0 flex-1">
+                <MonitorTraceTurnTreeShell
+                  class="min-h-0 flex-1"
+                  showDetailPlaceholder={state.selectedId() === undefined}
+                  tree={
                     <Show
                       when={!state.observationsQuery.isPending}
-                      fallback={<LoadingState label="Loading observations…" class="p-32" />}
+                      fallback={<LoadingState label="Loading observations…" class="justify-center p-32" />}
                     >
                       <TraceObservationTreePane
                         compact
@@ -192,11 +189,8 @@ export const TracePeekView: Component<{
                         observationsQuery={state.observationsQuery}
                       />
                     </Show>
-                  </ScrollArea>
-                </div>
-
-                <ScrollArea class="min-h-0 min-w-0 flex-1">
-                  <div class="min-w-0 p-16">
+                  }
+                  detail={
                     <TraceObservationDetailPane
                       selectedId={state.selectedId}
                       selectedQuery={state.selectedQuery}
@@ -205,8 +199,8 @@ export const TracePeekView: Component<{
                       traceIoQuery={state.traceIoQuery}
                       traceView={state.traceView}
                     />
-                  </div>
-                </ScrollArea>
+                  }
+                />
               </div>
 
               <Show when={state.traceView()}>

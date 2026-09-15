@@ -6,26 +6,20 @@ import {
   Button,
   DateFilterInput,
   EmptyState,
+  TableView,
   FilterInput,
   type FilterInputHandle,
+  InlineForm,
   PageHeaderShell,
-  PaginationControls,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
+  Skeleton,
   TableInlineError,
-  TableLoadingRows,
-  TableRow,
 } from "@peri/ui";
-import { A } from "@solidjs/router";
 import { Globe, Search } from "lucide-solid";
-import { type Component, For, Show } from "solid-js";
+import { type Component, createMemo, For, Show } from "solid-js";
 import { AutoRefreshControl } from "@/features/users/components/auto-refresh-control";
+import { createUsersTableColumns } from "@/features/users/users-table-columns";
 import { useTableState } from "@/features/users/use-table-state";
 import { useUsersQuery } from "@/shared/hooks/queries";
-import { formatDateTime, formatNumber, formatTokens } from "@/shared/lib/format";
 import type { UserRow } from "@/shared/lib/types";
 
 const PAGE_SIZE = 25;
@@ -37,15 +31,6 @@ type UserFilters = {
   toTimestamp?: string;
 };
 
-function tracesHref(userId: string, filters: UserFilters) {
-  const params = new URLSearchParams();
-  params.set("userId", userId);
-  if (filters.environment) params.set("environment", filters.environment);
-  if (filters.fromTimestamp) params.set("fromTimestamp", filters.fromTimestamp);
-  if (filters.toTimestamp) params.set("toTimestamp", filters.toTimestamp);
-  return `/traces?${params.toString()}`;
-}
-
 export const UsersPage: Component = () => {
   let userFilterRef: FilterInputHandle | undefined;
   let environmentFilterRef: FilterInputHandle | undefined;
@@ -54,67 +39,68 @@ export const UsersPage: Component = () => {
     defaultSort: "lastSeen.desc",
   });
 
-  const query = useUsersQuery({
+  const query = useUsersQuery(() => ({
     page: tableState.page(),
     limit: PAGE_SIZE,
     orderBy: tableState.orderBy(),
     ...tableState.filters(),
-  });
+  }));
 
   const users = () => (query.data?.data ?? []) as UserRow[];
+  const columns = createMemo(() => createUsersTableColumns(() => tableState.filters()));
 
-  return (
-    <div class="flex h-full flex-col">
-      <PageHeaderShell
-        title="Users"
-        description="End users and usage derived from traces in the selected window."
-      />
-
-      <div class="flex flex-wrap items-center gap-8 px-24 py-12">
+  const toolbar = () => (
+    <InlineForm
+      class="min-w-0 flex-1"
+      minTrack={144}
+      gap={8}
+      onSubmit={() => {
+        userFilterRef?.commit();
+        environmentFilterRef?.commit();
+      }}
+    >
+      <InlineForm.Field span={2}>
         <FilterInput
           ref={(handle) => {
             userFilterRef = handle;
           }}
-          class="w-208"
           placeholder="Filter by user id…"
           icon={Search}
           value={tableState.filters().userId}
           onCommit={(v) => tableState.setFilter("userId", v)}
         />
+      </InlineForm.Field>
+      <InlineForm.Field>
         <FilterInput
           ref={(handle) => {
             environmentFilterRef = handle;
           }}
-          class="w-176"
           placeholder="Filter by environment…"
           icon={Globe}
           value={tableState.filters().environment}
           onCommit={(v) => tableState.setFilter("environment", v)}
         />
+      </InlineForm.Field>
+      <InlineForm.Field>
         <DateFilterInput
-          class="w-144"
           value={tableState.filters().fromTimestamp}
           onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
           placeholder="From date…"
           title="User activity start date"
           boundary="start"
         />
+      </InlineForm.Field>
+      <InlineForm.Field>
         <DateFilterInput
-          class="w-144"
           value={tableState.filters().toTimestamp}
           onCommit={(v) => tableState.setFilter("toTimestamp", v)}
           placeholder="To date…"
           title="User activity end date"
           boundary="end"
         />
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            userFilterRef?.commit();
-            environmentFilterRef?.commit();
-          }}
-        >
+      </InlineForm.Field>
+      <InlineForm.Actions>
+        <Button type="submit" size="sm" variant="secondary">
           <Search class="h-16 w-16" size={16} />
           Search
         </Button>
@@ -124,87 +110,68 @@ export const UsersPage: Component = () => {
             Clear ({tableState.activeFilterCount()})
           </Button>
         </Show>
-        <div class="ml-auto">
-          <AutoRefreshControl />
-        </div>
-      </div>
+        <AutoRefreshControl />
+      </InlineForm.Actions>
+    </InlineForm>
+  );
 
-      <Show when={!query.isPending} fallback={<TableLoadingRows class="flex-1 px-16" columns={6} />}>
+  return (
+    <div class="flex h-full flex-col">
+      <PageHeaderShell
+        title="Users"
+        description="End users and usage derived from traces in the selected window."
+      />
+
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-16 py-12">
         <Show
-          when={!query.isError}
+          when={!query.isPending}
           fallback={
-            <div class="px-16 py-12">
-              <TableInlineError error={query.error} onRetry={() => void query.refetch()} />
+            <div class="space-y-8">
+              <Skeleton class="h-36 w-full" />
+              <For each={Array.from({ length: 8 }, (_, i) => i)}>
+                {() => <Skeleton class="h-36 w-full" />}
+              </For>
             </div>
           }
         >
           <Show
-            when={users().length > 0}
-            fallback={
-              <EmptyState
-                variant="inline"
-                class="mx-16 flex-1"
-                title={
-                  tableState.activeFilterCount() > 0
-                    ? "No users match the current filters."
-                    : "No users found."
-                }
-              />
-            }
+            when={!query.isError}
+            fallback={<TableInlineError error={query.error} onRetry={() => void query.refetch()} />}
           >
-            <div class="flex-1 overflow-auto px-16">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>First seen</TableHead>
-                    <TableHead>Last seen</TableHead>
-                    <TableHead class="text-right">Traces</TableHead>
-                    <TableHead class="text-right">Observations</TableHead>
-                    <TableHead class="text-right">Tokens</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <For each={users()}>
-                    {(u) => (
-                      <TableRow>
-                        <TableCell class="max-w-[240px]">
-                          <A
-                            href={tracesHref(u.id, tableState.filters())}
-                            class="truncate font-medium text-brand hover:underline"
-                            title={`View traces for ${u.id}`}
-                          >
-                            {u.id}
-                          </A>
-                        </TableCell>
-                        <TableCell class="whitespace-nowrap text-fg-tertiary">
-                          {formatDateTime(u.firstSeen)}
-                        </TableCell>
-                        <TableCell class="whitespace-nowrap text-fg-tertiary">
-                          {formatDateTime(u.lastSeen)}
-                        </TableCell>
-                        <TableCell class="tnum text-right">{formatNumber(u.countTraces)}</TableCell>
-                        <TableCell class="tnum text-right">
-                          {formatNumber(u.countObservations)}
-                        </TableCell>
-                        <TableCell class="tnum text-right">{formatTokens(u.totalTokens)}</TableCell>
-                      </TableRow>
-                    )}
-                  </For>
-                </TableBody>
-              </Table>
-            </div>
-            <div class="border-t border-border px-16 py-8">
-              <PaginationControls
-                current={tableState.page()}
-                pageSize={PAGE_SIZE}
-                total={query.data?.meta.totalItems ?? 0}
-                onChange={(page) => tableState.setPage(page)}
+            <Show
+              when={users().length > 0}
+              fallback={
+                <EmptyState
+                  variant="inline"
+                  title={
+                    tableState.activeFilterCount() > 0
+                      ? "No users match the current filters."
+                      : "No users found."
+                  }
+                />
+              }
+            >
+              <TableView.ServerTable
+                data={users()}
+                columns={columns()}
+                rowKey={(row) => row.id}
+                serverSort
+                sort={tableState.dataTableSort()}
+                onSortChange={tableState.setDataTableSort}
+                pagination={{
+                  current: tableState.page(),
+                  pageSize: PAGE_SIZE,
+                  total: query.data?.meta.totalItems ?? 0,
+                  onChange: (page) => tableState.setPage(page),
+                }}
+                toolbar={toolbar()}
+                showColumnToggle
+                class="min-h-0 flex-1"
               />
-            </div>
+            </Show>
           </Show>
         </Show>
-      </Show>
+      </div>
     </div>
   );
 };

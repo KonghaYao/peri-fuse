@@ -10,18 +10,23 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  BlockLoadingRows,
   Button,
-  Card,
-  CardContent,
   message,
   PageHeaderShell,
+  StatusPill,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableView,
 } from "@peri/ui";
 import { Loader2, Pencil, Plus, Power, Trash2 } from "lucide-solid";
 import { type Component, createSignal, Show } from "solid-js";
 import { GatewayProjectGate } from "@/features/gateway/components/gateway-project-gate";
-import { LoadingRows } from "@/features/gateway/components/loading-rows";
 import { ProviderDialog } from "@/features/gateway/components/provider-dialog";
-import { StatusBadge } from "@/features/gateway/components/status-badge";
 import {
   useGwCreateProviderMutation,
   useGwDeleteProviderMutation,
@@ -106,58 +111,58 @@ const ProvidersContent: Component = () => {
           <Show
             when={providersQuery.isError}
             fallback={
-              <Card>
-                <CardContent class="p-0">
-                  <Show
-                    when={providers().length > 0}
-                    fallback={
-                      <p class="py-32 text-center text-sm text-fg-tertiary">
-                        No providers yet. Add your first LLM provider.
-                      </p>
-                    }
-                  >
-                    <table class="w-full text-sm">
-                      <thead>
-                        <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                          <th class="px-16 py-12">Name</th>
-                          <th class="px-16 py-12">Type</th>
-                          <th class="hidden px-16 py-12 lg:table-cell">Base URL</th>
-                          <th class="px-16 py-12">Status</th>
-                          <th class="px-16 py-12">Budget</th>
-                          <th class="px-16 py-12">Spend</th>
-                          <th class="px-16 py-12 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+              <Show
+                when={providers().length > 0}
+                fallback={
+                  <p class="py-32 text-center text-sm text-fg-tertiary">
+                    No providers yet. Add your first LLM provider.
+                  </p>
+                }
+              >
+                <TableView>
+                  <TableView.Body>
+                    <Table wrapperClass="min-h-0 flex-1">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead class="hidden lg:table-cell">Base URL</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Budget</TableHead>
+                          <TableHead>Spend</TableHead>
+                          <TableHead class="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {providers().map((p) => (
-                          <tr class="border-b border-border/50 transition-colors hover:bg-surface-overlay/40">
-                            <td class="px-16 py-12 font-medium text-fg-primary">
+                          <TableRow>
+                            <TableCell class="font-medium text-fg-primary">
                               {p.name}
                               <span class="ml-8 text-xs font-normal text-fg-tertiary">
                                 {p.deploymentCount} model{p.deploymentCount === 1 ? "" : "s"}
                               </span>
-                            </td>
-                            <td class="px-16 py-12">
+                            </TableCell>
+                            <TableCell>
                               <span class="rounded bg-muted px-6 py-2 font-mono text-[10px] uppercase text-fg-tertiary">
                                 {p.type}
                               </span>
-                            </td>
-                            <td class="hidden max-w-[240px] truncate px-16 py-12 font-mono text-xs text-fg-tertiary lg:table-cell">
+                            </TableCell>
+                            <TableCell class="hidden max-w-[240px] truncate font-mono text-xs text-fg-tertiary lg:table-cell">
                               {p.baseUrl}
-                            </td>
-                            <td class="px-16 py-12">
-                              <StatusBadge status={p.isEnabled ? p.status : "disabled"} />
-                            </td>
-                            <td class="px-16 py-12 text-fg-secondary">
+                            </TableCell>
+                            <TableCell>
+                              <StatusPill status={p.isEnabled ? p.status : "disabled"} />
+                            </TableCell>
+                            <TableCell class="text-fg-secondary">
                               {p.budgetLimit != null ? `$${p.budgetLimit}` : "—"}
                               {p.budgetPeriod && (
                                 <span class="ml-4 text-xs text-fg-tertiary">/{p.budgetPeriod}</span>
                               )}
-                            </td>
-                            <td class="px-16 py-12 font-mono text-xs text-fg-secondary">
+                            </TableCell>
+                            <TableCell class="font-mono text-xs text-fg-secondary">
                               ${p.budgetSpend.toFixed(4)}
-                            </td>
-                            <td class="px-16 py-12">
+                            </TableCell>
+                            <TableCell>
                               <div class="flex items-center justify-end gap-4">
                                 <Button
                                   variant="ghost"
@@ -191,14 +196,14 @@ const ProvidersContent: Component = () => {
                                   <Trash2 class="h-14 w-14 text-danger" size={14} />
                                 </Button>
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
-                  </Show>
-                </CardContent>
-              </Card>
+                      </TableBody>
+                    </Table>
+                  </TableView.Body>
+                </TableView>
+              </Show>
             }
           >
             <div
@@ -222,7 +227,7 @@ const ProvidersContent: Component = () => {
           </Show>
         }
       >
-        <LoadingRows />
+        <BlockLoadingRows />
       </Show>
 
       <AlertDialog

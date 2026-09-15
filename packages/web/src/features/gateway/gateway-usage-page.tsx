@@ -1,14 +1,26 @@
 /**
  * Gateway Usage statistics page.
  */
-import { Card, CardContent, CardHeader, CardTitle, Input, PageHeaderShell } from "@peri/ui";
+import {
+  BlockLoadingRows,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  PageHeaderShell,
+  type QueryHandle,
+  QuerySection,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableView,
+} from "@peri/ui";
 import { type Component, createSignal, Show } from "solid-js";
 import { GatewayProjectGate } from "@/features/gateway/components/gateway-project-gate";
-import {
-  type GatewayQueryHandle,
-  GatewayQuerySection,
-} from "@/features/gateway/components/gateway-query-section";
-import { LoadingRows } from "@/features/gateway/components/loading-rows";
 import {
   useGwUsageByModelQuery,
   useGwUsageByProviderQuery,
@@ -68,10 +80,10 @@ export interface GatewayUsageContentProps {
   range: { start: string; end: string };
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
-  summaryQuery: GatewayQueryHandle<UsageSummary>;
-  dailyQuery: GatewayQueryHandle<DailySpendRow[]>;
-  byModelQuery: GatewayQueryHandle<UsageByModelRow[]>;
-  byProviderQuery: GatewayQueryHandle<UsageByProviderRow[]>;
+  summaryQuery: QueryHandle<UsageSummary>;
+  dailyQuery: QueryHandle<DailySpendRow[]>;
+  byModelQuery: QueryHandle<UsageByModelRow[]>;
+  byProviderQuery: QueryHandle<UsageByProviderRow[]>;
 }
 
 /** Renders all four Gateway Usage query boundaries without owning network or date state. */
@@ -100,63 +112,67 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
       />
     </div>
 
-    <GatewayQuerySection
+    <QuerySection
       label="usage summary"
       query={props.summaryQuery}
       isEmpty={() => false}
-      loading={<LoadingRows rows={2} />}
+      loading={<BlockLoadingRows rows={2} />}
       empty={null}
     >
       {(summary) => <SummaryCards summary={summary} />}
-    </GatewayQuerySection>
+    </QuerySection>
 
     <Card>
       <CardHeader class="pb-12">
         <CardTitle class="text-base">By Model</CardTitle>
       </CardHeader>
       <CardContent class="p-0">
-        <GatewayQuerySection
+        <QuerySection
           label="usage by model"
           query={props.byModelQuery}
           isEmpty={(rows) => rows.length === 0}
-          loading={<LoadingRows rows={4} />}
+          loading={<BlockLoadingRows rows={4} />}
           empty={<p class="px-16 pb-16 text-sm text-fg-tertiary">No usage data in this range.</p>}
         >
           {(rows) => (
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                  <th class="px-16 py-10">Model</th>
-                  <th class="px-16 py-10 text-right">Requests</th>
-                  <th class="px-16 py-10 text-right">Prompt Tokens</th>
-                  <th class="px-16 py-10 text-right">Completion Tokens</th>
-                  <th class="px-16 py-10 text-right">Spend</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr class="border-b border-border/50">
-                    <td class="px-16 py-10 font-mono text-[13px] text-fg-primary">
-                      {row.model || "(unknown)"}
-                    </td>
-                    <td class="px-16 py-10 text-right text-fg-secondary">
-                      {row.totalRequests.toLocaleString()}
-                    </td>
-                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
-                      {row.totalPromptTokens.toLocaleString()}
-                    </td>
-                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
-                      {row.totalCompletionTokens.toLocaleString()}
-                    </td>
-                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-secondary">
-                      ${row.totalSpend.toFixed(4)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TableView>
+              <TableView.Body>
+                <Table wrapperClass="min-h-0 flex-1">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Model</TableHead>
+                      <TableHead class="text-right">Requests</TableHead>
+                      <TableHead class="text-right">Prompt Tokens</TableHead>
+                      <TableHead class="text-right">Completion Tokens</TableHead>
+                      <TableHead class="text-right">Spend</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row) => (
+                      <TableRow>
+                        <TableCell class="font-mono text-[13px] text-fg-primary">
+                          {row.model || "(unknown)"}
+                        </TableCell>
+                        <TableCell class="text-right text-fg-secondary">
+                          {row.totalRequests.toLocaleString()}
+                        </TableCell>
+                        <TableCell class="text-right font-mono text-xs text-fg-tertiary">
+                          {row.totalPromptTokens.toLocaleString()}
+                        </TableCell>
+                        <TableCell class="text-right font-mono text-xs text-fg-tertiary">
+                          {row.totalCompletionTokens.toLocaleString()}
+                        </TableCell>
+                        <TableCell class="text-right font-mono text-xs text-fg-secondary">
+                          ${row.totalSpend.toFixed(4)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableView.Body>
+            </TableView>
           )}
-        </GatewayQuerySection>
+        </QuerySection>
       </CardContent>
     </Card>
 
@@ -165,46 +181,50 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
         <CardTitle class="text-base">By Provider</CardTitle>
       </CardHeader>
       <CardContent class="p-0">
-        <GatewayQuerySection
+        <QuerySection
           label="usage by provider"
           query={props.byProviderQuery}
           isEmpty={(rows) => rows.length === 0}
-          loading={<LoadingRows rows={4} />}
+          loading={<BlockLoadingRows rows={4} />}
           empty={<p class="px-16 pb-16 text-sm text-fg-tertiary">No usage data in this range.</p>}
         >
           {(rows) => (
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                  <th class="px-16 py-10">Provider</th>
-                  <th class="px-16 py-10 text-right">Requests</th>
-                  <th class="px-16 py-10 text-right">Prompt Tokens</th>
-                  <th class="px-16 py-10 text-right">Completion Tokens</th>
-                  <th class="px-16 py-10 text-right">Spend</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr class="border-b border-border/50">
-                    <td class="px-16 py-10 text-fg-primary">{row.provider || "(unknown)"}</td>
-                    <td class="px-16 py-10 text-right text-fg-secondary">
-                      {row.totalRequests.toLocaleString()}
-                    </td>
-                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
-                      {row.totalPromptTokens.toLocaleString()}
-                    </td>
-                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
-                      {row.totalCompletionTokens.toLocaleString()}
-                    </td>
-                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-secondary">
-                      ${row.totalSpend.toFixed(4)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TableView>
+              <TableView.Body>
+                <Table wrapperClass="min-h-0 flex-1">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Provider</TableHead>
+                      <TableHead class="text-right">Requests</TableHead>
+                      <TableHead class="text-right">Prompt Tokens</TableHead>
+                      <TableHead class="text-right">Completion Tokens</TableHead>
+                      <TableHead class="text-right">Spend</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row) => (
+                      <TableRow>
+                        <TableCell class="text-fg-primary">{row.provider || "(unknown)"}</TableCell>
+                        <TableCell class="text-right text-fg-secondary">
+                          {row.totalRequests.toLocaleString()}
+                        </TableCell>
+                        <TableCell class="text-right font-mono text-xs text-fg-tertiary">
+                          {row.totalPromptTokens.toLocaleString()}
+                        </TableCell>
+                        <TableCell class="text-right font-mono text-xs text-fg-tertiary">
+                          {row.totalCompletionTokens.toLocaleString()}
+                        </TableCell>
+                        <TableCell class="text-right font-mono text-xs text-fg-secondary">
+                          ${row.totalSpend.toFixed(4)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableView.Body>
+            </TableView>
           )}
-        </GatewayQuerySection>
+        </QuerySection>
       </CardContent>
     </Card>
 
@@ -213,52 +233,54 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
         <CardTitle class="text-base">Daily Breakdown</CardTitle>
       </CardHeader>
       <CardContent class="p-0">
-        <GatewayQuerySection
+        <QuerySection
           label="daily usage"
           query={props.dailyQuery}
           isEmpty={(rows) => rows.length === 0}
-          loading={<LoadingRows rows={4} />}
+          loading={<BlockLoadingRows rows={4} />}
           empty={<p class="px-16 pb-16 text-sm text-fg-tertiary">No usage data in this range.</p>}
         >
           {(rows) => (
-            <div class="max-h-[400px] overflow-y-auto">
-              <table class="w-full text-sm">
-                <thead class="sticky top-0 bg-surface-raised">
-                  <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                    <th class="px-16 py-10">Date</th>
-                    <th class="px-16 py-10">Model</th>
-                    <th class="hidden px-16 py-10 md:table-cell">Provider</th>
-                    <th class="px-16 py-10 text-right">Requests</th>
-                    <th class="px-16 py-10 text-right">Tokens</th>
-                    <th class="px-16 py-10 text-right">Spend</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr class="border-b border-border/50">
-                      <td class="px-16 py-10 text-xs text-fg-secondary">{row.date}</td>
-                      <td class="px-16 py-10 font-mono text-xs text-fg-primary">
-                        {row.model || "—"}
-                      </td>
-                      <td class="hidden px-16 py-10 text-xs text-fg-tertiary md:table-cell">
-                        {row.provider || "—"}
-                      </td>
-                      <td class="px-16 py-10 text-right text-xs text-fg-secondary">
-                        {row.apiRequests.toLocaleString()}
-                      </td>
-                      <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
-                        {(row.promptTokens + row.completionTokens).toLocaleString()}
-                      </td>
-                      <td class="px-16 py-10 text-right font-mono text-xs text-fg-secondary">
-                        ${row.spend.toFixed(4)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <TableView class="max-h-400">
+              <TableView.Body>
+                <Table wrapperClass="min-h-0 flex-1">
+                  <TableHeader class="sticky top-0 z-10 bg-surface-raised">
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Model</TableHead>
+                      <TableHead class="hidden md:table-cell">Provider</TableHead>
+                      <TableHead class="text-right">Requests</TableHead>
+                      <TableHead class="text-right">Tokens</TableHead>
+                      <TableHead class="text-right">Spend</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row) => (
+                      <TableRow>
+                        <TableCell class="text-xs text-fg-secondary">{row.date}</TableCell>
+                        <TableCell class="font-mono text-xs text-fg-primary">
+                          {row.model || "—"}
+                        </TableCell>
+                        <TableCell class="hidden text-xs text-fg-tertiary md:table-cell">
+                          {row.provider || "—"}
+                        </TableCell>
+                        <TableCell class="text-right text-xs text-fg-secondary">
+                          {row.apiRequests.toLocaleString()}
+                        </TableCell>
+                        <TableCell class="text-right font-mono text-xs text-fg-tertiary">
+                          {(row.promptTokens + row.completionTokens).toLocaleString()}
+                        </TableCell>
+                        <TableCell class="text-right font-mono text-xs text-fg-secondary">
+                          ${row.spend.toFixed(4)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableView.Body>
+            </TableView>
           )}
-        </GatewayQuerySection>
+        </QuerySection>
       </CardContent>
     </Card>
   </div>

@@ -7,10 +7,11 @@ import {
   Button,
   DateFilterInput,
   EmptyState,
-  EnhancedDataTable,
+  TableView,
   type EnhancedDataTableColumn,
   FilterInput,
   type FilterInputHandle,
+  InlineForm,
   LocalIsoDate,
   PageHeaderShell,
   Skeleton,
@@ -200,74 +201,79 @@ export const SessionsPage: Component = () => {
     defaultSort: "createdAt.desc",
   });
 
-  const query = useSessionsQuery({
+  const query = useSessionsQuery(() => ({
     page: tableState.page(),
     limit: PAGE_SIZE,
     orderBy: tableState.orderBy(),
     ...tableState.filters(),
-  });
+  }));
 
   const rows = createMemo(() => (query.data?.data ?? []).map(toRow));
 
   const toolbar = () => (
-    <div class="flex flex-wrap items-center gap-8">
-      <FilterInput
-        ref={(handle) => {
-          userFilterRef = handle;
-        }}
-        class="w-176"
-        placeholder="Filter by userId…"
-        icon={User}
-        value={tableState.filters().userId}
-        onCommit={(v) => tableState.setFilter("userId", v)}
-      />
-      <FilterInput
-        ref={(handle) => {
-          environmentFilterRef = handle;
-        }}
-        class="w-176"
-        placeholder="Filter by environment…"
-        icon={Globe}
-        value={tableState.filters().environment}
-        onCommit={(v) => tableState.setFilter("environment", v)}
-      />
-      <DateFilterInput
-        class="w-144"
-        value={tableState.filters().fromTimestamp}
-        onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
-        placeholder="From date…"
-        title="Session activity start date"
-        boundary="start"
-      />
-      <DateFilterInput
-        class="w-144"
-        value={tableState.filters().toTimestamp}
-        onCommit={(v) => tableState.setFilter("toTimestamp", v)}
-        placeholder="To date…"
-        title="Session activity end date"
-        boundary="end"
-      />
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => {
-          userFilterRef?.commit();
-          environmentFilterRef?.commit();
-        }}
-      >
-        <Search class="h-16 w-16" size={16} />
-        Search
-      </Button>
-      <Show when={tableState.activeFilterCount() > 0}>
-        <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
+    <InlineForm
+      class="min-w-0 flex-1"
+      minTrack={144}
+      gap={8}
+      onSubmit={() => {
+        userFilterRef?.commit();
+        environmentFilterRef?.commit();
+      }}
+    >
+      <InlineForm.Field span={2}>
+        <FilterInput
+          ref={(handle) => {
+            userFilterRef = handle;
+          }}
+          placeholder="Filter by userId…"
+          icon={User}
+          value={tableState.filters().userId}
+          onCommit={(v) => tableState.setFilter("userId", v)}
+        />
+      </InlineForm.Field>
+      <InlineForm.Field>
+        <FilterInput
+          ref={(handle) => {
+            environmentFilterRef = handle;
+          }}
+          placeholder="Filter by environment…"
+          icon={Globe}
+          value={tableState.filters().environment}
+          onCommit={(v) => tableState.setFilter("environment", v)}
+        />
+      </InlineForm.Field>
+      <InlineForm.Field>
+        <DateFilterInput
+          value={tableState.filters().fromTimestamp}
+          onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
+          placeholder="From date…"
+          title="Session activity start date"
+          boundary="start"
+        />
+      </InlineForm.Field>
+      <InlineForm.Field>
+        <DateFilterInput
+          value={tableState.filters().toTimestamp}
+          onCommit={(v) => tableState.setFilter("toTimestamp", v)}
+          placeholder="To date…"
+          title="Session activity end date"
+          boundary="end"
+        />
+      </InlineForm.Field>
+      <InlineForm.Actions>
+        <Button type="submit" size="sm" variant="secondary">
           <Search class="h-16 w-16" size={16} />
-          Clear ({tableState.activeFilterCount()})
+          Search
         </Button>
-      </Show>
-      <div class="ml-auto">
+        <Show when={tableState.activeFilterCount() > 0}>
+          <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
+            <Search class="h-16 w-16" size={16} />
+            Clear ({tableState.activeFilterCount()})
+          </Button>
+        </Show>
         <AutoRefreshControl />
-      </div>
-    </div>
+      </InlineForm.Actions>
+    </InlineForm>
   );
 
   return (
@@ -283,7 +289,7 @@ export const SessionsPage: Component = () => {
         }
       />
 
-      <div class="flex flex-1 flex-col overflow-hidden px-16 py-12">
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-16 py-12">
         <Show
           when={!query.isPending}
           fallback={
@@ -312,7 +318,7 @@ export const SessionsPage: Component = () => {
                 />
               }
             >
-              <EnhancedDataTable
+              <TableView.ServerTable
                 data={rows()}
                 columns={columns}
                 rowKey={(row) => row.id}

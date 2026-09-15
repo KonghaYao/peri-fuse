@@ -4,7 +4,6 @@ import {
   LoadingState,
   MonitorTraceTurnTree,
   MonitorTraceTurnTreeShell,
-  ScrollArea,
   Skeleton,
 } from "@peri/ui";
 import { type Component, createMemo, createSignal, type JSX, Show } from "solid-js";
@@ -94,7 +93,7 @@ export const TraceObservationTreePane: Component<{
   observationsQuery: ReturnType<typeof useTraceObservationsQuery>;
   compact?: boolean;
 }> = (props) => (
-  <div class={props.compact ? "px-32 pb-32" : undefined}>
+    <div class={props.compact ? "px-4 pb-4" : undefined}>
     <MonitorTraceTurnTree
       observations={props.flatObservations}
       selectedId={props.selectedId() ?? null}
@@ -213,18 +212,16 @@ export const TraceObservationWorkspace: Component<TraceObservationWorkspaceProps
               </InlineNotice>
             }
           >
-            <ScrollArea class="min-h-0 flex-1">
-              <TraceObservationTreePane
-                traceName={trace()?.name}
-                traceLatency={trace()?.latency}
-                flatObservations={state.flatObservations()}
-                selectedId={state.selectedId}
-                onSelect={state.setSelectedId}
-                omitNoise={state.omitNoise}
-                onOmitNoiseChange={state.setOmitNoise}
-                observationsQuery={state.observationsQuery}
-              />
-            </ScrollArea>
+            <TraceObservationTreePane
+              traceName={trace()?.name}
+              traceLatency={trace()?.latency}
+              flatObservations={state.flatObservations()}
+              selectedId={state.selectedId}
+              onSelect={state.setSelectedId}
+              omitNoise={state.omitNoise}
+              onOmitNoiseChange={state.setOmitNoise}
+              observationsQuery={state.observationsQuery}
+            />
           </Show>
         </Show>
       }

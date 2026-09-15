@@ -148,6 +148,37 @@ export function healthCheck(): Promise<{ status: string }> {
   });
 }
 
+/**
+ * Validate persisted project credentials against the active server database.
+ *
+ * After a DB swap, localStorage may still hold keys from the previous database.
+ * Call this before treating stored context as active so the UI lands on onboarding
+ * instead of bouncing through a guarded route and a failing data query.
+ */
+export async function verifyStoredProjectCredentials(): Promise<boolean> {
+  const ctx = getProjectContext();
+  if (!ctx) return false;
+
+  let res: Response;
+  try {
+    res = await fetch("/api/public/traces?limit=1", {
+      headers: {
+        Authorization: basicAuthHeader(ctx.publicKey, ctx.secretKey),
+      },
+    });
+  } catch {
+    // Keep context on transient network errors; route-level queries will retry.
+    return true;
+  }
+
+  if (res.status === 401) {
+    clearProjectContext();
+    return false;
+  }
+
+  return res.ok;
+}
+
 export function listTraces(params: TraceListParams = {}): Promise<Paged<Trace>> {
   return request<Paged<Trace>>(`/api/public/traces${toQueryString({ ...params })}`);
 }

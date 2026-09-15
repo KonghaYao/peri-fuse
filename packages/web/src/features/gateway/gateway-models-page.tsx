@@ -11,16 +11,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   Badge,
+  BlockLoadingRows,
   Button,
-  Card,
-  CardContent,
   message,
   PageHeaderShell,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  TableView,
 } from "@peri/ui";
 import { AlertTriangle, Loader2, Pencil, Plus, Power, Trash2 } from "lucide-solid";
 import { type Component, createSignal, Show } from "solid-js";
 import { GatewayProjectGate } from "@/features/gateway/components/gateway-project-gate";
-import { LoadingRows } from "@/features/gateway/components/loading-rows";
 import { ModelDialog } from "@/features/gateway/components/model-dialog";
 import {
   useGwCreateModelMutation,
@@ -105,37 +110,37 @@ const ModelsContent: Component = () => {
           <Show
             when={modelsQuery.isError}
             fallback={
-              <Card>
-                <CardContent class="p-0">
-                  <Show
-                    when={deployments().length > 0}
-                    fallback={
-                      <p class="py-32 text-center text-sm text-fg-tertiary">
-                        No model deployments. Map a model alias to a provider.
-                      </p>
-                    }
-                  >
-                    <table class="w-full text-sm">
-                      <thead>
-                        <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                          <th class="px-16 py-12">Model Alias</th>
-                          <th class="px-16 py-12">Provider Model</th>
-                          <th class="px-16 py-12">Provider</th>
-                          <th class="hidden px-16 py-12 md:table-cell">Pricing ($/1M)</th>
-                          <th class="px-16 py-12">Enabled</th>
-                          <th class="px-16 py-12 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+              <Show
+                when={deployments().length > 0}
+                fallback={
+                  <p class="py-32 text-center text-sm text-fg-tertiary">
+                    No model deployments. Map a model alias to a provider.
+                  </p>
+                }
+              >
+                <TableView>
+                  <TableView.Body>
+                    <Table wrapperClass="min-h-0 flex-1">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Model Alias</TableHead>
+                          <TableHead>Provider Model</TableHead>
+                          <TableHead>Provider</TableHead>
+                          <TableHead class="hidden md:table-cell">Pricing ($/1M)</TableHead>
+                          <TableHead>Enabled</TableHead>
+                          <TableHead class="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {deployments().map((d) => (
-                          <tr class="border-b border-border/50 transition-colors hover:bg-surface-overlay/40">
-                            <td class="px-16 py-12 font-mono text-[13px] font-medium text-fg-primary">
+                          <TableRow>
+                            <TableCell class="font-mono text-[13px] font-medium text-fg-primary">
                               {d.modelName}
-                            </td>
-                            <td class="px-16 py-12 font-mono text-xs text-fg-secondary">
+                            </TableCell>
+                            <TableCell class="font-mono text-xs text-fg-secondary">
                               {d.providerModel}
-                            </td>
-                            <td class="px-16 py-12 text-fg-secondary">
+                            </TableCell>
+                            <TableCell class="text-fg-secondary">
                               {d.provider ? (
                                 <>
                                   {d.provider.name}
@@ -149,13 +154,13 @@ const ModelsContent: Component = () => {
                                   Provider unavailable
                                 </Badge>
                               )}
-                            </td>
-                            <td class="hidden px-16 py-12 text-xs text-fg-tertiary md:table-cell">
+                            </TableCell>
+                            <TableCell class="hidden text-xs text-fg-tertiary md:table-cell">
                               {d.modelInfo?.inputPrice != null || d.modelInfo?.outputPrice != null
                                 ? `${d.modelInfo?.inputPrice ?? "?"} / ${d.modelInfo?.outputPrice ?? "?"}`
                                 : "—"}
-                            </td>
-                            <td class="px-16 py-12">
+                            </TableCell>
+                            <TableCell>
                               <span
                                 class={`inline-flex items-center rounded-full border px-8 py-2 text-[11px] font-medium ${
                                   d.isEnabled
@@ -165,8 +170,8 @@ const ModelsContent: Component = () => {
                               >
                                 {d.isEnabled ? "Yes" : "No"}
                               </span>
-                            </td>
-                            <td class="px-16 py-12">
+                            </TableCell>
+                            <TableCell>
                               <div class="flex items-center justify-end gap-4">
                                 <Button
                                   variant="ghost"
@@ -199,14 +204,14 @@ const ModelsContent: Component = () => {
                                   <Trash2 class="h-14 w-14 text-danger" size={14} />
                                 </Button>
                               </div>
-                            </td>
-                          </tr>
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
-                  </Show>
-                </CardContent>
-              </Card>
+                      </TableBody>
+                    </Table>
+                  </TableView.Body>
+                </TableView>
+              </Show>
             }
           >
             <div
@@ -230,7 +235,7 @@ const ModelsContent: Component = () => {
           </Show>
         }
       >
-        <LoadingRows />
+        <BlockLoadingRows />
       </Show>
 
       <AlertDialog
