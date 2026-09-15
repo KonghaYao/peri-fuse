@@ -55,8 +55,8 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 
 ### MCP 地图（packages/langfuse-mcp）
 
-- 主 server 的 `/api/mcp` 端点共用服务端口和项目级 Basic API key，不启动额外进程。
-- MCP 包封装 MCPP 协议与 skill 资源注册；server 负责认证和 HTTP 请求边界。
+- 主 server 的 `/mcp` 端点共用服务端口，公开只读 skill 资源，不要求认证或请求 headers，不启动额外进程。
+- MCP 包封装 MCPP 协议与 skill 资源注册；数据 API 继续由 server 的项目级 API key 保护。
 - `skills/langfuse/` 是可分发的文档和分析脚本，通过 `skill://langfuse/…` 读取；不注入项目凭据或遥测数据。
 - 分析脚本由客户端运行，使用客户端自己的 Langfuse 环境变量访问现有 REST API。
 - MCP 构建必须先于 server；CLI 分发包必须同时包含 skill 文件。
@@ -65,7 +65,7 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 
 - 已知 web 页面仅在请求为 `GET`/`HEAD` 且显式接受 `text/html` 时回退到 `index.html`。
 - 已存在的静态文件按原文件响应；未知页面/API 路径、缺失静态资源和 `/.well-known/*` 均返回 JSON 404。
-- 不提供 OAuth discovery；MCP 仍使用项目级 Basic API key，并严格支持 MCP `2026-07-28`，`2025-11-25` 客户端不兼容。
+- MCP 不提供 OAuth discovery、Basic 或 Bearer 鉴权；资源端点支持 MCP `2026-07-28` 与无状态 `2025-11-25` 客户端。
 
 ### CLI 地图（packages/cli）
 

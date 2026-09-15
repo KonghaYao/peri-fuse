@@ -5,7 +5,7 @@ import { createLangfuseMcpHandler, serverFactory } from "./server.js";
 /** Optional local entry point; the main server embeds the Fetch handler directly. */
 function main(): void {
   if (process.argv.includes("--stdio")) {
-    const handle = serveStdio(serverFactory, { legacy: "reject" });
+    const handle = serveStdio(serverFactory, { legacy: "serve" });
     process.once("SIGTERM", () => void handle.close());
     process.once("SIGINT", () => void handle.close());
     return;

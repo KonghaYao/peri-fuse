@@ -2,10 +2,12 @@
 
 基于 [@peri-code/mcpp](https://github.com/peri-code/open-mcp-market/tree/main/packages/mcpp) 的 MCP Server，将本包内 `skills/langfuse/` 目录按 **MCPP 通道 B** 投影为 MCP Resources。
 
-- **协议**：MCP `2026-07-28`（由 `createMcpHandler` / `createMcppServerFactory` 承载，旧版协议请求会被拒绝）
+- **协议**：支持 MCP `2026-07-28` 与 `2025-11-25`（由 SDK 原生 stateless handler 承载）
 - **挂载**：`skillsDir` 指向包内 `skills/`；更新 skill 时直接替换 `skills/langfuse/` 即可，无需改仓库根 `.claude`
 
-生产使用时，推荐连接 Peri-Fuse 主 server 的 `/api/mcp` HTTP 端点。它与 dashboard/API 共用同一端口和项目级 Basic API key；默认端口为 `23332`，源码开发端口为 `23432`。
+生产使用时，推荐连接 Peri-Fuse 主 server 的 `/mcp` HTTP 端点。该端点公开只读 skill
+资源，不要求认证 headers；默认端口为 `23332`，源码开发端口为 `23432`。数据 API
+仍使用项目级 API key。
 
 ## 资源 URI 示例
 
@@ -34,7 +36,9 @@ pnpm --filter @peri-fuse/langfuse-mcp run start:stdio
 
 ## MCP 客户端配置
 
-仓库根目录 `.mcp.json` 已注册 `langfuse`（生产 HTTP）和 `langfuse-dev`（开发 HTTP）。将 `Authorization` 中的 `<base64(publicKey:secretKey)>` 替换为当前项目 API key 的 Basic 编码值；配置使用 placeholder，仓库中不包含真实 key。
+仓库根目录 `.mcp.json` 已注册 `langfuse`（生产 HTTP）和 `langfuse-dev`（开发 HTTP）。MCP
+资源端点无需凭据，配置只需指定 URL。数据 API 的 API key
+不要写入 skill 资源或资源 URI。
 
 也可复制 `packages/langfuse-mcp/mcp.json` 中的片段到你的客户端配置。若客户端只支持 stdio，可使用构建后的 Node 入口并传入 `--stdio`，无需 Bun：
 

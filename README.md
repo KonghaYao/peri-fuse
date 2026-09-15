@@ -11,7 +11,7 @@ Peri-Fuse runs entirely on **SQLite** with no external dependencies (no ClickHou
 - Public REST API compatible with Langfuse SDKs
 - Lightweight web dashboard (Vite + React)
 - Self-contained deployment through Docker or the repository-local service CLI
-- MCP resources and HTTP integration through the built-in `/api/mcp` endpoint
+- MCP resources and HTTP integration through the built-in `/mcp` endpoint
 
 ## Quick Start
 
@@ -103,9 +103,10 @@ comment out `LITE_SERVER_PORT` when you want the production default.
 
 Peri-Fuse exposes the Langfuse skill as MCP resources from the same server as the dashboard and
 API. Start the production service with `pnpm svc:start` and configure an MCP client with
-`http://localhost:23332/api/mcp`; source development uses `http://localhost:23432/api/mcp`. Send a
-project-scoped API key using HTTP Basic authentication (`publicKey:secretKey`, base64 encoded).
-The checked-in [`.mcp.json`](.mcp.json) contains both endpoints with placeholders. See
+`http://localhost:23332/mcp`; source development uses `http://localhost:23432/mcp`. The MCP
+endpoint is a public read-only skill resource endpoint and requires no credentials. Data API
+requests continue to use a project-scoped API key.
+The checked-in [`.mcp.json`](.mcp.json) contains both local endpoints without authentication headers. See
 [`packages/langfuse-mcp/README.md`](packages/langfuse-mcp/README.md) for the optional Node stdio
 adapter.
 
@@ -115,9 +116,9 @@ The server serves a real file from the built web assets when the requested stati
 For known web pages, an explicit `Accept: text/html` `GET` or `HEAD` request receives the SPA
 `index.html`. Unknown page/API paths, missing assets, and `/.well-known/*` discovery paths
 receive a JSON 404 response; existing API authentication still returns its normal JSON errors.
-OAuth discovery is not provided. The MCP endpoint remains
-project-scoped Basic authentication with strict MCP `2026-07-28` handling; clients using the
-`2025-11-25` protocol are not compatible.
+The MCP endpoint supports both MCP `2026-07-28` and stateless `2025-11-25` clients. It only
+distributes skill resources; analysis scripts are instructions for the MCP client to run and are
+never executed by the server. OAuth discovery is not provided.
 
 ## Performance
 

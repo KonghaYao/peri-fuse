@@ -1,6 +1,6 @@
 /**
  * Langfuse MCPP server — 将包内 `skills/langfuse/` 投影为 MCP Resources（MCPP 通道 B）。
- * 协议：MCP 2026-07-28（通过 Fetch handler 承载，legacy 请求拒绝）。
+ * 协议：MCP 2026-07-28（通过 Fetch handler 承载，兼容 legacy stateless 请求）。
  */
 import { resolve } from "node:path";
 import {
@@ -57,6 +57,6 @@ export function createLangfuseMcpHandler(options: { skillsDir?: string } = {}): 
     createMcppServerFactory({ cacheVersion: "langfuse-mcp-0.1.0" }, (_request, mcpp) =>
       createLangfuseMcpServer({ skillsDir: options.skillsDir, mcpp }),
     ),
-    { legacy: "reject" },
+    { legacy: "stateless" },
   );
 }

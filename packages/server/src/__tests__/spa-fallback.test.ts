@@ -65,9 +65,6 @@ describe("SPA fallback route boundaries", () => {
     ["/assets/missing.js", "text/html"],
     ["/assets/v1.0", "application/json"],
     ["/assets/", "application/json"],
-    ["/.well-known/oauth-authorization-server", "text/html"],
-    ["/.well-known/oauth-protected-resource", "text/html"],
-    ["/.well-known/oauth-protected-resource/mcp", "text/html"],
     ["/.well-known/openid-configuration", "text/html"],
     ["/index.html", "application/json"],
     ["/api", "text/html"],
@@ -84,6 +81,17 @@ describe("SPA fallback route boundaries", () => {
     expect(response.status).toBe(404);
     expect(response.headers.get("content-type")).toContain("application/json");
     expect(body).toBe(JSON.stringify({ message: "Not Found" }));
+  });
+
+  it.each([
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp",
+  ])("returns JSON 404 for unsupported OAuth discovery %s", async (path) => {
+    const { response, body } = await request(path, "text/html");
+    expect(response.status).toBe(404);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(body).not.toContain("<!doctype html>");
   });
 
   it("keeps v1 authentication ahead of unknown route handling", async () => {
