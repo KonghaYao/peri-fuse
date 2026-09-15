@@ -4,7 +4,6 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { serveStatic } from "@hono/node-server/serve-static";
 import { createGatewayProxyRouter } from "@peri/gateway/proxy-router";
 import { BaseError, LangfuseNotFoundError } from "@peri-fuse/shared";
 import { logger } from "@peri-fuse/shared/src/server";
@@ -39,10 +38,11 @@ import sessionSearchRoutes from "./routes/session-search";
 import sessionsRoutes from "./routes/sessions";
 import tracesRoutes from "./routes/traces";
 import usersRoutes from "./routes/users";
+import { serveWeb } from "./spa";
 
 export type LiteApp = Hono<LiteServerEnv> & { close: () => Promise<void> };
 
-export function createApp(): LiteApp {
+export function createApp(options: { webDist?: string } = {}): LiteApp {
   const app = new Hono<LiteServerEnv>();
 
   const limits = requestLimits();
@@ -162,14 +162,10 @@ export function createApp(): LiteApp {
     path.resolve(__dirname, "web"),
     path.resolve(__dirname, "../../web/dist"),
   ];
-  const webDist = webDistCandidates.find((d) => fs.existsSync(path.join(d, "index.html")));
+  const webDist =
+    options.webDist ?? webDistCandidates.find((d) => fs.existsSync(path.join(d, "index.html")));
   if (webDist) {
-    // Static assets (JS/CSS/images). Also serves `/` via directory-index
-    // resolution (webDist/index.html). Unmatched paths fall through (next()).
-    app.use("/*", serveStatic({ root: webDist }));
-    // SPA fallback: any non-API route that did not match a static file serves
-    // index.html so client-side routing works on deep links / refresh.
-    app.get("*", serveStatic({ root: webDist, path: "index.html" }));
+    app.use("/*", serveWeb(webDist));
     logger.info(`[lite-server] Serving lite-web SPA from ${webDist}`);
   } else {
     logger.info(

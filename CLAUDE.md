@@ -61,6 +61,12 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 - 分析脚本由客户端运行，使用客户端自己的 Langfuse 环境变量访问现有 REST API。
 - MCP 构建必须先于 server；CLI 分发包必须同时包含 skill 文件。
 
+### SPA 与未知路径行为
+
+- 已知 web 页面仅在请求为 `GET`/`HEAD` 且显式接受 `text/html` 时回退到 `index.html`。
+- 已存在的静态文件按原文件响应；未知页面/API 路径、缺失静态资源和 `/.well-known/*` 均返回 JSON 404。
+- 不提供 OAuth discovery；MCP 仍使用项目级 Basic API key，并严格支持 MCP `2026-07-28`，`2025-11-25` 客户端不兼容。
+
 ### CLI 地图（packages/cli）
 
 - 包名 `peri-fuse`，提供 `peri-fuse` 命令行工具，管理后台服务的启停、状态和日志。

@@ -109,6 +109,16 @@ The checked-in [`.mcp.json`](.mcp.json) contains both endpoints with placeholder
 [`packages/langfuse-mcp/README.md`](packages/langfuse-mcp/README.md) for the optional Node stdio
 adapter.
 
+## HTTP routing behavior
+
+The server serves a real file from the built web assets when the requested static path exists.
+For known web pages, an explicit `Accept: text/html` `GET` or `HEAD` request receives the SPA
+`index.html`. Unknown page/API paths, missing assets, and `/.well-known/*` discovery paths
+receive a JSON 404 response; existing API authentication still returns its normal JSON errors.
+OAuth discovery is not provided. The MCP endpoint remains
+project-scoped Basic authentication with strict MCP `2026-07-28` handling; clients using the
+`2025-11-25` protocol are not compatible.
+
 ## Performance
 
 Peri-Fuse is optimized to handle production-scale workloads on a single SQLite file. Benchmarked at **250K traces / 1.13M observations / 1.6 GB**:
