@@ -193,7 +193,7 @@ export const OnboardingPage: Component = () => {
                       </p>
                     }
                   >
-                    <div class="space-y-24">
+                    <div class="space-y-6">
                       <For each={projects()}>
                         {(p) => (
                           <button
