@@ -157,7 +157,7 @@ export const TracePeekView: Component<{
                   />
                   <StatChip
                     icon={<Layers size={14} />}
-                    label="Observations"
+                    label="Obs"
                     value={
                       currentTrace().observationCount >= 0
                         ? `${state.observations().length} / ${currentTrace().observationCount}`

@@ -219,8 +219,8 @@ export const ObservationPreview: Component<{ observation: Observation }> = (prop
       </Show>
 
       <Show when={!isGeneration()}>
-        <SnippetBlock label="Input" value={props.observation.input} />
-        <SnippetBlock label="Output" value={props.observation.output} />
+        <SnippetBlock label="In" value={props.observation.input} />
+        <SnippetBlock label="Out" value={props.observation.output} />
       </Show>
     </div>
   );

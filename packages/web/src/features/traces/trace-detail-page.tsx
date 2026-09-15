@@ -124,7 +124,7 @@ export const TraceDetailPage: Component = () => {
                 />
                 <StatChip
                   icon={<Layers size={14} />}
-                  label="Observations"
+                  label="Obs"
                   value={
                     currentTrace().observationCount >= 0
                       ? `${observations().length} / ${currentTrace().observationCount}`

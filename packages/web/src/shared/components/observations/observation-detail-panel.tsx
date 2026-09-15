@@ -28,37 +28,41 @@ export const ObservationDetailPanel: Component<{
         <StatChip
           class={compactStatChipClass}
           icon={<Clock size={12} />}
-          label={o().type === "EVENT" ? "At" : "Duration"}
+          label={o().type === "EVENT" ? "" : "Dur"}
           value={
             o().type === "EVENT"
               ? formatClockTime(o().startTime)
               : formatDuration(o().startTime, o().endTime)
           }
         />
-        <StatChip
-          class={compactStatChipClass}
-          icon={<Cpu size={12} />}
-          label="Model"
-          value={o().model ?? "—"}
-        />
-        <StatChip
-          class={compactStatChipClass}
-          icon={<Layers size={12} />}
-          label="Tokens"
-          value={
-            o().totalTokens > 0
-              ? `${formatTokens(o().promptTokens)} → ${formatTokens(o().completionTokens)} (${formatTokens(o().totalTokens)})`
-              : "—"
-          }
-        />
+        <Show when={o().model}>
+          {(model) => (
+            <StatChip
+              class={compactStatChipClass}
+              icon={<Cpu size={12} />}
+              label="Model"
+              value={model()}
+            />
+          )}
+        </Show>
+        <Show when={o().totalTokens > 0}>
+          <StatChip
+            class={compactStatChipClass}
+            icon={<Layers size={12} />}
+            label="Tokens"
+            value={`${formatTokens(o().promptTokens)} → ${formatTokens(o().completionTokens)} (${formatTokens(o().totalTokens)})`}
+          />
+        </Show>
       </div>
 
       <p class="truncate text-[11px] text-fg-tertiary">
         <span class="font-mono">{o().id}</span>
-        <span class="mx-4">·</span>
-        <span>
-          {formatDateTime(o().startTime)} → {formatDateTime(o().endTime)}
-        </span>
+        <Show when={o().type !== "EVENT"}>
+          <span class="mx-4">·</span>
+          <span>
+            {formatDateTime(o().startTime)} → {formatDateTime(o().endTime)}
+          </span>
+        </Show>
         <Show when={o().statusMessage}>
           {(message) => (
             <>
