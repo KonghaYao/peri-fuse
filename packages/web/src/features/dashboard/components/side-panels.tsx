@@ -2,13 +2,14 @@
  * Secondary dashboard panels: cache, scores, top users, recent errors.
  */
 
+import { Chart } from "@peri/ui";
 import { A } from "@solidjs/router";
 import { AlertTriangle, ArrowUpRight } from "lucide-solid";
 import { type Component, For, Show } from "solid-js";
 import { formatDateTime, formatNumber, formatPercent, formatTokens } from "@/shared/lib/format";
 import type { DashboardDaily, DashboardRecentError, DashboardUserBucket } from "@/shared/lib/types";
+import { dayTick } from "../chart-utils";
 import { ChartCard } from "./chart-card";
-import { HorizontalBarChart, MultiLineChart } from "./svg-charts";
 
 export const CacheTrendChart: Component<{ data: DashboardDaily[] }> = (props) => {
   const rows = () => props.data.filter((d) => d.observations > 0);
@@ -19,18 +20,19 @@ export const CacheTrendChart: Component<{ data: DashboardDaily[] }> = (props) =>
       description="Cached read tokens / gross input tokens per day."
       isEmpty={rows().length === 0}
     >
-      <MultiLineChart
-        labels={labels()}
-        yDomain={[0, 1]}
-        formatY={(v) => formatPercent(v)}
-        series={[
-          {
-            name: "hit rate",
-            color: "var(--chart-4)",
-            values: rows().map((d) => d.cacheHitRate),
-          },
-        ]}
-      />
+      <Chart.Cartesian labels={labels()} formatX={dayTick}>
+        <Chart.Line
+          domain={[0, 1]}
+          formatY={(v) => formatPercent(v)}
+          series={[
+            {
+              name: "hit rate",
+              color: "var(--chart-4)",
+              values: rows().map((d) => d.cacheHitRate),
+            },
+          ]}
+        />
+      </Chart.Cartesian>
     </ChartCard>
   );
 };
@@ -45,18 +47,19 @@ export const ScoreTrendChart: Component<{ data: DashboardDaily[] }> = (props) =>
       isEmpty={rows().length === 0}
       emptyMessage="No scores in the selected range."
     >
-      <MultiLineChart
-        labels={labels()}
-        yDomain={[0, 1]}
-        formatY={(v) => v.toFixed(3)}
-        series={[
-          {
-            name: "avg score",
-            color: "var(--chart-5)",
-            values: rows().map((d) => d.avgScore ?? 0),
-          },
-        ]}
-      />
+      <Chart.Cartesian labels={labels()} formatX={dayTick}>
+        <Chart.Line
+          domain={[0, 1]}
+          formatY={(v) => v.toFixed(3)}
+          series={[
+            {
+              name: "avg score",
+              color: "var(--chart-5)",
+              values: rows().map((d) => d.avgScore ?? 0),
+            },
+          ]}
+        />
+      </Chart.Cartesian>
     </ChartCard>
   );
 };
@@ -68,7 +71,7 @@ export const TopUsersChart: Component<{ data: DashboardUserBucket[] }> = (props)
     isEmpty={props.data.length === 0}
     emptyMessage="No user-attributed usage."
   >
-    <HorizontalBarChart
+    <Chart.BarsHorizontal
       labels={props.data.map((d) => d.userId)}
       formatX={(v) => formatTokens(v)}
       series={[

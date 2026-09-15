@@ -2,11 +2,11 @@
  * Model breakdown charts and observation severity donut.
  */
 
+import { Chart } from "@peri/ui";
 import type { Component } from "solid-js";
 import { formatMs, formatTokens } from "@/shared/lib/format";
 import type { DashboardLevelBucket, DashboardModelBucket } from "@/shared/lib/types";
 import { ChartCard } from "./chart-card";
-import { DonutChart, HorizontalBarChart } from "./svg-charts";
 
 const LEVEL_COLORS: Record<string, string> = {
   ERROR: "var(--danger)",
@@ -22,7 +22,7 @@ export const TokensByModelChart: Component<{ data: DashboardModelBucket[] }> = (
     isEmpty={props.data.length === 0}
     emptyMessage="No generation tokens recorded."
   >
-    <HorizontalBarChart
+    <Chart.BarsHorizontal
       labels={props.data.map((d) => d.model)}
       formatX={(v) => formatTokens(v)}
       series={[
@@ -45,7 +45,7 @@ export const LatencyByModelChart: Component<{ data: DashboardModelBucket[] }> = 
       isEmpty={rows().length === 0}
       emptyMessage="No generation latency recorded."
     >
-      <HorizontalBarChart
+      <Chart.BarsHorizontal
         labels={rows().map((d) => d.model)}
         formatX={(v) => formatMs(v)}
         series={[
@@ -72,7 +72,7 @@ export const LevelsDonut: Component<{ data: DashboardLevelBucket[] }> = (props) 
     isEmpty={props.data.length === 0}
     emptyMessage="No observations recorded."
   >
-    <DonutChart
+    <Chart.Donut
       segments={props.data.map((level) => ({
         label: level.level,
         value: level.count,
