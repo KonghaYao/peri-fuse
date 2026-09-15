@@ -106,11 +106,11 @@ export function useTraceQuery(traceId: string | undefined) {
   }));
 }
 
-export function useTraceIoQuery(traceId: string | undefined, enabled: boolean) {
+export function useTraceIoQuery(traceId: string | undefined, getEnabled: () => boolean) {
   return useQuery(() => ({
     queryKey: queryKeys.traceIo(traceId ?? ""),
     queryFn: () => getTraceIo(traceId!),
-    enabled: Boolean(traceId) && enabled,
+    enabled: Boolean(traceId) && getEnabled(),
   }));
 }
 
@@ -124,12 +124,17 @@ export function useTraceObservationsQuery(traceId: string | undefined, enabled =
   }));
 }
 
-export function useObservationDetailQuery(observationId: string | null | undefined) {
-  return useQuery(() => ({
-    queryKey: queryKeys.observationDetail(observationId ?? ""),
-    queryFn: () => getObservationDetail(observationId!),
-    enabled: Boolean(observationId),
-  }));
+export function useObservationDetailQuery(
+  getObservationId: () => string | null | undefined,
+) {
+  return useQuery(() => {
+    const observationId = getObservationId();
+    return {
+      queryKey: queryKeys.observationDetail(observationId ?? ""),
+      queryFn: () => getObservationDetail(observationId!),
+      enabled: Boolean(observationId),
+    };
+  });
 }
 
 export function useSessionsQuery(getParams: () => SessionListParams) {

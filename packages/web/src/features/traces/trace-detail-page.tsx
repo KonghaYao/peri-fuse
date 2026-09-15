@@ -28,9 +28,8 @@ const TraceDetailSkeleton: Component = () => (
         ))}
       </div>
     </div>
-    <div class="flex min-h-0 flex-1">
-      <Skeleton class="w-[45%] rounded-none" />
-      <Skeleton class="flex-1 rounded-none" />
+    <div class="min-h-0 flex-1 p-24">
+      <Skeleton class="h-full w-full rounded-8" />
     </div>
   </div>
 );

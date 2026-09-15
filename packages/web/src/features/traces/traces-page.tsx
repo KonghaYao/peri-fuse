@@ -7,13 +7,15 @@ import {
   Button,
   DateFilterInput,
   EmptyState,
-  TableView,
   FilterInput,
   type FilterInputHandle,
   InlineForm,
   PageHeaderShell,
+  Sheet,
+  SheetContent,
   Skeleton,
   TableInlineError,
+  TableView,
 } from "@peri/ui";
 import { useSearchParams } from "@solidjs/router";
 import { Globe, Search, User } from "lucide-solid";
@@ -187,8 +189,7 @@ export const TracesPage: Component = () => {
     <div class="flex h-full min-h-0 flex-col overflow-hidden">
       <PageHeaderShell title="Traces" description="All traces ingested into this lite project." />
 
-      <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-16 py-12">
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-16 py-12">
           <Show
             when={!coreQuery.isPending}
             fallback={
@@ -260,12 +261,17 @@ export const TracesPage: Component = () => {
               </Show>
             </Show>
           </Show>
-        </div>
-
-        <Show when={peekedTraceId()}>
-          {(traceId) => <TracePeekView traceId={traceId()} onClose={() => setPeek(null)} />}
-        </Show>
       </div>
+
+      <Show when={peekedTraceId()}>
+        {(traceId) => (
+          <Sheet open onOpenChange={(open) => !open && setPeek(null)}>
+            <SheetContent side="right" class="w-1/2 gap-0 p-0">
+              <TracePeekView traceId={traceId()} onClose={() => setPeek(null)} />
+            </SheetContent>
+          </Sheet>
+        )}
+      </Show>
     </div>
   );
 };

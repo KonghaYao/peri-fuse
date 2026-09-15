@@ -46,7 +46,7 @@ export const TracePeekView: Component<{
   };
 
   return (
-    <aside class="flex h-full w-[760px] max-w-[85vw] shrink-0 flex-col border-l border-border bg-surface-raised animate-[spectra-slide-in-right_250ms_cubic-bezier(0.32,0.72,0,1)]">
+    <div class="flex h-full min-h-0 flex-col bg-surface-raised">
       <div class="flex h-[60px] shrink-0 items-center justify-between gap-8 border-b border-border px-16">
         <div class="flex min-w-0 items-center gap-8">
           <ListTree class="h-16 w-16 shrink-0 text-brand" size={16} />
@@ -130,7 +130,7 @@ export const TracePeekView: Component<{
                     currentTrace().environment ||
                     currentTrace().version ||
                     currentTrace().release ||
-                    currentTrace().tags.length > 0
+                    (currentTrace().tags?.length ?? 0) > 0
                   }
                 >
                   <div class="flex flex-wrap gap-6 px-4">
@@ -170,6 +170,7 @@ export const TracePeekView: Component<{
 
               <div class="flex min-h-0 flex-1">
                 <MonitorTraceTurnTreeShell
+                  data-testid="trace-workspace"
                   class="min-h-0 flex-1"
                   showDetailPlaceholder={state.selectedId() === undefined}
                   tree={
@@ -194,7 +195,7 @@ export const TracePeekView: Component<{
                     <TraceObservationDetailPane
                       selectedId={state.selectedId}
                       selectedQuery={state.selectedQuery}
-                      selected={state.selected}
+                      selectedDetail={state.selectedDetail}
                       selectedScores={state.selectedScores}
                       traceIoQuery={state.traceIoQuery}
                       traceView={state.traceView}
@@ -217,6 +218,6 @@ export const TracePeekView: Component<{
           )}
         </Show>
       </Show>
-    </aside>
+    </div>
   );
 };

@@ -1,6 +1,4 @@
 import {
-  Button,
-  EmptyState,
   TableView,
   type FilterInputHandle,
   PageHeaderShell,
@@ -9,13 +7,15 @@ import {
 } from "@peri/ui";
 import { useSearchParams } from "@solidjs/router";
 import { Clock3 } from "lucide-solid";
-import { type Component, createMemo, createSignal, Show } from "solid-js";
+import { type Component, createEffect, createMemo, createSignal, Show } from "solid-js";
 import { ErrorInvestigationPanel } from "@/features/errors/components/error-investigation-panel";
 import { ErrorOperationsRail } from "@/features/errors/components/error-operations-rail";
 import { errorsTableColumns } from "@/features/errors/errors-table-columns";
 import { searchParamValue } from "@/features/users/search-param";
 import { useErrorsQuery } from "@/shared/hooks/queries";
-import type { ErrorQueryParams } from "@/shared/lib/types";
+import type { ErrorEvent, ErrorQueryParams } from "@/shared/lib/types";
+
+const PAGE_SIZE = 50;
 
 const RANGE_MS: Record<string, number | null> = {
   "24h": 24 * 3_600_000,
@@ -27,6 +27,7 @@ const RANGE_MS: Record<string, number | null> = {
 export const ErrorsPage: Component = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [clock] = createSignal(Date.now());
+  const [currentPage, setCurrentPage] = createSignal(1);
   let searchRef: FilterInputHandle | undefined;
   let environmentRef: FilterInputHandle | undefined;
 
@@ -51,7 +52,18 @@ export const ErrorsPage: Component = () => {
   const query = useErrorsQuery(() => queryParams());
   const analysis = () => query.data?.pages[0];
   const errors = () => query.data?.pages.flatMap((page) => page.data) ?? [];
+  const totalErrors = () => analysis()?.summary.totalErrors ?? 0;
   const selected = () => errors().find((error) => error.id === selectedId());
+
+  const pageRows = createMemo(() => {
+    const start = (currentPage() - 1) * PAGE_SIZE;
+    return errors().slice(start, start + PAGE_SIZE);
+  });
+
+  createEffect(() => {
+    queryParams();
+    setCurrentPage(1);
+  });
 
   const updateFilter = (key: string, value: string | undefined) => {
     setSearchParams(
@@ -83,6 +95,15 @@ export const ErrorsPage: Component = () => {
   const commitFilters = () => {
     searchRef?.commit();
     environmentRef?.commit();
+  };
+
+  const handlePageChange = (page: number) => {
+    const needed = page * PAGE_SIZE;
+    if (needed > errors().length && query.hasNextPage) {
+      void query.fetchNextPage().then(() => setCurrentPage(page));
+      return;
+    }
+    setCurrentPage(page);
   };
 
   const handleTableClick = (event: MouseEvent) => {
@@ -117,16 +138,15 @@ export const ErrorsPage: Component = () => {
   );
 
   const toolbar = () => (
-    <Show when={query.hasNextPage}>
-      <Button
-        size="sm"
-        variant="secondary"
-        disabled={query.isFetchingNextPage}
-        onClick={() => void query.fetchNextPage()}
-      >
-        {query.isFetchingNextPage ? "Loading…" : "Load older errors"}
-      </Button>
-    </Show>
+    <div class="flex min-w-0 flex-1 items-center gap-8 text-11 text-fg-secondary">
+      <Clock3 class="h-14 w-14 shrink-0" size={14} />
+      <span>
+        {analysis()
+          ? `${totalErrors().toLocaleString()} matching errors`
+          : "Loading errors"}
+      </span>
+      <span class="font-mono text-10 text-fg-tertiary">Newest first</span>
+    </div>
   );
 
   return (
@@ -150,18 +170,6 @@ export const ErrorsPage: Component = () => {
               {operationsRail()}
             </details>
 
-            <div class="mb-8 flex shrink-0 items-center justify-between gap-8 border-b border-line pb-8">
-              <div class="flex items-center gap-8 text-11 text-fg-secondary">
-                <Clock3 class="h-14 w-14" size={14} />
-                <span>
-                  {analysis()
-                    ? `${analysis()!.summary.totalErrors.toLocaleString()} matching errors`
-                    : "Loading errors"}
-                </span>
-                <span class="font-mono text-10 text-fg-tertiary">Newest first</span>
-              </div>
-            </div>
-
             <Show
               when={!query.isPending}
               fallback={
@@ -177,39 +185,35 @@ export const ErrorsPage: Component = () => {
                   <TableInlineError error={query.error} onRetry={() => void query.refetch()} />
                 }
               >
-                <Show
-                  when={errors().length > 0}
-                  fallback={
-                    <EmptyState
-                      variant="inline"
-                      title="No errors match this investigation window."
-                    />
-                  }
+                <div
+                  class="errors-table flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                  onClick={handleTableClick}
+                  style={{ "--peek-row-bg": "var(--danger-subtle)" }}
                 >
-                  <div
-                    class="errors-table flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-                    onClick={handleTableClick}
-                    style={{ "--peek-row-bg": "var(--danger-subtle)" }}
-                  >
-                    <style>{`
-                      .errors-table [data-row-key="${selectedId() ?? ""}"] {
-                        background: var(--danger-subtle);
-                        box-shadow: inset 2px 0 0 0 var(--danger);
-                      }
-                      .errors-table [data-row-key] {
-                        cursor: pointer;
-                      }
-                    `}</style>
-                    <TableView.ServerTable
-                      data={errors()}
-                      columns={errorsTableColumns}
-                      rowKey={(row) => row.id}
-                      toolbar={toolbar()}
-                      showColumnToggle
-                      class="min-h-0 flex-1"
-                    />
-                  </div>
-                </Show>
+                  <style>{`
+                    .errors-table [data-row-key="${selectedId() ?? ""}"] {
+                      background: var(--danger-subtle);
+                      box-shadow: inset 2px 0 0 0 var(--danger);
+                    }
+                    .errors-table [data-row-key] {
+                      cursor: pointer;
+                    }
+                  `}</style>
+                  <TableView.ServerTable
+                    data={pageRows()}
+                    columns={errorsTableColumns}
+                    rowKey={(row: ErrorEvent) => row.id}
+                    toolbar={toolbar()}
+                    showColumnToggle
+                    pagination={{
+                      current: currentPage(),
+                      pageSize: PAGE_SIZE,
+                      total: totalErrors(),
+                      onChange: handlePageChange,
+                    }}
+                    class="min-h-0 flex-1"
+                  />
+                </div>
               </Show>
             </Show>
           </div>

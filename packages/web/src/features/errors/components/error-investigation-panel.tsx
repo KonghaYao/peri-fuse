@@ -50,8 +50,8 @@ export const ErrorInvestigationPanel: Component<{
   error: ErrorEvent;
   onClose: () => void;
 }> = (props) => {
-  const detailQuery = useObservationDetailQuery(props.error.id);
-  const parentQuery = useObservationDetailQuery(props.error.parentObservationId);
+  const detailQuery = useObservationDetailQuery(() => props.error.id);
+  const parentQuery = useObservationDetailQuery(() => props.error.parentObservationId);
   const traceQuery = useTraceQuery(props.error.traceId ?? undefined);
 
   return (

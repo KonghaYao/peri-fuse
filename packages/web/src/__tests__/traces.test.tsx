@@ -101,6 +101,111 @@ describe("TracesPage", () => {
     });
   });
 
+  it("opens trace peek drawer with inner split workspace", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input).replace(/^https?:\/\/[^/]+/, "");
+      if (url.startsWith("/api/public/traces/metrics")) {
+        return jsonResponse([
+          {
+            id: "trace-1",
+            latency: 1.2,
+            observationCount: 1,
+            level: "DEFAULT",
+            errorCount: 0,
+            warningCount: 0,
+            debugCount: 0,
+            defaultCount: 1,
+            promptTokens: 10,
+            completionTokens: 20,
+            totalTokens: 30,
+            cachedTokens: 0,
+            cacheHitRate: 0,
+            input: { messages: [{ role: "user", content: "hello" }] },
+            output: { text: "hi there" },
+            metadata: { source: "test" },
+            calculatedInputCost: null,
+            calculatedOutputCost: null,
+            calculatedTotalCost: null,
+            usageDetails: {},
+            costDetails: {},
+          },
+        ]);
+      }
+      if (url.startsWith("/api/public/v2/observations")) {
+        return jsonResponse({
+          data: [
+            {
+              id: "obs-step-1",
+              traceId: "trace-1",
+              type: "SPAN",
+              name: "step-1",
+              startTime: "2026-01-01T00:00:00.000Z",
+              endTime: "2026-01-01T00:00:06.970Z",
+              level: "DEFAULT",
+              parentObservationId: null,
+            },
+          ],
+          meta: { cursor: null },
+        });
+      }
+      if (url.startsWith("/api/public/traces/trace-1")) {
+        return jsonResponse({
+          id: "trace-1",
+          timestamp: "2026-01-01T00:00:00.000Z",
+          name: "chat",
+          userId: "user-a",
+          sessionId: "sess-1",
+          release: null,
+          version: null,
+          environment: "prod",
+          tags: [],
+          latency: 1.2,
+          totalCost: 0,
+          observations: [],
+          observationCount: 1,
+          scores: [],
+        });
+      }
+      if (url.startsWith("/api/public/traces")) {
+        return jsonResponse({
+          data: [
+            {
+              id: "trace-1",
+              timestamp: "2026-01-01T00:00:00.000Z",
+              name: "chat",
+              userId: "user-a",
+              sessionId: "sess-1",
+              release: null,
+              version: null,
+              environment: "prod",
+              tags: [],
+            },
+          ],
+          meta: { page: 1, limit: 50, totalItems: 1, totalPages: 1 },
+        });
+      }
+      return jsonResponse({ message: "not found" }, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = renderWithProviders(() => <TracesPage />);
+
+    await waitFor(() => {
+      expect(view.getByText("trace-1")).toBeTruthy();
+    });
+
+    view.getByText("trace-1").closest("[data-row-key]")?.dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId("trace-peek-drawer")).toBeTruthy();
+      expect(view.getByTestId("trace-workspace")).toBeTruthy();
+      expect(view.getByTestId("tree-pane")).toBeTruthy();
+      expect(view.getByTestId("detail-pane")).toBeTruthy();
+    });
+  });
+
   it("refetches traces when page changes", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const raw = String(input).replace(/^https?:\/\/[^/]+/, "");

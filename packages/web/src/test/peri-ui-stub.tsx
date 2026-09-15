@@ -135,6 +135,10 @@ export const Statistic: Component<{
   </div>
 );
 export const ScrollArea: Component<ChildrenProps> = (props) => <div>{props.children}</div>;
+export const Separator: Component<DivProps> = (props) => {
+  const [local, rest] = splitProps(props, ["class"]);
+  return <div role="separator" class={local.class} {...rest} />;
+};
 export const InlineNotice: Component<ChildrenProps> = (props) => (
   <div role="alert">{props.children}</div>
 );
@@ -152,18 +156,96 @@ export const TableCell: Component<ChildrenProps> = (props) => <td>{props.childre
 export const MonitorTraceTurnTreeShell: Component<{
   tree?: JSX.Element;
   detail?: JSX.Element;
+  showDetailPlaceholder?: boolean;
+  class?: string;
+  "data-testid"?: string;
 }> = (props) => (
-  <div data-testid="trace-workspace">
+  <div data-testid={props["data-testid"] ?? "trace-workspace"} class={props.class}>
     <div data-testid="tree-pane">{props.tree}</div>
-    <div data-testid="detail-pane">{props.detail}</div>
+    <div data-testid="detail-pane">
+      <Show when={!props.showDetailPlaceholder}>{props.detail}</Show>
+    </div>
   </div>
 );
 
-export const MonitorTraceTurnTree: Component = () => <div data-testid="trace-tree" />;
+export const Sheet: Component<{
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  children?: JSX.Element;
+}> = (props) => <Show when={props.open ?? true}>{props.children}</Show>;
+
+export const SheetContent: Component<{
+  side?: string;
+  class?: string;
+  children?: JSX.Element;
+}> = (props) => (
+  <div data-testid="trace-peek-drawer" class={props.class}>
+    {props.children}
+  </div>
+);
+
+export const SheetClose: Component<ButtonProps> = (props) => <Button {...props} />;
+
+export const MonitorTraceTurnTree: Component<{
+  observations?: Array<{ id: string; name?: string | null }>;
+  onSelect?: (id: string) => void;
+  onTraceRootSelect?: () => void;
+  selectedId?: string | null;
+  traceRoot?: { name: string };
+}> = (props) => (
+  <div data-testid="trace-tree">
+    <Show when={props.traceRoot}>
+      {(root) => (
+        <button type="button" data-testid="monitor-trace-turn-tree-root" onClick={() => props.onTraceRootSelect?.()}>
+          {root().name}
+        </button>
+      )}
+    </Show>
+    <For each={props.observations ?? []}>
+      {(observation) => (
+        <button
+          type="button"
+          data-testid={`monitor-trace-turn-node-${observation.id}`}
+          onClick={() => props.onSelect?.(observation.id)}
+        >
+          {observation.name ?? observation.id}
+        </button>
+      )}
+    </For>
+  </div>
+);
+
+export const defaultIsNoiseObservation = () => false;
 export const MonitorTimelineDialogShell: Component = () => <div />;
 export const MonitorTimelineShell: Component = () => <div />;
-export const IoTabsShell: Component = () => <div />;
-export const IoViewer: Component = () => <div />;
+export const IoTabsShell: Component<{
+  renderPreview?: () => JSX.Element;
+  renderInput: () => JSX.Element;
+  renderOutput: () => JSX.Element;
+  renderMetadata: () => JSX.Element;
+}> = (props) => (
+  <div data-testid="io-tabs-shell">
+    <div data-testid="io-tab-input">{props.renderInput()}</div>
+    <div data-testid="io-tab-output">{props.renderOutput()}</div>
+    <div data-testid="io-tab-metadata">{props.renderMetadata()}</div>
+  </div>
+);
+
+export const IoViewer: Component<{ data: unknown }> = (props) => {
+  const value = () => {
+    const data = props.data;
+    return typeof data === "function" ? (data as () => unknown)() : data;
+  };
+  return (
+    <div data-testid="io-viewer">
+      {value() === null || value() === undefined
+        ? "(empty)"
+        : typeof value() === "object"
+          ? JSON.stringify(value())
+          : String(value())}
+    </div>
+  );
+};
 export const ScoreListShell: Component = () => <div />;
 export const FilterInput: Component = () => <input />;
 export const FilterSelect: Component = () => <select />;
@@ -283,13 +365,75 @@ const TableViewFooter: Component<{ children?: JSX.Element }> = (props) => (
   <div data-slot="table-view-footer">{props.children}</div>
 );
 
-type TableViewServerTableProps = Parameters<typeof EnhancedDataTable>[0];
+type TableViewServerTableProps = {
+  class?: string;
+  data?: unknown[];
+  columns?: EnhancedDataTableColumnStub<unknown>[];
+  toolbar?: JSX.Element;
+  rowKey?: (row: unknown, index: number) => string;
+  showColumnToggle?: boolean;
+  pagination?: {
+    current: number;
+    pageSize: number;
+    total: number;
+    onChange?: (page: number, pageSize: number) => void;
+  };
+};
+
+const TableViewServerTable: Component<TableViewServerTableProps> = (props) => {
+  const [local] = splitProps(props, [
+    "class",
+    "toolbar",
+    "pagination",
+    "showColumnToggle",
+    "data",
+    "columns",
+    "rowKey",
+  ]);
+  const showToolbar = () => Boolean(local.showColumnToggle || local.toolbar);
+
+  return (
+    <TableViewRoot class={local.class}>
+      <Show when={showToolbar()}>
+        <TableViewToolbar>{local.toolbar}</TableViewToolbar>
+      </Show>
+      <TableViewBody>
+        <EnhancedDataTable
+          data={local.data}
+          columns={local.columns}
+          rowKey={local.rowKey}
+          toolbar={undefined}
+        />
+      </TableViewBody>
+      <Show when={local.pagination}>
+        {(pagination) => (
+          <TableViewFooter>
+            <div data-slot="pagination-controls">
+              <span>Total {pagination().total} items</span>
+              <button
+                type="button"
+                data-testid="table-next-page"
+                disabled={
+                  pagination().current * pagination().pageSize >= pagination().total &&
+                  !pagination().onChange
+                }
+                onClick={() => pagination().onChange?.(pagination().current + 1, pagination().pageSize)}
+              >
+                Next page
+              </button>
+            </div>
+          </TableViewFooter>
+        )}
+      </Show>
+    </TableViewRoot>
+  );
+};
 
 export const TableView = Object.assign(TableViewRoot, {
   Toolbar: TableViewToolbar,
   Body: TableViewBody,
   Footer: TableViewFooter,
-  ServerTable: EnhancedDataTable as Component<TableViewServerTableProps>,
+  ServerTable: TableViewServerTable,
 });
 export const TableLoadingRows: Component = () => <div data-loading-rows />;
 export const BlockLoadingRows: Component<{ rows?: number }> = (props) => (

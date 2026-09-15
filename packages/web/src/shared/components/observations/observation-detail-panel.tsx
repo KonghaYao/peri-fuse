@@ -12,22 +12,22 @@ import { ObservationIoTabs } from "@/shared/components/observations/observation-
 import { formatClockTime, formatDateTime, formatDuration, formatTokens } from "@/shared/lib/format";
 import type { Observation } from "@/shared/lib/types";
 
+const compactStatChipClass = "px-8 py-4";
+
 export const ObservationDetailPanel: Component<{
   observation: Observation;
   scores: ScoreSummary[];
 }> = (props) => {
   const o = () => props.observation;
   return (
-    <div class="space-y-16">
-      <div class="flex flex-wrap items-center gap-8">
+    <div class="space-y-8">
+      <div class="flex flex-wrap items-center gap-6">
         <MonitorObservationTypeBadge type={o().type} />
-        <span class="text-base font-semibold text-fg-primary">{o().name ?? "(unnamed)"}</span>
+        <span class="text-sm font-semibold text-fg-primary">{o().name ?? "(unnamed)"}</span>
         <MonitorObservationLevelBadge level={o().level} />
-      </div>
-
-      <div class="grid grid-cols-2 gap-8">
         <StatChip
-          icon={<Clock size={14} />}
+          class={compactStatChipClass}
+          icon={<Clock size={12} />}
           label={o().type === "EVENT" ? "At" : "Duration"}
           value={
             o().type === "EVENT"
@@ -35,9 +35,15 @@ export const ObservationDetailPanel: Component<{
               : formatDuration(o().startTime, o().endTime)
           }
         />
-        <StatChip icon={<Cpu size={14} />} label="Model" value={o().model ?? "—"} />
         <StatChip
-          icon={<Layers size={14} />}
+          class={compactStatChipClass}
+          icon={<Cpu size={12} />}
+          label="Model"
+          value={o().model ?? "—"}
+        />
+        <StatChip
+          class={compactStatChipClass}
+          icon={<Layers size={12} />}
           label="Tokens"
           value={
             o().totalTokens > 0
@@ -47,14 +53,21 @@ export const ObservationDetailPanel: Component<{
         />
       </div>
 
-      <div class="space-y-4 text-xs text-fg-tertiary">
-        <p>Start: {formatDateTime(o().startTime)}</p>
-        <p>End: {formatDateTime(o().endTime)}</p>
-        <p class="font-mono">ID: {o().id}</p>
-        <Show when={o().statusMessage}>{(message) => <p>Status: {message()}</p>}</Show>
-      </div>
-
-      <Separator />
+      <p class="truncate text-[11px] text-fg-tertiary">
+        <span class="font-mono">{o().id}</span>
+        <span class="mx-4">·</span>
+        <span>
+          {formatDateTime(o().startTime)} → {formatDateTime(o().endTime)}
+        </span>
+        <Show when={o().statusMessage}>
+          {(message) => (
+            <>
+              <span class="mx-4">·</span>
+              <span>{message()}</span>
+            </>
+          )}
+        </Show>
+      </p>
 
       <ObservationIoTabs
         observation={o()}

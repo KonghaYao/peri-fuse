@@ -6,7 +6,7 @@ import {
   MonitorTraceTurnTreeShell,
   Skeleton,
 } from "@peri/ui";
-import { type Component, createMemo, createSignal, type JSX, Show } from "solid-js";
+import { type Component, createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import {
   toFlatObservations,
   toScoreSummary,
@@ -39,15 +39,21 @@ export function useTraceObservationState(traceId: string) {
     () => observationsQuery.data?.pages.flatMap((page) => page.data) ?? [],
   );
   const flatObservations = createMemo(() => toFlatObservations(observations()));
-  const traceIoQuery = useTraceIoQuery(traceId, selectedId() === null);
-  const selectedQuery = useObservationDetailQuery(
-    typeof selectedId() === "string" ? selectedId() : null,
-  );
+  const traceIoQuery = useTraceIoQuery(traceId, () => selectedId() === null);
+  const selectedQuery = useObservationDetailQuery(() => {
+    const id = selectedId();
+    return typeof id === "string" ? id : null;
+  });
 
   const trace = () => traceQuery.data;
-  const selected = () => selectedQuery.data ?? null;
+  const selectedDetail = createMemo((): Observation | null => {
+    const id = selectedId();
+    if (typeof id !== "string") return null;
+    const detail = selectedQuery.data;
+    return detail?.id === id ? detail : null;
+  });
   const selectedScores = createMemo(() => {
-    const obs = selected();
+    const obs = selectedDetail();
     const shell = trace();
     if (!obs || !shell) return [];
     return shell.scores.filter((score) => score.observationId === obs.id).map(toScoreSummary);
@@ -63,7 +69,6 @@ export function useTraceObservationState(traceId: string) {
       observations: observations(),
     };
   });
-
   return {
     selectedId,
     setSelectedId,
@@ -76,7 +81,7 @@ export function useTraceObservationState(traceId: string) {
     traceIoQuery,
     selectedQuery,
     trace,
-    selected,
+    selectedDetail,
     selectedScores,
     traceView,
   };
@@ -93,8 +98,15 @@ export const TraceObservationTreePane: Component<{
   observationsQuery: ReturnType<typeof useTraceObservationsQuery>;
   compact?: boolean;
 }> = (props) => (
-    <div class={props.compact ? "px-4 pb-4" : undefined}>
+  <div
+    class={
+      props.compact
+        ? "flex min-h-0 flex-1 flex-col px-4 pb-4"
+        : "flex min-h-0 flex-1 flex-col"
+    }
+  >
     <MonitorTraceTurnTree
+      class="min-h-0 flex-1"
       observations={props.flatObservations}
       selectedId={props.selectedId() ?? null}
       onSelect={(id) => props.onSelect(id)}
@@ -115,7 +127,7 @@ export const TraceObservationTreePane: Component<{
       <Button
         variant="ghost"
         size="sm"
-        class="mt-32 w-full"
+        class="mt-32 w-full shrink-0"
         disabled={props.observationsQuery.isFetchingNextPage}
         onClick={() => void props.observationsQuery.fetchNextPage()}
       >
@@ -128,67 +140,84 @@ export const TraceObservationTreePane: Component<{
 export const TraceObservationDetailPane: Component<{
   selectedId: () => string | null | undefined;
   selectedQuery: ReturnType<typeof useObservationDetailQuery>;
-  selected: () => Observation | null | undefined;
+  selectedDetail: () => Observation | null;
   selectedScores: () => ReturnType<typeof toScoreSummary>[];
   traceIoQuery: ReturnType<typeof useTraceIoQuery>;
   traceView: () => TraceWithDetails | null;
-}> = (props) => {
-  const detail = (): JSX.Element | null => {
-    const selectedId = props.selectedId();
-    if (selectedId === undefined) return null;
-    if (props.selectedQuery.isPending) {
-      return <Skeleton class="h-256 w-full" />;
-    }
-    if (props.selectedQuery.isError) {
-      return (
-        <InlineNotice tone="danger" role="alert">
-          {props.selectedQuery.error instanceof Error
-            ? props.selectedQuery.error.message
-            : "Failed to load observation"}
-        </InlineNotice>
-      );
-    }
-    const observation = props.selected();
-    if (observation) {
-      return <ObservationDetailPanel observation={observation} scores={props.selectedScores()} />;
-    }
-    if (props.traceIoQuery.isPending) {
-      return <Skeleton class="h-256 w-full" />;
-    }
-    if (props.traceIoQuery.isError) {
-      return (
-        <InlineNotice tone="danger" role="alert">
-          {props.traceIoQuery.error instanceof Error
-            ? props.traceIoQuery.error.message
-            : "Failed to load trace IO"}
-        </InlineNotice>
-      );
-    }
-    const trace = props.traceView();
-    if (!trace) return null;
-    return (
-      <TraceDetailPanel
-        input={trace.input}
-        output={trace.output}
-        metadata={trace.metadata}
-        scores={trace.scores.map(toScoreSummary)}
-      />
-    );
-  };
-
-  return (
-    <Show
-      when={props.selectedId() !== undefined}
-      fallback={
-        <div class="flex h-full items-center justify-center text-sm text-fg-tertiary">
-          Select the trace root or an observation to load its details.
-        </div>
-      }
-    >
-      {detail()}
-    </Show>
-  );
-};
+}> = (props) => (
+  <Switch>
+    <Match when={props.selectedId() === undefined}>
+      <div class="flex h-full items-center justify-center text-sm text-fg-tertiary">
+        Select the trace root or an observation to load its details.
+      </div>
+    </Match>
+    <Match when={typeof props.selectedId() === "string"}>
+      <Show
+        when={props.selectedQuery.isPending}
+        fallback={
+          <Show
+            when={props.selectedQuery.isError}
+            fallback={
+              <Show
+                when={props.selectedDetail()}
+                fallback={
+                  <InlineNotice tone="danger" role="alert">
+                    Observation not found in this trace.
+                  </InlineNotice>
+                }
+              >
+                {(observation) => (
+                  <ObservationDetailPanel
+                    observation={observation()}
+                    scores={props.selectedScores()}
+                  />
+                )}
+              </Show>
+            }
+          >
+            <InlineNotice tone="danger" role="alert">
+              {props.selectedQuery.error instanceof Error
+                ? props.selectedQuery.error.message
+                : "Failed to load observation"}
+            </InlineNotice>
+          </Show>
+        }
+      >
+        <Skeleton class="h-256 w-full" />
+      </Show>
+    </Match>
+    <Match when={props.selectedId() === null}>
+      <Show
+        when={props.traceIoQuery.isPending}
+        fallback={
+          <Show
+            when={props.traceIoQuery.isError}
+            fallback={
+              <Show when={props.traceView()} fallback={<Skeleton class="h-256 w-full" />}>
+                {(trace) => (
+                  <TraceDetailPanel
+                    input={trace().input}
+                    output={trace().output}
+                    metadata={trace().metadata}
+                    scores={trace().scores.map(toScoreSummary)}
+                  />
+                )}
+              </Show>
+            }
+          >
+            <InlineNotice tone="danger" role="alert">
+              {props.traceIoQuery.error instanceof Error
+                ? props.traceIoQuery.error.message
+                : "Failed to load trace IO"}
+            </InlineNotice>
+          </Show>
+        }
+      >
+        <Skeleton class="h-256 w-full" />
+      </Show>
+    </Match>
+  </Switch>
+);
 
 export const TraceObservationWorkspace: Component<TraceObservationWorkspaceProps> = (props) => {
   const state = useTraceObservationState(props.traceId);
@@ -196,7 +225,9 @@ export const TraceObservationWorkspace: Component<TraceObservationWorkspaceProps
 
   return (
     <MonitorTraceTurnTreeShell
+      data-testid="trace-workspace"
       class={props.class}
+      showDetailPlaceholder={state.selectedId() === undefined}
       tree={
         <Show
           when={!state.traceQuery.isPending}
@@ -225,12 +256,11 @@ export const TraceObservationWorkspace: Component<TraceObservationWorkspaceProps
           </Show>
         </Show>
       }
-      showDetailPlaceholder={state.selectedId() === undefined}
       detail={
         <TraceObservationDetailPane
           selectedId={state.selectedId}
           selectedQuery={state.selectedQuery}
-          selected={state.selected}
+          selectedDetail={state.selectedDetail}
           selectedScores={state.selectedScores}
           traceIoQuery={state.traceIoQuery}
           traceView={state.traceView}

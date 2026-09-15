@@ -1,5 +1,5 @@
 import { IoTabsShell, IoViewer } from "@peri/ui";
-import type { Component } from "solid-js";
+import { type Component, createMemo } from "solid-js";
 import { ObservationPreview } from "@/shared/components/observations/observation-preview";
 import type { Observation } from "@/shared/lib/types";
 
@@ -8,15 +8,22 @@ export const ObservationIoTabs: Component<{
   input: unknown;
   output: unknown;
   metadata: unknown;
-}> = (props) => (
-  <IoTabsShell
-    showPreviewTab={Boolean(props.observation)}
-    defaultTab={props.observation ? "preview" : "input"}
-    renderPreview={() =>
-      props.observation ? <ObservationPreview observation={props.observation} /> : null
-    }
-    renderInput={() => <IoViewer data={() => props.input} />}
-    renderOutput={() => <IoViewer data={() => props.output} />}
-    renderMetadata={() => <IoViewer data={() => props.metadata} defaultMode="json" />}
-  />
-);
+}> = (props) => {
+  const observation = () => props.observation;
+  const input = createMemo(() => props.input);
+  const output = createMemo(() => props.output);
+  const metadata = createMemo(() => props.metadata);
+
+  return (
+    <IoTabsShell
+      showPreviewTab={Boolean(observation())}
+      defaultTab={observation() ? "preview" : "input"}
+      renderPreview={() =>
+        observation() ? <ObservationPreview observation={observation()!} /> : null
+      }
+      renderInput={() => <IoViewer data={input} />}
+      renderOutput={() => <IoViewer data={output} />}
+      renderMetadata={() => <IoViewer data={metadata} defaultMode="json" />}
+    />
+  );
+};

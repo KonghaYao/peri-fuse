@@ -189,7 +189,7 @@ const SessionDetailContent: Component<{
     enabled: Boolean(props.sessionId),
   }));
   const session = () => sessionQuery.data;
-  const selectedQuery = useObservationDetailQuery(selectedId());
+  const selectedQuery = useObservationDetailQuery(selectedId);
 
   createEffect(() => {
     const current = session();

@@ -105,7 +105,9 @@ describe("ErrorsPage", () => {
       expect(view.getByText("rate limit")).toBeTruthy();
       expect(view.getByText("1 matching errors")).toBeTruthy();
       expect(view.getAllByText("rate-limit-exceeded").length).toBeGreaterThan(0);
+      expect(view.container.querySelector('[data-slot="table-view"]')).toBeTruthy();
       expect(view.container.querySelector('[data-table-rows="1"]')).toBeTruthy();
+      expect(view.getByText("Total 1 items")).toBeTruthy();
     });
   });
 
@@ -123,8 +125,10 @@ describe("ErrorsPage", () => {
     const view = renderWithProviders(() => <ErrorsPage />);
 
     await waitFor(() => {
-      expect(view.getByText("No errors match this investigation window.")).toBeTruthy();
       expect(view.getByText("0 matching errors")).toBeTruthy();
+      expect(view.container.querySelector('[data-slot="table-view"]')).toBeTruthy();
+      expect(view.container.querySelector('[data-table-rows="0"]')).toBeTruthy();
+      expect(view.getByText("Total 0 items")).toBeTruthy();
       expect(view.getAllByText("No errors in this window.").length).toBeGreaterThan(0);
       expect(view.getAllByText("No recurring signatures in this window.").length).toBeGreaterThan(0);
     });
