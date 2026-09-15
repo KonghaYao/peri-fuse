@@ -22,22 +22,22 @@ export type SessionSearchFiltersProps = {
 };
 
 export const SessionSearchFilters: Component<SessionSearchFiltersProps> = (props) => (
-  <div class="flex shrink-0 flex-col gap-2 border-b border-border p-4">
-    <div class="flex items-center gap-2">
+  <div class="flex shrink-0 flex-col gap-8 border-b border-border p-16">
+    <div class="flex items-center gap-8">
       <DialogTitle class="text-base">Search sessions</DialogTitle>
       <DialogDescription id="session-search-description" class="sr-only">
         Search user and AI message text, then select a result to preview its context.
       </DialogDescription>
     </div>
-    <div class="flex flex-wrap items-center gap-2">
+    <div class="flex flex-wrap items-center gap-8">
       <div class="relative min-w-[220px] flex-1">
-        <Search class="absolute left-2 top-2 h-4 w-4 text-fg-tertiary" size={16} />
+        <Search class="absolute left-8 top-8 h-16 w-16 text-fg-tertiary" size={16} />
         <input
           autofocus
           value={props.query}
           onInput={(event) => props.onQueryChange(event.currentTarget.value)}
           placeholder="Search user or AI message text…"
-          class="h-8 w-full rounded-md border border-border bg-background pl-8 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+          class="h-32 w-full rounded-md border border-border bg-background pl-32 pr-12 text-sm outline-none focus:ring-2 focus:ring-ring/30"
           aria-label="Search message text"
         />
       </div>
@@ -56,7 +56,7 @@ export const SessionSearchFilters: Component<SessionSearchFiltersProps> = (props
                 seconds: Number(event.currentTarget.value) as 3600 | 21600 | 86400 | 604800,
               })
         }
-        class="h-8 rounded-md border border-border bg-background px-2 text-sm"
+        class="h-32 rounded-md border border-border bg-background px-8 text-sm"
       >
         <option value="3600">Last 1 hour</option>
         <option value="21600">Last 6 hours</option>
@@ -75,15 +75,15 @@ export const SessionSearchFilters: Component<SessionSearchFiltersProps> = (props
       </Show>
     </div>
     <Show when={props.range.kind === "absolute"}>
-      <div class="flex flex-wrap items-center gap-2 text-xs">
-        <Clock class="h-3.5 w-3.5 text-fg-tertiary" size={14} />
+      <div class="flex flex-wrap items-center gap-8 text-xs">
+        <Clock class="h-14 w-14 text-fg-tertiary" size={14} />
         <label>
           From{" "}
           <input
             type="datetime-local"
             value={props.customFrom}
             onInput={(event) => props.onCustomFromChange(event.currentTarget.value)}
-            class="h-7 rounded border border-border bg-background px-2"
+            class="h-28 rounded border border-border bg-background px-8"
           />
         </label>
         <label>
@@ -92,14 +92,14 @@ export const SessionSearchFilters: Component<SessionSearchFiltersProps> = (props
             type="datetime-local"
             value={props.customTo}
             onInput={(event) => props.onCustomToChange(event.currentTarget.value)}
-            class="h-7 rounded border border-border bg-background px-2"
+            class="h-28 rounded border border-border bg-background px-8"
           />
         </label>
       </div>
     </Show>
     <Show when={props.searchState === "error"}>
-      <p class="flex items-center gap-1 text-xs text-danger">
-        <AlertCircle class="h-3.5 w-3.5" size={14} />
+      <p class="flex items-center gap-4 text-xs text-danger">
+        <AlertCircle class="h-14 w-14" size={14} />
         {props.error}
       </p>
     </Show>

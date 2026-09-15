@@ -35,7 +35,7 @@ function metricsPending(row: TracesTableRow) {
 }
 
 function MetricsSkeleton(props: { class?: string }) {
-  return <Skeleton class={cn("h-4", props.class ?? "w-12")} />;
+  return <Skeleton class={cn("h-16", props.class ?? "w-48")} />;
 }
 
 function levelCountsCell(row: TracesTableRow): JSX.Element {
@@ -113,7 +113,7 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
     accessor: (row) => row.totalTokens,
     cell: (row) => {
       if (row.promptTokens === null || row.completionTokens === null) {
-        return <MetricsSkeleton class="w-16" />;
+        return <MetricsSkeleton class="w-64" />;
       }
       return (
         <TokenUsageBadge
@@ -133,7 +133,7 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
         {(value) => (
           <Badge
             tone="neutral"
-            class="max-w-fit truncate rounded-sm px-1 font-normal"
+            class="max-w-fit truncate rounded-sm px-4 font-normal"
             title={value()}
           >
             {value()}
@@ -148,7 +148,7 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
     hideable: true,
     cell: (row) => (
       <Show when={row.tags.length > 0}>
-        <div class="flex flex-wrap gap-x-2 gap-y-1">
+        <div class="flex flex-wrap gap-x-8 gap-y-4">
           {row.tags.slice(0, 4).map((tag) => (
             <Badge tone="neutral" class="font-normal">
               {tag}
@@ -201,7 +201,7 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
     header: "Observations",
     hideable: true,
     cell: (row) => {
-      if (row.observationCount === null) return <MetricsSkeleton class="w-8" />;
+      if (row.observationCount === null) return <MetricsSkeleton class="w-32" />;
       return <span>{numberFormatter(row.observationCount, 0)}</span>;
     },
   },
@@ -210,13 +210,13 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
     header: "Level",
     hideable: true,
     cell: (row) => {
-      if (row.level === null) return <MetricsSkeleton class="w-10" />;
+      if (row.level === null) return <MetricsSkeleton class="w-40" />;
       return (
         <Show when={row.level} fallback={<span>-</span>}>
           {(value) => (
             <span
               class={cn(
-                "rounded-sm p-0.5 text-xs",
+                "rounded-sm p-2 text-xs",
                 LEVEL_BG[value()] ?? LEVEL_BG.DEFAULT,
                 LEVEL_TEXT[value()] ?? LEVEL_TEXT.DEFAULT,
               )}
@@ -251,7 +251,7 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
     header: "Input Tokens",
     hideable: true,
     cell: (row) => {
-      if (row.promptTokens === null) return <MetricsSkeleton class="w-10" />;
+      if (row.promptTokens === null) return <MetricsSkeleton class="w-40" />;
       return <span>{numberFormatter(row.promptTokens, 0)}</span>;
     },
   },
@@ -260,7 +260,7 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
     header: "Output Tokens",
     hideable: true,
     cell: (row) => {
-      if (row.completionTokens === null) return <MetricsSkeleton class="w-10" />;
+      if (row.completionTokens === null) return <MetricsSkeleton class="w-40" />;
       return <span>{numberFormatter(row.completionTokens, 0)}</span>;
     },
   },
@@ -269,7 +269,7 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
     header: "Total Tokens",
     hideable: true,
     cell: (row) => {
-      if (row.totalTokens === null) return <MetricsSkeleton class="w-10" />;
+      if (row.totalTokens === null) return <MetricsSkeleton class="w-40" />;
       return <span>{numberFormatter(row.totalTokens, 0)}</span>;
     },
   },
@@ -278,7 +278,7 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
     header: "Cached Tokens",
     hideable: true,
     cell: (row) => {
-      if (row.cachedTokens === null) return <MetricsSkeleton class="w-10" />;
+      if (row.cachedTokens === null) return <MetricsSkeleton class="w-40" />;
       return <span>{numberFormatter(row.cachedTokens, 0)}</span>;
     },
   },
@@ -287,7 +287,7 @@ export const tracesTableColumns: EnhancedDataTableColumn<TracesTableRow>[] = [
     header: "Cache Hit Rate",
     hideable: true,
     cell: (row) => {
-      if (row.cacheHitRate === null) return <MetricsSkeleton class="w-10" />;
+      if (row.cacheHitRate === null) return <MetricsSkeleton class="w-40" />;
       return <span>{formatPercent(row.cacheHitRate)}</span>;
     },
   },

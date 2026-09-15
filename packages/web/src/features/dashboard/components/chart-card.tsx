@@ -27,7 +27,7 @@ export function ChartCard(props: {
         <Show
           when={!props.isEmpty}
           fallback={
-            <p class="py-16 text-center text-sm text-fg-tertiary">
+            <p class="py-64 text-center text-sm text-fg-tertiary">
               {props.emptyMessage ?? "No data in the selected range."}
             </p>
           }

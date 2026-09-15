@@ -31,16 +31,16 @@ export const SessionSearchContextPanel: Component<{
     >
       {(hit) => (
         <>
-          <div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div class="flex shrink-0 items-center justify-between gap-8 border-b border-border px-16 py-12">
             <div class="min-w-0">
-              <div class="flex items-center gap-2 text-sm font-medium">
+              <div class="flex items-center gap-8 text-sm font-medium">
                 <button
                   type="button"
                   class="md:hidden"
                   onClick={props.onClearSelected}
                   aria-label="Back to results"
                 >
-                  <ArrowLeft class="h-4 w-4" size={16} />
+                  <ArrowLeft class="h-16 w-16" size={16} />
                 </button>
                 <span class="truncate">{hit().sessionId}</span>
               </div>
@@ -53,16 +53,16 @@ export const SessionSearchContextPanel: Component<{
               Open full session
             </Button>
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto p-4">
-            <p class="mb-3 text-xs text-fg-tertiary">
+          <div class="min-h-0 flex-1 overflow-y-auto p-16">
+            <p class="mb-12 text-xs text-fg-tertiary">
               Only user and AI messages are shown. This is a partial preview of the source sequence;
               earlier context may be outside the search time range.
             </p>
             <Show
               when={props.contextState() !== "loading"}
               fallback={
-                <div class="flex items-center justify-center gap-2 py-12 text-sm text-fg-tertiary">
-                  <Loader2 class="h-4 w-4 animate-spin" size={16} />
+                <div class="flex items-center justify-center gap-8 py-48 text-sm text-fg-tertiary">
+                  <Loader2 class="h-16 w-16 animate-spin" size={16} />
                   Loading context…
                 </div>
               }
@@ -70,12 +70,12 @@ export const SessionSearchContextPanel: Component<{
               <Show
                 when={props.contextState() !== "error"}
                 fallback={
-                  <div class="rounded border border-danger/30 bg-danger-subtle p-3 text-sm text-danger">
+                  <div class="rounded border border-danger/30 bg-danger-subtle p-12 text-sm text-danger">
                     {props.contextError()}
                     <Button
                       size="sm"
                       variant="secondary"
-                      class="ml-2"
+                      class="ml-8"
                       onClick={() => props.onRetry(hit())}
                     >
                       Retry
@@ -90,7 +90,7 @@ export const SessionSearchContextPanel: Component<{
                   }
                 >
                   {(ctx) => (
-                    <div class="space-y-2">
+                    <div class="space-y-8">
                       <For each={ctx().messages}>
                         {(message) => (
                           <ContextMessage
@@ -100,7 +100,7 @@ export const SessionSearchContextPanel: Component<{
                           />
                         )}
                       </For>
-                      <div class="flex justify-between pt-2">
+                      <div class="flex justify-between pt-8">
                         <Button
                           size="sm"
                           variant="secondary"
@@ -121,7 +121,7 @@ export const SessionSearchContextPanel: Component<{
                         </Button>
                       </div>
                       <Show when={props.contextMeta()?.truncated}>
-                        <p class="pt-2 text-center text-xs text-fg-tertiary">
+                        <p class="pt-8 text-center text-xs text-fg-tertiary">
                           This preview is incomplete.
                         </p>
                       </Show>

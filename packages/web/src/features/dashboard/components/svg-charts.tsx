@@ -191,7 +191,7 @@ export const ActivityComposedChart: Component<{
 }> = (props) => {
   const height = () => props.height ?? 320;
   return (
-    <div class="relative h-80 w-full">
+    <div class="relative h-320 w-full">
       <VerticalBarChart
         height={height()}
         labels={props.labels}
@@ -213,15 +213,15 @@ export const ActivityComposedChart: Component<{
         color="var(--chart-3)"
         formatY={(v) => `${Math.round(v / 1000)}k`}
       />
-      <div class="mt-2 flex flex-wrap gap-4 text-xs text-fg-tertiary">
-        <span class="inline-flex items-center gap-1.5">
-          <span class="h-2 w-2 rounded-sm bg-[var(--chart-1)]" /> traces
+      <div class="mt-8 flex flex-wrap gap-16 text-xs text-fg-tertiary">
+        <span class="inline-flex items-center gap-6">
+          <span class="h-8 w-8 rounded-sm bg-[var(--chart-1)]" /> traces
         </span>
-        <span class="inline-flex items-center gap-1.5">
-          <span class="h-2 w-2 rounded-sm bg-[var(--chart-2)]" /> observations
+        <span class="inline-flex items-center gap-6">
+          <span class="h-8 w-8 rounded-sm bg-[var(--chart-2)]" /> observations
         </span>
-        <span class="inline-flex items-center gap-1.5">
-          <span class="h-2.5 w-2.5 rounded-full bg-[var(--chart-3)]" /> tokens
+        <span class="inline-flex items-center gap-6">
+          <span class="h-10 w-10 rounded-full bg-[var(--chart-3)]" /> tokens
         </span>
       </div>
     </div>
@@ -281,11 +281,11 @@ export const MultiLineChart: Component<{
           )}
         </For>
       </ChartSvg>
-      <div class="mt-2 flex flex-wrap gap-4 text-xs text-fg-tertiary">
+      <div class="mt-8 flex flex-wrap gap-16 text-xs text-fg-tertiary">
         <For each={props.series}>
           {(serie) => (
-            <span class="inline-flex items-center gap-1.5">
-              <span class="h-0.5 w-3 rounded-full" style={{ background: serie.color }} />
+            <span class="inline-flex items-center gap-6">
+              <span class="h-2 w-12 rounded-full" style={{ background: serie.color }} />
               {serie.name}
             </span>
           )}
@@ -372,11 +372,11 @@ export const HorizontalBarChart: Component<{
 
 function ShowLegend(props: { series: Array<{ name: string; color: string }> }) {
   return (
-    <div class="mt-2 flex flex-wrap gap-4 text-xs text-fg-tertiary">
+    <div class="mt-8 flex flex-wrap gap-16 text-xs text-fg-tertiary">
       <For each={props.series}>
         {(serie) => (
-          <span class="inline-flex items-center gap-1.5">
-            <span class="h-2 w-2 rounded-sm" style={{ background: serie.color }} />
+          <span class="inline-flex items-center gap-6">
+            <span class="h-8 w-8 rounded-sm" style={{ background: serie.color }} />
             {serie.name}
           </span>
         )}
@@ -406,8 +406,8 @@ export const DonutChart: Component<{
   };
 
   return (
-    <div class="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:justify-center">
-      <ChartSvg height={height()} class="h-56 w-full max-w-xs">
+    <div class="flex flex-col items-center gap-16 sm:flex-row sm:items-center sm:justify-center">
+      <ChartSvg height={height()} class="h-224 w-full max-w-xs">
         <For each={arcs()}>
           {(arc) => (
             <path
@@ -418,12 +418,12 @@ export const DonutChart: Component<{
           )}
         </For>
       </ChartSvg>
-      <ul class="flex flex-wrap justify-center gap-3 text-xs text-fg-secondary">
+      <ul class="flex flex-wrap justify-center gap-12 text-xs text-fg-secondary">
         <For each={props.segments}>
           {(segment) => (
-            <li class="inline-flex items-center gap-1.5">
+            <li class="inline-flex items-center gap-6">
               <span
-                class="h-2 w-2 rounded-full"
+                class="h-8 w-8 rounded-full"
                 style={{ background: segment.color, opacity: segment.opacity ?? 0.9 }}
               />
               {segment.label}

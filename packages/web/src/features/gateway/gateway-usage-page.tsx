@@ -48,14 +48,14 @@ const SummaryCards: Component<{ summary: UsageSummary }> = (props) => {
   ];
 
   return (
-    <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div class="grid grid-cols-2 gap-16 lg:grid-cols-4">
       {cards().map((card) => (
         <Card>
-          <CardContent class="p-4">
+          <CardContent class="p-16">
             <p class="text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
               {card.label}
             </p>
-            <p class="mt-1 text-lg font-semibold text-fg-primary">{card.value}</p>
+            <p class="mt-4 text-lg font-semibold text-fg-primary">{card.value}</p>
           </CardContent>
         </Card>
       ))}
@@ -76,15 +76,15 @@ export interface GatewayUsageContentProps {
 
 /** Renders all four Gateway Usage query boundaries without owning network or date state. */
 export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) => (
-  <div class="space-y-6 p-6">
-    <div class="flex items-center gap-3">
+  <div class="space-y-24 p-24">
+    <div class="flex items-center gap-12">
       <label for="gateway-usage-from" class="text-[13px] font-medium text-fg-secondary">
         From
       </label>
       <Input
         id="gateway-usage-from"
         type="date"
-        class="w-40"
+        class="w-160"
         value={props.range.start}
         onInput={(e) => props.onStartDateChange(e.currentTarget.value)}
       />
@@ -94,7 +94,7 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
       <Input
         id="gateway-usage-to"
         type="date"
-        class="w-40"
+        class="w-160"
         value={props.range.end}
         onInput={(e) => props.onEndDateChange(e.currentTarget.value)}
       />
@@ -111,7 +111,7 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
     </GatewayQuerySection>
 
     <Card>
-      <CardHeader class="pb-3">
+      <CardHeader class="pb-12">
         <CardTitle class="text-base">By Model</CardTitle>
       </CardHeader>
       <CardContent class="p-0">
@@ -120,35 +120,35 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
           query={props.byModelQuery}
           isEmpty={(rows) => rows.length === 0}
           loading={<LoadingRows rows={4} />}
-          empty={<p class="px-4 pb-4 text-sm text-fg-tertiary">No usage data in this range.</p>}
+          empty={<p class="px-16 pb-16 text-sm text-fg-tertiary">No usage data in this range.</p>}
         >
           {(rows) => (
             <table class="w-full text-sm">
               <thead>
                 <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                  <th class="px-4 py-2.5">Model</th>
-                  <th class="px-4 py-2.5 text-right">Requests</th>
-                  <th class="px-4 py-2.5 text-right">Prompt Tokens</th>
-                  <th class="px-4 py-2.5 text-right">Completion Tokens</th>
-                  <th class="px-4 py-2.5 text-right">Spend</th>
+                  <th class="px-16 py-10">Model</th>
+                  <th class="px-16 py-10 text-right">Requests</th>
+                  <th class="px-16 py-10 text-right">Prompt Tokens</th>
+                  <th class="px-16 py-10 text-right">Completion Tokens</th>
+                  <th class="px-16 py-10 text-right">Spend</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr class="border-b border-border/50">
-                    <td class="px-4 py-2.5 font-mono text-[13px] text-fg-primary">
+                    <td class="px-16 py-10 font-mono text-[13px] text-fg-primary">
                       {row.model || "(unknown)"}
                     </td>
-                    <td class="px-4 py-2.5 text-right text-fg-secondary">
+                    <td class="px-16 py-10 text-right text-fg-secondary">
                       {row.totalRequests.toLocaleString()}
                     </td>
-                    <td class="px-4 py-2.5 text-right font-mono text-xs text-fg-tertiary">
+                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
                       {row.totalPromptTokens.toLocaleString()}
                     </td>
-                    <td class="px-4 py-2.5 text-right font-mono text-xs text-fg-tertiary">
+                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
                       {row.totalCompletionTokens.toLocaleString()}
                     </td>
-                    <td class="px-4 py-2.5 text-right font-mono text-xs text-fg-secondary">
+                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-secondary">
                       ${row.totalSpend.toFixed(4)}
                     </td>
                   </tr>
@@ -161,7 +161,7 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
     </Card>
 
     <Card>
-      <CardHeader class="pb-3">
+      <CardHeader class="pb-12">
         <CardTitle class="text-base">By Provider</CardTitle>
       </CardHeader>
       <CardContent class="p-0">
@@ -170,33 +170,33 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
           query={props.byProviderQuery}
           isEmpty={(rows) => rows.length === 0}
           loading={<LoadingRows rows={4} />}
-          empty={<p class="px-4 pb-4 text-sm text-fg-tertiary">No usage data in this range.</p>}
+          empty={<p class="px-16 pb-16 text-sm text-fg-tertiary">No usage data in this range.</p>}
         >
           {(rows) => (
             <table class="w-full text-sm">
               <thead>
                 <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                  <th class="px-4 py-2.5">Provider</th>
-                  <th class="px-4 py-2.5 text-right">Requests</th>
-                  <th class="px-4 py-2.5 text-right">Prompt Tokens</th>
-                  <th class="px-4 py-2.5 text-right">Completion Tokens</th>
-                  <th class="px-4 py-2.5 text-right">Spend</th>
+                  <th class="px-16 py-10">Provider</th>
+                  <th class="px-16 py-10 text-right">Requests</th>
+                  <th class="px-16 py-10 text-right">Prompt Tokens</th>
+                  <th class="px-16 py-10 text-right">Completion Tokens</th>
+                  <th class="px-16 py-10 text-right">Spend</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr class="border-b border-border/50">
-                    <td class="px-4 py-2.5 text-fg-primary">{row.provider || "(unknown)"}</td>
-                    <td class="px-4 py-2.5 text-right text-fg-secondary">
+                    <td class="px-16 py-10 text-fg-primary">{row.provider || "(unknown)"}</td>
+                    <td class="px-16 py-10 text-right text-fg-secondary">
                       {row.totalRequests.toLocaleString()}
                     </td>
-                    <td class="px-4 py-2.5 text-right font-mono text-xs text-fg-tertiary">
+                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
                       {row.totalPromptTokens.toLocaleString()}
                     </td>
-                    <td class="px-4 py-2.5 text-right font-mono text-xs text-fg-tertiary">
+                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
                       {row.totalCompletionTokens.toLocaleString()}
                     </td>
-                    <td class="px-4 py-2.5 text-right font-mono text-xs text-fg-secondary">
+                    <td class="px-16 py-10 text-right font-mono text-xs text-fg-secondary">
                       ${row.totalSpend.toFixed(4)}
                     </td>
                   </tr>
@@ -209,7 +209,7 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
     </Card>
 
     <Card>
-      <CardHeader class="pb-3">
+      <CardHeader class="pb-12">
         <CardTitle class="text-base">Daily Breakdown</CardTitle>
       </CardHeader>
       <CardContent class="p-0">
@@ -218,38 +218,38 @@ export const GatewayUsageContent: Component<GatewayUsageContentProps> = (props) 
           query={props.dailyQuery}
           isEmpty={(rows) => rows.length === 0}
           loading={<LoadingRows rows={4} />}
-          empty={<p class="px-4 pb-4 text-sm text-fg-tertiary">No usage data in this range.</p>}
+          empty={<p class="px-16 pb-16 text-sm text-fg-tertiary">No usage data in this range.</p>}
         >
           {(rows) => (
             <div class="max-h-[400px] overflow-y-auto">
               <table class="w-full text-sm">
                 <thead class="sticky top-0 bg-surface-raised">
                   <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                    <th class="px-4 py-2.5">Date</th>
-                    <th class="px-4 py-2.5">Model</th>
-                    <th class="hidden px-4 py-2.5 md:table-cell">Provider</th>
-                    <th class="px-4 py-2.5 text-right">Requests</th>
-                    <th class="px-4 py-2.5 text-right">Tokens</th>
-                    <th class="px-4 py-2.5 text-right">Spend</th>
+                    <th class="px-16 py-10">Date</th>
+                    <th class="px-16 py-10">Model</th>
+                    <th class="hidden px-16 py-10 md:table-cell">Provider</th>
+                    <th class="px-16 py-10 text-right">Requests</th>
+                    <th class="px-16 py-10 text-right">Tokens</th>
+                    <th class="px-16 py-10 text-right">Spend</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
                     <tr class="border-b border-border/50">
-                      <td class="px-4 py-2.5 text-xs text-fg-secondary">{row.date}</td>
-                      <td class="px-4 py-2.5 font-mono text-xs text-fg-primary">
+                      <td class="px-16 py-10 text-xs text-fg-secondary">{row.date}</td>
+                      <td class="px-16 py-10 font-mono text-xs text-fg-primary">
                         {row.model || "—"}
                       </td>
-                      <td class="hidden px-4 py-2.5 text-xs text-fg-tertiary md:table-cell">
+                      <td class="hidden px-16 py-10 text-xs text-fg-tertiary md:table-cell">
                         {row.provider || "—"}
                       </td>
-                      <td class="px-4 py-2.5 text-right text-xs text-fg-secondary">
+                      <td class="px-16 py-10 text-right text-xs text-fg-secondary">
                         {row.apiRequests.toLocaleString()}
                       </td>
-                      <td class="px-4 py-2.5 text-right font-mono text-xs text-fg-tertiary">
+                      <td class="px-16 py-10 text-right font-mono text-xs text-fg-tertiary">
                         {(row.promptTokens + row.completionTokens).toLocaleString()}
                       </td>
-                      <td class="px-4 py-2.5 text-right font-mono text-xs text-fg-secondary">
+                      <td class="px-16 py-10 text-right font-mono text-xs text-fg-secondary">
                         ${row.spend.toFixed(4)}
                       </td>
                     </tr>

@@ -68,14 +68,14 @@ const GatewayLogsPage = lazy(async () => {
 function PageFallback() {
   return (
     <div class="flex h-full flex-col">
-      <div class="border-b border-border px-6 py-4">
-        <div class="h-5 w-32 animate-pulse rounded bg-muted" />
-        <div class="mt-2 h-3.5 w-56 animate-pulse rounded bg-muted/60" />
+      <div class="border-b border-border px-24 py-16">
+        <div class="h-20 w-128 animate-pulse rounded bg-muted" />
+        <div class="mt-8 h-14 w-224 animate-pulse rounded bg-muted/60" />
       </div>
-      <div class="flex-1 space-y-3 p-6">
-        <div class="h-9 w-full animate-pulse rounded bg-muted/60" />
+      <div class="flex-1 space-y-12 p-24">
+        <div class="h-36 w-full animate-pulse rounded bg-muted/60" />
         {Array.from({ length: 8 }).map(() => (
-          <div class="h-9 w-full animate-pulse rounded bg-muted/40" />
+          <div class="h-36 w-full animate-pulse rounded bg-muted/40" />
         ))}
       </div>
     </div>

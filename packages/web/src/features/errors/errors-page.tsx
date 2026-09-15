@@ -37,13 +37,13 @@ const ErrorRow: Component<{
     type="button"
     onClick={props.onSelect}
     class={cn(
-      "group grid w-full grid-cols-[18px_minmax(0,1fr)_auto] gap-3 border-b border-line px-4 py-3 text-left transition-colors focus-visible:bg-danger-subtle",
+      "group grid w-full grid-cols-[18px_minmax(0,1fr)_auto] gap-12 border-b border-line px-16 py-12 text-left transition-colors focus-visible:bg-danger-subtle",
       props.selected ? "bg-danger-subtle" : "hover:bg-surface-inset/70",
     )}
   >
-    <AlertTriangle class="mt-0.5 h-4 w-4 text-danger" size={16} />
+    <AlertTriangle class="mt-2 h-16 w-16 text-danger" size={16} />
     <div class="min-w-0">
-      <div class="flex min-w-0 items-center gap-2">
+      <div class="flex min-w-0 items-center gap-8">
         <span class="truncate text-sm font-semibold text-fg-primary">
           {props.error.name ?? "Unnamed observation"}
         </span>
@@ -56,10 +56,10 @@ const ErrorRow: Component<{
           </span>
         )}
       </div>
-      <p class="mt-1 line-clamp-2 font-mono text-[11px] leading-4 text-fg-secondary">
+      <p class="mt-4 line-clamp-8 font-mono text-[11px] leading-4 text-fg-secondary">
         {props.error.statusMessage ?? "No status message recorded"}
       </p>
-      <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-fg-tertiary">
+      <div class="mt-6 flex flex-wrap items-center gap-x-12 gap-y-4 text-[10px] text-fg-tertiary">
         <span>{props.error.traceName ?? props.error.traceId ?? "Unknown trace"}</span>
         {props.error.environment && <span>{props.error.environment}</span>}
         {props.error.endTime && (
@@ -67,12 +67,12 @@ const ErrorRow: Component<{
         )}
       </div>
     </div>
-    <div class="flex items-start gap-2">
+    <div class="flex items-start gap-8">
       <time class="hidden whitespace-nowrap font-mono text-[10px] text-fg-tertiary sm:block">
         {formatDateTime(props.error.startTime)}
       </time>
       <ChevronRight
-        class="h-4 w-4 text-fg-tertiary transition-transform group-hover:translate-x-0.5"
+        class="h-16 w-16 text-fg-tertiary transition-transform group-hover:translate-x-0.5"
         size={16}
       />
     </div>
@@ -143,15 +143,15 @@ export const ErrorsPage: Component = () => {
         actions={<AutoRefreshControl />}
       />
 
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
-        <div class="flex rounded-md border border-line bg-surface-inset p-0.5">
+      <div class="flex shrink-0 flex-wrap items-center gap-8 border-b border-line px-16 py-10">
+        <div class="flex rounded-md border border-line bg-surface-inset p-2">
           <For each={Object.keys(RANGE_MS)}>
             {(item) => (
               <button
                 type="button"
                 onClick={() => updateFilter("range", item)}
                 class={cn(
-                  "rounded px-2.5 py-1 text-[11px] font-medium transition-colors",
+                  "rounded px-10 py-4 text-[11px] font-medium transition-colors",
                   range() === item
                     ? "bg-surface-raised text-fg-primary shadow-sm"
                     : "text-fg-tertiary hover:text-fg-primary",
@@ -166,7 +166,7 @@ export const ErrorsPage: Component = () => {
           ref={(handle) => {
             searchRef = handle;
           }}
-          class="w-64"
+          class="w-256"
           placeholder="Search message, trace or name…"
           icon={Search}
           value={search()}
@@ -176,7 +176,7 @@ export const ErrorsPage: Component = () => {
           ref={(handle) => {
             environmentRef = handle;
           }}
-          class="w-40"
+          class="w-160"
           placeholder="Environment…"
           icon={Globe}
           value={environment()}
@@ -190,7 +190,7 @@ export const ErrorsPage: Component = () => {
             environmentRef?.commit();
           }}
         >
-          <Search class="h-3.5 w-3.5" size={14} /> Search
+          <Search class="h-14 w-14" size={14} /> Search
         </Button>
         <FilterSelect
           placeholder="Type"
@@ -214,7 +214,7 @@ export const ErrorsPage: Component = () => {
         />
         <Show when={hasActiveFilters()}>
           <Button size="sm" variant="ghost" onClick={clearFilters}>
-            <X class="h-3.5 w-3.5" size={14} /> Clear filters
+            <X class="h-14 w-14" size={14} /> Clear filters
           </Button>
         </Show>
       </div>
@@ -222,7 +222,7 @@ export const ErrorsPage: Component = () => {
       <div class="flex min-h-0 flex-1">
         <Show when={analysis()}>
           {(data) => (
-            <aside class="hidden w-72 shrink-0 overflow-y-auto border-r border-line bg-surface-raised lg:block">
+            <aside class="hidden w-288 shrink-0 overflow-y-auto border-r border-line bg-surface-raised lg:block">
               <ErrorAnalysisRail
                 analysis={data()}
                 onSelectSignature={(signature) => updateFilter("search", signature)}
@@ -235,7 +235,7 @@ export const ErrorsPage: Component = () => {
           <Show when={analysis()}>
             {(data) => (
               <details class="shrink-0 border-b border-line bg-surface-raised lg:hidden">
-                <summary class="cursor-pointer px-4 py-2.5 text-xs font-semibold text-fg-secondary">
+                <summary class="cursor-pointer px-16 py-10 text-xs font-semibold text-fg-secondary">
                   Analysis snapshot · {data().summary.uniqueSignatures} fingerprints
                 </summary>
                 <ErrorAnalysisRail
@@ -245,9 +245,9 @@ export const ErrorsPage: Component = () => {
               </details>
             )}
           </Show>
-          <div class="flex h-10 shrink-0 items-center justify-between border-b border-line px-4">
-            <div class="flex items-center gap-2 text-xs text-fg-secondary">
-              <Clock3 class="h-3.5 w-3.5" size={14} />
+          <div class="flex h-40 shrink-0 items-center justify-between border-b border-line px-16">
+            <div class="flex items-center gap-8 text-xs text-fg-secondary">
+              <Clock3 class="h-14 w-14" size={14} />
               <span>
                 {analysis()
                   ? `${analysis()!.summary.totalErrors.toLocaleString()} matching errors`
@@ -261,9 +261,9 @@ export const ErrorsPage: Component = () => {
             <Show
               when={!query.isPending}
               fallback={
-                <div class="space-y-2 p-4">
+                <div class="space-y-8 p-16">
                   <For each={Array.from({ length: 10 }, (_, i) => i)}>
-                    {() => <Skeleton class="h-16 w-full" />}
+                    {() => <Skeleton class="h-64 w-full" />}
                   </For>
                 </div>
               }
@@ -271,7 +271,7 @@ export const ErrorsPage: Component = () => {
               <Show
                 when={!query.isError}
                 fallback={
-                  <div class="p-4">
+                  <div class="p-16">
                     <TableInlineError error={query.error} onRetry={() => void query.refetch()} />
                   </div>
                 }
@@ -295,7 +295,7 @@ export const ErrorsPage: Component = () => {
                     )}
                   </For>
                   <Show when={query.hasNextPage}>
-                    <div class="flex justify-center p-4">
+                    <div class="flex justify-center p-16">
                       <Button
                         variant="secondary"
                         disabled={query.isFetchingNextPage}

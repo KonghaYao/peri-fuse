@@ -18,17 +18,17 @@ import { formatLatency, formatTokens } from "@/shared/lib/format";
 
 const TraceDetailSkeleton: Component = () => (
   <div class="flex h-full flex-col">
-    <div class="space-y-3 border-b border-border px-6 py-4">
-      <Skeleton class="h-3 w-24" />
-      <Skeleton class="h-6 w-1/3" />
-      <Skeleton class="h-3 w-1/2" />
-      <div class="flex gap-2">
+    <div class="space-y-12 border-b border-border px-24 py-16">
+      <Skeleton class="h-12 w-96" />
+      <Skeleton class="h-24 w-1/3" />
+      <Skeleton class="h-12 w-1/2" />
+      <div class="flex gap-8">
         {Array.from({ length: 5 }).map((_, index) => (
-          <Skeleton class="h-12 w-32" data-index={index} />
+          <Skeleton class="h-48 w-128" data-index={index} />
         ))}
       </div>
     </div>
-    <div class="flex min-h-0 flex-1 gap-4 p-4">
+    <div class="flex min-h-0 flex-1 gap-16 p-16">
       <Skeleton class="w-[45%]" />
       <Skeleton class="flex-1" />
     </div>
@@ -69,23 +69,23 @@ export const TraceDetailPage: Component = () => {
       <Show
         when={!traceQuery.isError && trace()}
         fallback={
-          <InlineNotice tone="danger" role="alert" class="m-6">
+          <InlineNotice tone="danger" role="alert" class="m-24">
             {traceQuery.error instanceof Error ? traceQuery.error.message : "Failed to load trace"}
           </InlineNotice>
         }
       >
         {(currentTrace) => (
           <div class="flex h-full flex-col">
-            <div class="shrink-0 border-b border-border px-6 py-4">
+            <div class="shrink-0 border-b border-border px-24 py-16">
               <A
                 href="/traces"
-                class="mb-2 inline-flex items-center gap-1 text-xs text-fg-tertiary transition-colors hover:text-fg-primary"
+                class="mb-8 inline-flex items-center gap-4 text-xs text-fg-tertiary transition-colors hover:text-fg-primary"
               >
-                <ArrowLeft class="h-3.5 w-3.5" size={14} />
+                <ArrowLeft class="h-14 w-14" size={14} />
                 Back to traces
               </A>
 
-              <div class="flex flex-wrap items-center gap-2">
+              <div class="flex flex-wrap items-center gap-8">
                 <h1 class="text-lg font-semibold tracking-[-0.02em] text-fg-primary">
                   {currentTrace().name ?? "(unnamed trace)"}
                 </h1>
@@ -102,22 +102,22 @@ export const TraceDetailPage: Component = () => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  class="h-7 w-7 p-0"
+                  class="h-28 w-28 p-0"
                   onClick={() => void copyId()}
                   title="Copy trace ID"
                 >
-                  <Copy class="h-3.5 w-3.5" size={14} />
+                  <Copy class="h-14 w-14" size={14} />
                 </Button>
               </div>
 
-              <p class="mt-1 text-xs text-fg-tertiary">
+              <p class="mt-4 text-xs text-fg-tertiary">
                 <LocalIsoDate date={new Date(currentTrace().timestamp)} />
                 {currentTrace().userId ? ` · user: ${currentTrace().userId}` : ""}
                 {currentTrace().sessionId ? ` · session: ${currentTrace().sessionId}` : ""}
-                <span class="ml-2 font-mono text-fg-secondary">{currentTrace().id}</span>
+                <span class="ml-8 font-mono text-fg-secondary">{currentTrace().id}</span>
               </p>
 
-              <div class="mt-3 flex flex-wrap gap-2">
+              <div class="mt-12 flex flex-wrap gap-8">
                 <StatChip
                   icon={Clock}
                   label="Latency"
@@ -137,16 +137,16 @@ export const TraceDetailPage: Component = () => {
                 <Button
                   variant="secondary"
                   size="sm"
-                  class="h-11 self-end"
+                  class="h-44 self-end"
                   onClick={() => setTimelineOpen(true)}
                 >
-                  <ChartNoAxesCombined class="h-3.5 w-3.5" size={14} />
+                  <ChartNoAxesCombined class="h-14 w-14" size={14} />
                   Timeline
                 </Button>
               </div>
             </div>
 
-            <div class="flex min-h-0 flex-1 p-4">
+            <div class="flex min-h-0 flex-1 p-16">
               <Show
                 when={traceId()}
                 fallback={<LoadingState label="Loading trace…" class="justify-center flex-1" />}

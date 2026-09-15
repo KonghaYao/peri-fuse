@@ -70,12 +70,12 @@ export const UsersPage: Component = () => {
         description="End users and usage derived from traces in the selected window."
       />
 
-      <div class="flex flex-wrap items-center gap-2 px-6 py-3">
+      <div class="flex flex-wrap items-center gap-8 px-24 py-12">
         <FilterInput
           ref={(handle) => {
             userFilterRef = handle;
           }}
-          class="w-52"
+          class="w-208"
           placeholder="Filter by user id…"
           icon={Search}
           value={tableState.filters().userId}
@@ -85,14 +85,14 @@ export const UsersPage: Component = () => {
           ref={(handle) => {
             environmentFilterRef = handle;
           }}
-          class="w-44"
+          class="w-176"
           placeholder="Filter by environment…"
           icon={Globe}
           value={tableState.filters().environment}
           onCommit={(v) => tableState.setFilter("environment", v)}
         />
         <DateFilterInput
-          class="w-36"
+          class="w-144"
           value={tableState.filters().fromTimestamp}
           onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
           placeholder="From date…"
@@ -100,7 +100,7 @@ export const UsersPage: Component = () => {
           boundary="start"
         />
         <DateFilterInput
-          class="w-36"
+          class="w-144"
           value={tableState.filters().toTimestamp}
           onCommit={(v) => tableState.setFilter("toTimestamp", v)}
           placeholder="To date…"
@@ -115,12 +115,12 @@ export const UsersPage: Component = () => {
             environmentFilterRef?.commit();
           }}
         >
-          <Search class="h-4 w-4" size={16} />
+          <Search class="h-16 w-16" size={16} />
           Search
         </Button>
         <Show when={tableState.activeFilterCount() > 0}>
           <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
-            <Search class="h-4 w-4" size={16} />
+            <Search class="h-16 w-16" size={16} />
             Clear ({tableState.activeFilterCount()})
           </Button>
         </Show>
@@ -129,11 +129,11 @@ export const UsersPage: Component = () => {
         </div>
       </div>
 
-      <Show when={!query.isPending} fallback={<TableLoadingRows class="flex-1 px-4" columns={6} />}>
+      <Show when={!query.isPending} fallback={<TableLoadingRows class="flex-1 px-16" columns={6} />}>
         <Show
           when={!query.isError}
           fallback={
-            <div class="px-4 py-3">
+            <div class="px-16 py-12">
               <TableInlineError error={query.error} onRetry={() => void query.refetch()} />
             </div>
           }
@@ -143,7 +143,7 @@ export const UsersPage: Component = () => {
             fallback={
               <EmptyState
                 variant="inline"
-                class="mx-4 flex-1"
+                class="mx-16 flex-1"
                 title={
                   tableState.activeFilterCount() > 0
                     ? "No users match the current filters."
@@ -152,7 +152,7 @@ export const UsersPage: Component = () => {
               />
             }
           >
-            <div class="flex-1 overflow-auto px-4">
+            <div class="flex-1 overflow-auto px-16">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -194,7 +194,7 @@ export const UsersPage: Component = () => {
                 </TableBody>
               </Table>
             </div>
-            <div class="border-t border-border px-4 py-2">
+            <div class="border-t border-border px-16 py-8">
               <PaginationControls
                 current={tableState.page()}
                 pageSize={PAGE_SIZE}

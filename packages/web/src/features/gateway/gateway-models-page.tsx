@@ -84,8 +84,8 @@ const ModelsContent: Component = () => {
   };
 
   return (
-    <div class="p-6">
-      <div class="mb-4 flex justify-end">
+    <div class="p-24">
+      <div class="mb-16 flex justify-end">
         <Button
           size="sm"
           variant="primary"
@@ -93,7 +93,7 @@ const ModelsContent: Component = () => {
             setEditing(null);
             setDialogOpen(true);
           }}
-          leadingIcon={<Plus class="h-4 w-4" size={16} />}
+          leadingIcon={<Plus class="h-16 w-16" size={16} />}
         >
           Add Deployment
         </Button>
@@ -110,7 +110,7 @@ const ModelsContent: Component = () => {
                   <Show
                     when={deployments().length > 0}
                     fallback={
-                      <p class="py-8 text-center text-sm text-fg-tertiary">
+                      <p class="py-32 text-center text-sm text-fg-tertiary">
                         No model deployments. Map a model alias to a provider.
                       </p>
                     }
@@ -118,46 +118,46 @@ const ModelsContent: Component = () => {
                     <table class="w-full text-sm">
                       <thead>
                         <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                          <th class="px-4 py-3">Model Alias</th>
-                          <th class="px-4 py-3">Provider Model</th>
-                          <th class="px-4 py-3">Provider</th>
-                          <th class="hidden px-4 py-3 md:table-cell">Pricing ($/1M)</th>
-                          <th class="px-4 py-3">Enabled</th>
-                          <th class="px-4 py-3 text-right">Actions</th>
+                          <th class="px-16 py-12">Model Alias</th>
+                          <th class="px-16 py-12">Provider Model</th>
+                          <th class="px-16 py-12">Provider</th>
+                          <th class="hidden px-16 py-12 md:table-cell">Pricing ($/1M)</th>
+                          <th class="px-16 py-12">Enabled</th>
+                          <th class="px-16 py-12 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {deployments().map((d) => (
                           <tr class="border-b border-border/50 transition-colors hover:bg-surface-overlay/40">
-                            <td class="px-4 py-3 font-mono text-[13px] font-medium text-fg-primary">
+                            <td class="px-16 py-12 font-mono text-[13px] font-medium text-fg-primary">
                               {d.modelName}
                             </td>
-                            <td class="px-4 py-3 font-mono text-xs text-fg-secondary">
+                            <td class="px-16 py-12 font-mono text-xs text-fg-secondary">
                               {d.providerModel}
                             </td>
-                            <td class="px-4 py-3 text-fg-secondary">
+                            <td class="px-16 py-12 text-fg-secondary">
                               {d.provider ? (
                                 <>
                                   {d.provider.name}
-                                  <span class="ml-1.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-fg-tertiary">
+                                  <span class="ml-6 rounded bg-muted px-6 py-2 font-mono text-[10px] uppercase text-fg-tertiary">
                                     {d.provider.type}
                                   </span>
                                 </>
                               ) : (
                                 <Badge tone="warning" title="Select a provider when editing">
-                                  <AlertTriangle class="h-3.5 w-3.5" size={14} />
+                                  <AlertTriangle class="h-14 w-14" size={14} />
                                   Provider unavailable
                                 </Badge>
                               )}
                             </td>
-                            <td class="hidden px-4 py-3 text-xs text-fg-tertiary md:table-cell">
+                            <td class="hidden px-16 py-12 text-xs text-fg-tertiary md:table-cell">
                               {d.modelInfo?.inputPrice != null || d.modelInfo?.outputPrice != null
                                 ? `${d.modelInfo?.inputPrice ?? "?"} / ${d.modelInfo?.outputPrice ?? "?"}`
                                 : "—"}
                             </td>
-                            <td class="px-4 py-3">
+                            <td class="px-16 py-12">
                               <span
-                                class={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                                class={`inline-flex items-center rounded-full border px-8 py-2 text-[11px] font-medium ${
                                   d.isEnabled
                                     ? "border-success/30 bg-success-subtle text-success"
                                     : "border-border bg-muted text-fg-tertiary"
@@ -166,8 +166,8 @@ const ModelsContent: Component = () => {
                                 {d.isEnabled ? "Yes" : "No"}
                               </span>
                             </td>
-                            <td class="px-4 py-3">
-                              <div class="flex items-center justify-end gap-1">
+                            <td class="px-16 py-12">
+                              <div class="flex items-center justify-end gap-4">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -175,7 +175,7 @@ const ModelsContent: Component = () => {
                                   onClick={() => toggleEnabled(d)}
                                 >
                                   <Power
-                                    class={`h-3.5 w-3.5 ${d.isEnabled ? "text-success" : "text-fg-tertiary"}`}
+                                    class={`h-14 w-14 ${d.isEnabled ? "text-success" : "text-fg-tertiary"}`}
                                     size={14}
                                   />
                                 </Button>
@@ -188,7 +188,7 @@ const ModelsContent: Component = () => {
                                     setDialogOpen(true);
                                   }}
                                 >
-                                  <Pencil class="h-3.5 w-3.5" size={14} />
+                                  <Pencil class="h-14 w-14" size={14} />
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -196,7 +196,7 @@ const ModelsContent: Component = () => {
                                   title="Delete"
                                   onClick={() => setDeleteTarget(d)}
                                 >
-                                  <Trash2 class="h-3.5 w-3.5 text-danger" size={14} />
+                                  <Trash2 class="h-14 w-14 text-danger" size={14} />
                                 </Button>
                               </div>
                             </td>
@@ -211,7 +211,7 @@ const ModelsContent: Component = () => {
           >
             <div
               role="alert"
-              class="flex items-center justify-between rounded-md border border-danger/30 bg-danger-subtle px-3 py-2"
+              class="flex items-center justify-between rounded-md border border-danger/30 bg-danger-subtle px-12 py-8"
             >
               <p class="text-sm text-danger">
                 {modelsQuery.error instanceof Error
@@ -245,20 +245,20 @@ const ModelsContent: Component = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <dl class="space-y-2 rounded-md border border-border bg-surface-inset p-3 text-sm">
-            <div class="flex items-start justify-between gap-4">
+          <dl class="space-y-8 rounded-md border border-border bg-surface-inset p-12 text-sm">
+            <div class="flex items-start justify-between gap-16">
               <dt class="text-fg-tertiary">Model Alias</dt>
               <dd class="break-all text-right font-mono text-fg-primary">
                 {deleteTarget()?.modelName || "(unnamed deployment)"}
               </dd>
             </div>
-            <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start justify-between gap-16">
               <dt class="text-fg-tertiary">Provider Model</dt>
               <dd class="break-all text-right font-mono text-fg-primary">
                 {deleteTarget()?.providerModel || "(unknown provider model)"}
               </dd>
             </div>
-            <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start justify-between gap-16">
               <dt class="text-fg-tertiary">Provider</dt>
               <dd class="break-all text-right text-fg-primary">
                 {deleteTarget()?.provider?.name ?? "Provider unavailable"}
@@ -274,7 +274,7 @@ const ModelsContent: Component = () => {
               onClick={confirmDelete}
             >
               <Show when={deleteModel.isPending}>
-                <Loader2 class="h-4 w-4 animate-spin" size={16} />
+                <Loader2 class="h-16 w-16 animate-spin" size={16} />
               </Show>
               Delete deployment
             </AlertDialogAction>

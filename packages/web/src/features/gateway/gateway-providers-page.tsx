@@ -85,8 +85,8 @@ const ProvidersContent: Component = () => {
   };
 
   return (
-    <div class="p-6">
-      <div class="mb-4 flex justify-end">
+    <div class="p-24">
+      <div class="mb-16 flex justify-end">
         <Button
           size="sm"
           variant="primary"
@@ -94,7 +94,7 @@ const ProvidersContent: Component = () => {
             setEditing(null);
             setDialogOpen(true);
           }}
-          leadingIcon={<Plus class="h-4 w-4" size={16} />}
+          leadingIcon={<Plus class="h-16 w-16" size={16} />}
         >
           Add Provider
         </Button>
@@ -111,7 +111,7 @@ const ProvidersContent: Component = () => {
                   <Show
                     when={providers().length > 0}
                     fallback={
-                      <p class="py-8 text-center text-sm text-fg-tertiary">
+                      <p class="py-32 text-center text-sm text-fg-tertiary">
                         No providers yet. Add your first LLM provider.
                       </p>
                     }
@@ -119,46 +119,46 @@ const ProvidersContent: Component = () => {
                     <table class="w-full text-sm">
                       <thead>
                         <tr class="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                          <th class="px-4 py-3">Name</th>
-                          <th class="px-4 py-3">Type</th>
-                          <th class="hidden px-4 py-3 lg:table-cell">Base URL</th>
-                          <th class="px-4 py-3">Status</th>
-                          <th class="px-4 py-3">Budget</th>
-                          <th class="px-4 py-3">Spend</th>
-                          <th class="px-4 py-3 text-right">Actions</th>
+                          <th class="px-16 py-12">Name</th>
+                          <th class="px-16 py-12">Type</th>
+                          <th class="hidden px-16 py-12 lg:table-cell">Base URL</th>
+                          <th class="px-16 py-12">Status</th>
+                          <th class="px-16 py-12">Budget</th>
+                          <th class="px-16 py-12">Spend</th>
+                          <th class="px-16 py-12 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {providers().map((p) => (
                           <tr class="border-b border-border/50 transition-colors hover:bg-surface-overlay/40">
-                            <td class="px-4 py-3 font-medium text-fg-primary">
+                            <td class="px-16 py-12 font-medium text-fg-primary">
                               {p.name}
-                              <span class="ml-2 text-xs font-normal text-fg-tertiary">
+                              <span class="ml-8 text-xs font-normal text-fg-tertiary">
                                 {p.deploymentCount} model{p.deploymentCount === 1 ? "" : "s"}
                               </span>
                             </td>
-                            <td class="px-4 py-3">
-                              <span class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-fg-tertiary">
+                            <td class="px-16 py-12">
+                              <span class="rounded bg-muted px-6 py-2 font-mono text-[10px] uppercase text-fg-tertiary">
                                 {p.type}
                               </span>
                             </td>
-                            <td class="hidden max-w-[240px] truncate px-4 py-3 font-mono text-xs text-fg-tertiary lg:table-cell">
+                            <td class="hidden max-w-[240px] truncate px-16 py-12 font-mono text-xs text-fg-tertiary lg:table-cell">
                               {p.baseUrl}
                             </td>
-                            <td class="px-4 py-3">
+                            <td class="px-16 py-12">
                               <StatusBadge status={p.isEnabled ? p.status : "disabled"} />
                             </td>
-                            <td class="px-4 py-3 text-fg-secondary">
+                            <td class="px-16 py-12 text-fg-secondary">
                               {p.budgetLimit != null ? `$${p.budgetLimit}` : "—"}
                               {p.budgetPeriod && (
-                                <span class="ml-1 text-xs text-fg-tertiary">/{p.budgetPeriod}</span>
+                                <span class="ml-4 text-xs text-fg-tertiary">/{p.budgetPeriod}</span>
                               )}
                             </td>
-                            <td class="px-4 py-3 font-mono text-xs text-fg-secondary">
+                            <td class="px-16 py-12 font-mono text-xs text-fg-secondary">
                               ${p.budgetSpend.toFixed(4)}
                             </td>
-                            <td class="px-4 py-3">
-                              <div class="flex items-center justify-end gap-1">
+                            <td class="px-16 py-12">
+                              <div class="flex items-center justify-end gap-4">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -166,7 +166,7 @@ const ProvidersContent: Component = () => {
                                   onClick={() => toggleEnabled(p)}
                                 >
                                   <Power
-                                    class={`h-3.5 w-3.5 ${p.isEnabled ? "text-success" : "text-fg-tertiary"}`}
+                                    class={`h-14 w-14 ${p.isEnabled ? "text-success" : "text-fg-tertiary"}`}
                                     size={14}
                                   />
                                 </Button>
@@ -179,7 +179,7 @@ const ProvidersContent: Component = () => {
                                     setDialogOpen(true);
                                   }}
                                 >
-                                  <Pencil class="h-3.5 w-3.5" size={14} />
+                                  <Pencil class="h-14 w-14" size={14} />
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -188,7 +188,7 @@ const ProvidersContent: Component = () => {
                                   aria-label={`Delete provider ${p.name}`}
                                   onClick={() => setDeleteTarget(p)}
                                 >
-                                  <Trash2 class="h-3.5 w-3.5 text-danger" size={14} />
+                                  <Trash2 class="h-14 w-14 text-danger" size={14} />
                                 </Button>
                               </div>
                             </td>
@@ -203,7 +203,7 @@ const ProvidersContent: Component = () => {
           >
             <div
               role="alert"
-              class="flex items-center justify-between rounded-md border border-danger/30 bg-danger-subtle px-3 py-2"
+              class="flex items-center justify-between rounded-md border border-danger/30 bg-danger-subtle px-12 py-8"
             >
               <p class="text-sm text-danger">
                 {providersQuery.error instanceof Error
@@ -238,20 +238,20 @@ const ProvidersContent: Component = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <dl class="space-y-2 rounded-md border border-border bg-surface-inset p-3 text-sm">
-            <div class="flex items-start justify-between gap-4">
+          <dl class="space-y-8 rounded-md border border-border bg-surface-inset p-12 text-sm">
+            <div class="flex items-start justify-between gap-16">
               <dt class="text-fg-tertiary">Name</dt>
               <dd class="break-all text-right font-medium text-fg-primary">
                 {deleteTarget()?.name || "(unnamed provider)"}
               </dd>
             </div>
-            <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start justify-between gap-16">
               <dt class="text-fg-tertiary">Type</dt>
               <dd class="break-all text-right font-mono text-fg-primary">
                 {deleteTarget()?.type || "(unknown type)"}
               </dd>
             </div>
-            <div class="flex items-start justify-between gap-4">
+            <div class="flex items-start justify-between gap-16">
               <dt class="text-fg-tertiary">Deployments removed</dt>
               <dd class="text-right text-fg-primary">
                 {deleteDeploymentCount()} deployment{deleteDeploymentCount() === 1 ? "" : "s"}
@@ -267,7 +267,7 @@ const ProvidersContent: Component = () => {
               onClick={confirmProviderDelete}
             >
               <Show when={deleteProvider.isPending}>
-                <Loader2 class="h-4 w-4 animate-spin" size={16} />
+                <Loader2 class="h-16 w-16 animate-spin" size={16} />
               </Show>
               Delete provider
             </AlertDialogAction>

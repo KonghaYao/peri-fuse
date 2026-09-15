@@ -1,10 +1,9 @@
-import { ProjectSidebarShell } from "@peri/ui";
 import { A, useLocation } from "@solidjs/router";
-import { Database, Menu, Moon, PanelLeftClose, PanelLeftOpen, Settings, Sun } from "lucide-solid";
+import { Database, Moon, Settings, Sun } from "lucide-solid";
 import { type Component, For, Show } from "solid-js";
 import { cn } from "@/shared/lib/utils";
 import { hasActiveProject } from "@/shared/store/project";
-import { toggleSidebarCollapsed, useSidebarCollapsed } from "@/shared/store/sidebar";
+import { useSidebarCollapsed } from "@/shared/store/sidebar";
 import { toggleTheme, useTheme } from "@/shared/store/theme";
 import { CommandPaletteTrigger } from "./command-palette-trigger";
 import { gatewayNavItems, type NavItem, observabilityNavItems } from "./nav-items";
@@ -36,7 +35,7 @@ function NavLinkItem(props: { item: NavItem; collapsed: boolean; onNavigate?: ()
       title={props.collapsed ? props.item.label : undefined}
       onClick={() => props.onNavigate?.()}
       class={cn(
-        "relative flex h-8 items-center gap-2.5 rounded-md px-3 text-[13px] font-medium transition-colors duration-150",
+        "relative flex h-32 items-center gap-10 rounded-md px-12 text-[13px] font-medium transition-colors duration-150",
         props.collapsed && "justify-center px-0",
         isActive()
           ? "bg-brand-subtle text-brand"
@@ -44,9 +43,9 @@ function NavLinkItem(props: { item: NavItem; collapsed: boolean; onNavigate?: ()
       )}
     >
       <Show when={isActive()}>
-        <span class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-full bg-brand" />
+        <span class="absolute bottom-6 left-0 top-6 w-2 rounded-full bg-brand" />
       </Show>
-      <props.item.icon class="h-4 w-4 shrink-0" size={16} strokeWidth={1.75} />
+      <props.item.icon class="h-16 w-16 shrink-0" size={16} strokeWidth={1.75} />
       <Show when={!props.collapsed}>
         <span class="truncate">{props.item.label}</span>
       </Show>
@@ -54,16 +53,17 @@ function NavLinkItem(props: { item: NavItem; collapsed: boolean; onNavigate?: ()
   );
 }
 
+/** Spectra §6.4 sidebar — flat raised surface, no peri-studio frost shell. */
 export const SidebarNav: Component<{ onNavigate?: () => void }> = (props) => {
   const collapsed = useSidebarCollapsed();
   const theme = useTheme();
   const active = () => hasActiveProject();
 
-  const navbar = (
-    <div class="flex flex-col gap-2">
+  return (
+    <div class="flex h-full flex-col border-r border-border bg-surface-raised">
       <div
         class={cn(
-          "flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border px-3",
+          "flex h-[52px] shrink-0 items-center gap-10 border-b border-border px-12",
           collapsed() && "justify-center px-0",
         )}
       >
@@ -71,109 +71,78 @@ export const SidebarNav: Component<{ onNavigate?: () => void }> = (props) => {
         <Show when={!collapsed()}>
           <span class="truncate text-[15px] font-semibold tracking-[-0.02em] text-fg-primary">
             Peri-Fuse
-            <span class="ml-1.5 text-[10px] font-medium uppercase tracking-[0.08em] text-fg-tertiary">
+            <span class="ml-6 text-[10px] font-medium uppercase tracking-[0.08em] text-fg-tertiary">
               Lite
             </span>
           </span>
         </Show>
       </div>
-      <div class="border-b border-border px-2 py-2">
+
+      <div class="shrink-0 border-b border-border p-8">
         <ProjectSwitcher collapsed={collapsed()} onNavigate={props.onNavigate} />
       </div>
+
       <Show when={!collapsed()}>
-        <div class="px-2 pb-2">
+        <div class="shrink-0 px-8 pb-8">
           <CommandPaletteTrigger />
         </div>
       </Show>
-    </div>
-  );
 
-  const body = (
-    <div class="space-y-0.5">
-      <Show when={active()}>
+      <nav class="flex-1 space-y-2 overflow-y-auto p-8">
+        <Show when={active()}>
+          <Show when={!collapsed()}>
+            <p class="px-12 pb-4 pt-4 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
+              Observability
+            </p>
+          </Show>
+          <For each={observabilityNavItems}>
+            {(item) => (
+              <NavLinkItem item={item} collapsed={collapsed()} onNavigate={props.onNavigate} />
+            )}
+          </For>
+        </Show>
         <Show when={!collapsed()}>
-          <p class="px-3 pb-1 pt-1 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-            Observability
+          <p class="px-12 pb-4 pt-12 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
+            Gateway
           </p>
         </Show>
-        <For each={observabilityNavItems}>
+        <Show when={collapsed()}>
+          <div class="my-8 border-t border-border" />
+        </Show>
+        <For each={gatewayNavItems}>
           {(item) => (
             <NavLinkItem item={item} collapsed={collapsed()} onNavigate={props.onNavigate} />
           )}
         </For>
-      </Show>
-      <Show when={!collapsed()}>
-        <p class="px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-          Gateway
-        </p>
-      </Show>
-      <Show when={collapsed()}>
-        <div class="my-2 border-t border-border" />
-      </Show>
-      <For each={gatewayNavItems}>
-        {(item) => (
-          <NavLinkItem item={item} collapsed={collapsed()} onNavigate={props.onNavigate} />
-        )}
-      </For>
-    </div>
-  );
+      </nav>
 
-  const footer = (
-    <div class="w-full space-y-0.5">
-      <Show when={active()}>
-        <NavLinkItem
-          item={{ href: "/settings", label: "Settings", icon: Settings }}
-          collapsed={collapsed()}
-          onNavigate={props.onNavigate}
-        />
-      </Show>
-      <button
-        type="button"
-        onClick={toggleTheme}
-        title={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-        class={cn(
-          "flex h-8 w-full items-center gap-2.5 rounded-md px-3 text-[13px] font-medium text-fg-secondary transition-colors duration-150 hover:bg-surface-overlay/70 hover:text-fg-primary",
-          collapsed() && "justify-center px-0",
-        )}
-      >
-        <Show when={theme() === "dark"} fallback={<Moon class="h-4 w-4 shrink-0" size={16} />}>
-          <Sun class="h-4 w-4 shrink-0" size={16} strokeWidth={1.75} />
+      <div class="shrink-0 space-y-2 border-t border-border p-8">
+        <Show when={active()}>
+          <NavLinkItem
+            item={{ href: "/settings", label: "Settings", icon: Settings }}
+            collapsed={collapsed()}
+            onNavigate={props.onNavigate}
+          />
         </Show>
-        <Show when={!collapsed()}>
-          <span>{theme() === "dark" ? "Light mode" : "Dark mode"}</span>
-        </Show>
-      </button>
-      <button
-        type="button"
-        onClick={toggleSidebarCollapsed}
-        title={collapsed() ? "Expand sidebar" : "Collapse sidebar"}
-        class={cn(
-          "hidden h-8 w-full items-center gap-2.5 rounded-md px-3 text-[13px] font-medium text-fg-secondary transition-colors duration-150 hover:bg-surface-overlay/70 hover:text-fg-primary md:flex",
-          collapsed() && "justify-center px-0",
-        )}
-      >
-        <Show
-          when={collapsed()}
-          fallback={<PanelLeftClose class="h-4 w-4 shrink-0" size={16} strokeWidth={1.75} />}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          title={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          class={cn(
+            "flex h-32 w-full items-center gap-10 rounded-md px-12 text-[13px] font-medium text-fg-secondary transition-colors duration-150 hover:bg-surface-overlay/70 hover:text-fg-primary",
+            collapsed() && "justify-center px-0",
+          )}
         >
-          <PanelLeftOpen class="h-4 w-4 shrink-0" size={16} strokeWidth={1.75} />
-        </Show>
-        <Show when={!collapsed()}>
-          <span>Collapse sidebar</span>
-        </Show>
-      </button>
+          <Show when={theme() === "dark"} fallback={<Moon class="h-16 w-16 shrink-0" size={16} />}>
+            <Sun class="h-16 w-16 shrink-0" size={16} strokeWidth={1.75} />
+          </Show>
+          <Show when={!collapsed()}>
+            <span>{theme() === "dark" ? "Light mode" : "Dark mode"}</span>
+          </Show>
+        </button>
+      </div>
     </div>
-  );
-
-  return (
-    <ProjectSidebarShell
-      class="h-full border-r border-border bg-surface-raised"
-      navbar={navbar}
-      body={body}
-      footer={footer}
-      aria-label="Main navigation"
-    />
   );
 };
 
-export { BrandMark, Menu };
+export { BrandMark };

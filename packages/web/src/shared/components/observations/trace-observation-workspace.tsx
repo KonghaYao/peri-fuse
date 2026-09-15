@@ -94,7 +94,7 @@ export const TraceObservationTreePane: Component<{
   observationsQuery: ReturnType<typeof useTraceObservationsQuery>;
   compact?: boolean;
 }> = (props) => (
-  <div class={props.compact ? "px-8 pb-8" : undefined}>
+  <div class={props.compact ? "px-32 pb-32" : undefined}>
     <MonitorTraceTurnTree
       observations={props.flatObservations}
       selectedId={props.selectedId() ?? null}
@@ -116,7 +116,7 @@ export const TraceObservationTreePane: Component<{
       <Button
         variant="ghost"
         size="sm"
-        class="mt-8 w-full"
+        class="mt-32 w-full"
         disabled={props.observationsQuery.isFetchingNextPage}
         onClick={() => void props.observationsQuery.fetchNextPage()}
       >
@@ -138,7 +138,7 @@ export const TraceObservationDetailPane: Component<{
     const selectedId = props.selectedId();
     if (selectedId === undefined) return null;
     if (props.selectedQuery.isPending) {
-      return <Skeleton class="h-64 w-full" />;
+      return <Skeleton class="h-256 w-full" />;
     }
     if (props.selectedQuery.isError) {
       return (
@@ -154,7 +154,7 @@ export const TraceObservationDetailPane: Component<{
       return <ObservationDetailPanel observation={observation} scores={props.selectedScores()} />;
     }
     if (props.traceIoQuery.isPending) {
-      return <Skeleton class="h-64 w-full" />;
+      return <Skeleton class="h-256 w-full" />;
     }
     if (props.traceIoQuery.isError) {
       return (
@@ -201,12 +201,12 @@ export const TraceObservationWorkspace: Component<TraceObservationWorkspaceProps
       tree={
         <Show
           when={!state.traceQuery.isPending}
-          fallback={<LoadingState label="Loading observations…" class="justify-center p-16" />}
+          fallback={<LoadingState label="Loading observations…" class="justify-center p-64" />}
         >
           <Show
             when={!state.traceQuery.isError}
             fallback={
-              <InlineNotice tone="danger" role="alert" class="m-12">
+              <InlineNotice tone="danger" role="alert" class="m-48">
                 {state.traceQuery.error instanceof Error
                   ? state.traceQuery.error.message
                   : "Failed to load trace"}

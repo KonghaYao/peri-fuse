@@ -25,7 +25,7 @@ const QueryFailure: Component<{
 }> = (props) => (
   <div
     role="alert"
-    class="mb-3 flex flex-wrap items-start gap-3 rounded-md border border-danger/30 bg-danger-subtle p-3 text-sm"
+    class="mb-12 flex flex-wrap items-start gap-12 rounded-md border border-danger/30 bg-danger-subtle p-12 text-sm"
   >
     <div class="min-w-0 flex-1">
       <p class="font-medium text-danger">
@@ -43,7 +43,7 @@ const QueryFailure: Component<{
       onClick={props.onRetry}
       aria-label={`Retry ${props.label}`}
     >
-      {props.isFetching ? <Loader2 class="h-3.5 w-3.5 animate-spin" size={14} /> : null}
+      {props.isFetching ? <Loader2 class="h-14 w-14 animate-spin" size={14} /> : null}
       {props.isFetching ? "Retrying…" : "Retry"}
     </Button>
   </div>

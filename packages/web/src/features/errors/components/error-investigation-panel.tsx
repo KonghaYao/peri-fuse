@@ -18,10 +18,10 @@ import type { ErrorEvent, Observation } from "@/shared/lib/types";
 
 function PathNode(props: { label: string; value: string; active?: boolean }) {
   return (
-    <div class="min-w-0 rounded-md border border-line bg-surface-inset/60 px-3 py-2">
+    <div class="min-w-0 rounded-md border border-line bg-surface-inset/60 px-12 py-8">
       <div class="text-[10px] uppercase tracking-[0.08em] text-fg-tertiary">{props.label}</div>
       <div
-        class={`mt-0.5 truncate font-mono text-xs ${props.active ? "text-danger" : "text-fg-primary"}`}
+        class={`mt-2 truncate font-mono text-xs ${props.active ? "text-danger" : "text-fg-primary"}`}
       >
         {props.value}
       </div>
@@ -40,7 +40,7 @@ function ObservationEvidence(props: { observation: Observation }) {
   });
 
   return (
-    <div class="space-y-3">
+    <div class="space-y-12">
       <JsonTree data={payload()} defaultCollapsedDepth={2} />
     </div>
   );
@@ -56,29 +56,29 @@ export const ErrorInvestigationPanel: Component<{
 
   return (
     <aside class="fixed inset-0 z-40 flex min-h-0 flex-col border-l border-line bg-surface-raised shadow-xl md:static md:z-auto md:w-[min(46vw,580px)] md:shadow-none">
-      <div class="flex shrink-0 items-start justify-between gap-3 border-b border-line px-4 py-3">
+      <div class="flex shrink-0 items-start justify-between gap-12 border-b border-line px-16 py-12">
         <div class="min-w-0">
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-8">
             <Badge class="border-danger/25 bg-danger-subtle text-danger">ERROR</Badge>
             <span class="truncate text-sm font-semibold text-fg-primary">
               {props.error.name ?? "Unnamed observation"}
             </span>
           </div>
-          <p class="mt-1 line-clamp-2 font-mono text-[11px] leading-4 text-fg-secondary">
+          <p class="mt-4 line-clamp-8 font-mono text-[11px] leading-4 text-fg-secondary">
             {props.error.statusMessage ?? "No status message recorded"}
           </p>
         </div>
         <Button size="sm" variant="ghost" onClick={props.onClose} aria-label="Close investigation">
-          <X class="h-4 w-4" size={16} />
+          <X class="h-16 w-16" size={16} />
         </Button>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto p-4">
-        <section class="mb-5">
-          <div class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-fg-secondary">
-            <Route class="h-3.5 w-3.5" size={14} /> Investigation path
+      <div class="min-h-0 flex-1 overflow-y-auto p-16">
+        <section class="mb-20">
+          <div class="mb-8 flex items-center gap-8 text-xs font-semibold uppercase tracking-[0.08em] text-fg-secondary">
+            <Route class="h-14 w-14" size={14} /> Investigation path
           </div>
-          <div class="grid gap-1.5">
+          <div class="grid gap-6">
             <PathNode
               label="Trace"
               value={
@@ -88,7 +88,7 @@ export const ErrorInvestigationPanel: Component<{
                 "Unknown trace"
               }
             />
-            <div class="ml-4 h-2 border-l border-dashed border-line-strong" />
+            <div class="ml-16 h-8 border-l border-dashed border-line-strong" />
             <PathNode
               label="Direct parent"
               value={
@@ -97,18 +97,18 @@ export const ErrorInvestigationPanel: Component<{
                 "Trace root (no parent)"
               }
             />
-            <div class="ml-4 h-2 border-l border-dashed border-danger/40" />
+            <div class="ml-16 h-8 border-l border-dashed border-danger/40" />
             <PathNode label="Error" value={props.error.name ?? props.error.id} active />
           </div>
-          <div class="mt-3 flex flex-wrap items-center gap-3 text-xs text-fg-tertiary">
+          <div class="mt-12 flex flex-wrap items-center gap-12 text-xs text-fg-tertiary">
             <span>{formatDateTime(props.error.startTime)}</span>
             {props.error.model && <span class="font-mono">{props.error.model}</span>}
             {props.error.traceId && (
               <A
                 href={`/traces/${encodeURIComponent(props.error.traceId)}`}
-                class="inline-flex items-center gap-1 text-brand hover:underline"
+                class="inline-flex items-center gap-4 text-brand hover:underline"
               >
-                Open full trace <ArrowUpRight class="h-3 w-3" size={12} />
+                Open full trace <ArrowUpRight class="h-12 w-12" size={12} />
               </A>
             )}
           </div>
@@ -117,9 +117,9 @@ export const ErrorInvestigationPanel: Component<{
         <Show
           when={!detailQuery.isPending}
           fallback={
-            <div class="space-y-2 py-4">
-              <Skeleton class="h-24 w-full" />
-              <Skeleton class="h-24 w-full" />
+            <div class="space-y-8 py-16">
+              <Skeleton class="h-96 w-full" />
+              <Skeleton class="h-96 w-full" />
             </div>
           }
         >
@@ -136,16 +136,16 @@ export const ErrorInvestigationPanel: Component<{
                       <TabsTrigger value="parent">Parent source</TabsTrigger>
                     </Show>
                   </TabsList>
-                  <TabsContent value="error" class="mt-4">
+                  <TabsContent value="error" class="mt-16">
                     <ObservationEvidence observation={observation()} />
                   </TabsContent>
                   <Show when={props.error.parentObservationId}>
-                    <TabsContent value="parent" class="mt-4">
+                    <TabsContent value="parent" class="mt-16">
                       <Show
                         when={!parentQuery.isPending}
                         fallback={
-                          <div class="space-y-2 py-4">
-                            <Skeleton class="h-24 w-full" />
+                          <div class="space-y-8 py-16">
+                            <Skeleton class="h-96 w-full" />
                           </div>
                         }
                       >

@@ -86,18 +86,18 @@ export const ProjectSwitcher: Component<{
         onClick={() => setOpen((v) => !v)}
         title={props.collapsed ? (ctx()?.projectName ?? "Select project") : undefined}
         class={cn(
-          "flex h-[34px] w-full items-center gap-2 rounded-md border border-border px-2.5 text-[13px] font-medium transition-colors duration-150 hover:border-line-strong hover:bg-surface-overlay/60",
+          "flex h-[34px] w-full items-center gap-8 rounded-md border border-border px-10 text-[13px] font-medium transition-colors duration-150 hover:border-line-strong hover:bg-surface-overlay/60",
           props.collapsed && "justify-center border-0 px-0 hover:border-0",
         )}
       >
-        <span class="h-2 w-2 shrink-0 rounded-full bg-brand" />
+        <span class="h-8 w-8 shrink-0 rounded-full bg-brand" />
         <Show when={!props.collapsed}>
           <span class="min-w-0 flex-1 truncate text-left text-fg-primary">
             {ctx()?.projectName ?? "Select project"}
           </span>
           <ChevronDown
             class={cn(
-              "h-3.5 w-3.5 shrink-0 text-fg-tertiary transition-transform duration-150",
+              "h-14 w-14 shrink-0 text-fg-tertiary transition-transform duration-150",
               open() && "rotate-180",
             )}
             size={14}
@@ -108,31 +108,31 @@ export const ProjectSwitcher: Component<{
       <Show when={open()}>
         <div
           class={cn(
-            "absolute top-full z-50 mt-1 w-56 rounded-lg border border-border bg-popover p-1 shadow-md",
+            "absolute top-full z-50 mt-4 w-224 rounded-lg border border-border bg-popover p-4 shadow-md",
             props.collapsed ? "left-0" : "left-0 right-0 w-auto",
           )}
         >
-          <p class="px-2 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
+          <p class="px-8 pb-4 pt-6 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
             Projects
           </p>
 
           <Show
             when={!(projectsQuery.isPending && !projectError() && !hasCachedProjects())}
             fallback={
-              <div class="flex items-center justify-center py-3">
-                <Loader2 class="h-4 w-4 animate-spin text-fg-tertiary" size={16} />
+              <div class="flex items-center justify-center py-12">
+                <Loader2 class="h-16 w-16 animate-spin text-fg-tertiary" size={16} />
               </div>
             }
           >
-            <div class="space-y-1">
+            <div class="space-y-4">
               <Show when={projectError()}>
                 <div
                   role="alert"
-                  class="flex items-start gap-1.5 rounded-md border border-danger/30 bg-danger-subtle p-2"
+                  class="flex items-start gap-6 rounded-md border border-danger/30 bg-danger-subtle p-8"
                 >
                   <AlertCircle
                     aria-hidden="true"
-                    class="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger"
+                    class="mt-2 h-14 w-14 shrink-0 text-danger"
                     size={14}
                   />
                   <div class="min-w-0 flex-1">
@@ -147,7 +147,7 @@ export const ProjectSwitcher: Component<{
                     type="button"
                     variant="ghost"
                     size="sm"
-                    class="shrink-0 px-1.5 text-danger"
+                    class="shrink-0 px-6 text-danger"
                     disabled={projectsQuery.isFetching}
                     onClick={() => void projectsQuery.refetch()}
                     busy={projectsQuery.isFetching}
@@ -158,7 +158,7 @@ export const ProjectSwitcher: Component<{
               </Show>
 
               <Show when={hasCachedProjects()}>
-                <div class="max-h-52 space-y-0.5 overflow-y-auto">
+                <div class="max-h-208 space-y-2 overflow-y-auto">
                   <For each={projects()}>
                     {(p) => {
                       const isCurrent = () => p.id === ctx()?.projectId;
@@ -168,7 +168,7 @@ export const ProjectSwitcher: Component<{
                           disabled={busy()}
                           onClick={() => handleSwitch(p.id)}
                           class={cn(
-                            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors duration-150 hover:bg-surface-overlay/70",
+                            "flex w-full items-center gap-8 rounded-md px-8 py-6 text-[13px] transition-colors duration-150 hover:bg-surface-overlay/70",
                             isCurrent()
                               ? "bg-brand-subtle font-medium text-brand"
                               : "text-fg-primary",
@@ -178,12 +178,12 @@ export const ProjectSwitcher: Component<{
                           <Show
                             when={activateMutation.isPending && activateMutation.variables === p.id}
                             fallback={
-                              <Show when={isCurrent()} fallback={<span class="w-3.5 shrink-0" />}>
-                                <Check class="h-3.5 w-3.5 shrink-0" size={14} />
+                              <Show when={isCurrent()} fallback={<span class="w-14 shrink-0" />}>
+                                <Check class="h-14 w-14 shrink-0" size={14} />
                               </Show>
                             }
                           >
-                            <Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin" size={14} />
+                            <Loader2 class="h-14 w-14 shrink-0 animate-spin" size={14} />
                           </Show>
                           <span class="truncate">{p.name}</span>
                         </button>
@@ -191,17 +191,17 @@ export const ProjectSwitcher: Component<{
                     }}
                   </For>
                   <Show when={projects().length === 0}>
-                    <p class="px-2 py-1.5 text-sm text-fg-tertiary">No projects yet</p>
+                    <p class="px-8 py-6 text-sm text-fg-tertiary">No projects yet</p>
                   </Show>
                 </div>
               </Show>
             </div>
           </Show>
 
-          <div class="mt-1 border-t border-border pt-1">
-            <div class="flex items-center gap-1 p-1">
+          <div class="mt-4 border-t border-border pt-4">
+            <div class="flex items-center gap-4 p-4">
               <Input
-                class="h-7 text-xs"
+                class="h-28 text-xs"
                 placeholder="New project…"
                 value={newName()}
                 onInput={(e) => setNewName(e.currentTarget.value)}
@@ -211,14 +211,14 @@ export const ProjectSwitcher: Component<{
                 type="button"
                 disabled={!newName().trim() || createMutation.isPending}
                 onClick={() => void handleCreate()}
-                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-fg-secondary transition-colors hover:bg-surface-overlay/70 hover:text-fg-primary disabled:pointer-events-none disabled:opacity-40"
+                class="flex h-28 w-28 shrink-0 items-center justify-center rounded-md text-fg-secondary transition-colors hover:bg-surface-overlay/70 hover:text-fg-primary disabled:pointer-events-none disabled:opacity-40"
                 aria-label="Create project"
               >
                 <Show
                   when={createMutation.isPending}
-                  fallback={<Plus class="h-3.5 w-3.5" size={14} />}
+                  fallback={<Plus class="h-14 w-14" size={14} />}
                 >
-                  <Loader2 class="h-3.5 w-3.5 animate-spin" size={14} />
+                  <Loader2 class="h-14 w-14 animate-spin" size={14} />
                 </Show>
               </button>
             </div>

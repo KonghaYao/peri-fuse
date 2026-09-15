@@ -31,9 +31,9 @@ const StatCard: Component<{
   icon: typeof DollarSign;
 }> = (props) => (
   <Card>
-    <CardContent class="flex items-center gap-3 p-4">
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-subtle">
-        <props.icon class="h-4 w-4 text-brand" size={16} />
+    <CardContent class="flex items-center gap-12 p-16">
+      <div class="flex h-36 w-36 shrink-0 items-center justify-center rounded-md bg-brand-subtle">
+        <props.icon class="h-16 w-16 text-brand" size={16} />
       </div>
       <div class="min-w-0">
         <p class="truncate text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
@@ -54,7 +54,7 @@ const UsageOverview: Component<{ query: GatewayQueryHandle<UsageSummary> }> = (p
     empty={null}
   >
     {(usage) => (
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-16 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Spend (7d)" value={`$${usage.totalSpend.toFixed(4)}`} icon={DollarSign} />
         <StatCard label="Requests (7d)" value={usage.totalRequests.toLocaleString()} icon={Zap} />
       </div>
@@ -66,15 +66,15 @@ const ProvidersContent: Component<{ providers: GatewayProvider[] }> = (props) =>
   const activeProviders = () => props.providers.filter((p) => p.isEnabled).length;
 
   return (
-    <div class="space-y-6">
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="space-y-24">
+      <div class="grid grid-cols-1 gap-16 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Active Providers" value={String(activeProviders())} icon={Server} />
       </div>
 
       <Card>
-        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-3">
-          <CardTitle class="flex items-center gap-2 text-base">
-            <Server class="h-4 w-4 text-brand" size={16} />
+        <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-12">
+          <CardTitle class="flex items-center gap-8 text-base">
+            <Server class="h-16 w-16 text-brand" size={16} />
             Provider Status
           </CardTitle>
           <A href="/gateway/providers" class="text-[13px] font-medium text-brand hover:underline">
@@ -83,21 +83,21 @@ const ProvidersContent: Component<{ providers: GatewayProvider[] }> = (props) =>
         </CardHeader>
         <CardContent>
           {props.providers.length === 0 ? (
-            <p class="py-8 text-center text-sm text-fg-tertiary">
+            <p class="py-32 text-center text-sm text-fg-tertiary">
               No providers configured yet. Add one to start routing requests.
             </p>
           ) : (
-            <div class="space-y-2">
+            <div class="space-y-8">
               {props.providers.map((p) => (
-                <div class="flex items-center justify-between rounded-lg border border-border bg-surface-raised px-4 py-3">
+                <div class="flex items-center justify-between rounded-lg border border-border bg-surface-raised px-16 py-12">
                   <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-8">
                       <span class="truncate text-sm font-medium text-fg-primary">{p.name}</span>
-                      <span class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-fg-tertiary">
+                      <span class="rounded bg-muted px-6 py-2 font-mono text-[10px] uppercase text-fg-tertiary">
                         {p.type}
                       </span>
                     </div>
-                    <p class="mt-0.5 truncate text-xs text-fg-tertiary">
+                    <p class="mt-2 truncate text-xs text-fg-tertiary">
                       {p.baseUrl} ·{" "}
                       {`${p.deploymentCount} deployment${p.deploymentCount === 1 ? "" : "s"}`}
                     </p>
@@ -127,14 +127,14 @@ const ProvidersOverview: Component<{ query: GatewayQueryHandle<GatewayProvider[]
 
 const QuickLinks: Component = () => (
   <Card>
-    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-3">
-      <CardTitle class="flex items-center gap-2 text-base">
-        <Boxes class="h-4 w-4 text-brand" size={16} />
+    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-12">
+      <CardTitle class="flex items-center gap-8 text-base">
+        <Boxes class="h-16 w-16 text-brand" size={16} />
         Quick Links
       </CardTitle>
     </CardHeader>
     <CardContent>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="grid grid-cols-2 gap-12 sm:grid-cols-4">
         {[
           { to: "/gateway/models", label: "Models" },
           { to: "/gateway/usage", label: "Usage" },
@@ -142,7 +142,7 @@ const QuickLinks: Component = () => (
         ].map((link) => (
           <A
             href={link.to}
-            class="rounded-lg border border-border bg-surface-raised px-4 py-3 text-center text-sm font-medium text-fg-secondary transition-colors hover:border-line-strong hover:text-fg-primary"
+            class="rounded-lg border border-border bg-surface-raised px-16 py-12 text-center text-sm font-medium text-fg-secondary transition-colors hover:border-line-strong hover:text-fg-primary"
           >
             {link.label}
           </A>
@@ -160,7 +160,7 @@ export const GatewayOverviewContent: Component<{
   <div class="flex h-full flex-col">
     <PageHeaderShell title="Gateway" description="LLM proxy gateway overview." />
     <div class="flex-1 overflow-y-auto">
-      <div class="space-y-6 p-6">
+      <div class="space-y-24 p-24">
         <UsageOverview query={props.usageQuery} />
         <ProvidersOverview query={props.providersQuery} />
         <QuickLinks />

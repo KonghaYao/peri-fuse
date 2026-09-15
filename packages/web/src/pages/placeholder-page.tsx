@@ -11,7 +11,7 @@ export const PlaceholderPage: Component<PlaceholderPageProps> = (props) => {
   return (
     <div class="flex h-full flex-col">
       <PageHeaderShell title={props.title} description={props.description} />
-      <div class="flex flex-1 items-center justify-center p-8">
+      <div class="flex flex-1 items-center justify-center p-32">
         <Empty class="max-w-md">
           <EmptyHeader>
             <EmptyTitle>Coming soon</EmptyTitle>

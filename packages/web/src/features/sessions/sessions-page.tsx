@@ -106,7 +106,7 @@ const columns: EnhancedDataTableColumn<SessionsTableRow>[] = [
     accessor: (row) => row.environment,
     cell: (row) =>
       row.environment ? (
-        <Badge class="max-w-fit truncate rounded-sm px-1 font-normal" title={row.environment}>
+        <Badge class="max-w-fit truncate rounded-sm px-4 font-normal" title={row.environment}>
           {row.environment}
         </Badge>
       ) : null,
@@ -117,7 +117,7 @@ const columns: EnhancedDataTableColumn<SessionsTableRow>[] = [
     accessor: (row) => row.userIds.join(","),
     cell: (row) =>
       row.userIds.length > 0 ? (
-        <div class="flex flex-wrap gap-1">
+        <div class="flex flex-wrap gap-4">
           {row.userIds.map((user) => (
             <span>
               <TruncatedIdCell value={user} />
@@ -181,7 +181,7 @@ const columns: EnhancedDataTableColumn<SessionsTableRow>[] = [
     hideable: true,
     cell: (row) =>
       row.traceTags.length > 0 ? (
-        <div class="flex flex-wrap gap-x-2 gap-y-1">
+        <div class="flex flex-wrap gap-x-8 gap-y-4">
           {row.traceTags.map((tag) => (
             <Badge class="font-normal">{tag}</Badge>
           ))}
@@ -210,12 +210,12 @@ export const SessionsPage: Component = () => {
   const rows = createMemo(() => (query.data?.data ?? []).map(toRow));
 
   const toolbar = () => (
-    <div class="flex flex-wrap items-center gap-2">
+    <div class="flex flex-wrap items-center gap-8">
       <FilterInput
         ref={(handle) => {
           userFilterRef = handle;
         }}
-        class="w-44"
+        class="w-176"
         placeholder="Filter by userId…"
         icon={User}
         value={tableState.filters().userId}
@@ -225,14 +225,14 @@ export const SessionsPage: Component = () => {
         ref={(handle) => {
           environmentFilterRef = handle;
         }}
-        class="w-44"
+        class="w-176"
         placeholder="Filter by environment…"
         icon={Globe}
         value={tableState.filters().environment}
         onCommit={(v) => tableState.setFilter("environment", v)}
       />
       <DateFilterInput
-        class="w-36"
+        class="w-144"
         value={tableState.filters().fromTimestamp}
         onCommit={(v) => tableState.setFilter("fromTimestamp", v)}
         placeholder="From date…"
@@ -240,7 +240,7 @@ export const SessionsPage: Component = () => {
         boundary="start"
       />
       <DateFilterInput
-        class="w-36"
+        class="w-144"
         value={tableState.filters().toTimestamp}
         onCommit={(v) => tableState.setFilter("toTimestamp", v)}
         placeholder="To date…"
@@ -255,12 +255,12 @@ export const SessionsPage: Component = () => {
           environmentFilterRef?.commit();
         }}
       >
-        <Search class="h-4 w-4" size={16} />
+        <Search class="h-16 w-16" size={16} />
         Search
       </Button>
       <Show when={tableState.activeFilterCount() > 0}>
         <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
-          <Search class="h-4 w-4" size={16} />
+          <Search class="h-16 w-16" size={16} />
           Clear ({tableState.activeFilterCount()})
         </Button>
       </Show>
@@ -283,14 +283,14 @@ export const SessionsPage: Component = () => {
         }
       />
 
-      <div class="flex flex-1 flex-col overflow-hidden px-4 py-3">
+      <div class="flex flex-1 flex-col overflow-hidden px-16 py-12">
         <Show
           when={!query.isPending}
           fallback={
-            <div class="space-y-2">
-              <Skeleton class="h-9 w-full" />
+            <div class="space-y-8">
+              <Skeleton class="h-36 w-full" />
               <For each={Array.from({ length: 8 }, (_, i) => i)}>
-                {() => <Skeleton class="h-9 w-full" />}
+                {() => <Skeleton class="h-36 w-full" />}
               </For>
             </div>
           }

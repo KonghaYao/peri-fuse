@@ -346,7 +346,7 @@ export const SessionSearchDialog: Component<{
             class={`${selected() ? "hidden md:flex" : "flex"} min-h-0 flex-col border-r border-border`}
             aria-label="Search results"
           >
-            <div class="border-b border-border px-3 py-2 text-xs text-fg-tertiary">
+            <div class="border-b border-border px-12 py-8 text-xs text-fg-tertiary">
               {result() ? `${result()!.data.length} sessions` : "Results"}
               {result()?.meta.limited && " · Limited results"}
               {result()?.meta.indexState && ` · Index: ${result()!.meta.indexState}`}
@@ -356,8 +356,8 @@ export const SessionSearchDialog: Component<{
               <Show
                 when={searchState() !== "loading"}
                 fallback={
-                  <div class="flex items-center justify-center gap-2 py-12 text-sm text-fg-tertiary">
-                    <Loader2 class="h-4 w-4 animate-spin" size={16} />
+                  <div class="flex items-center justify-center gap-8 py-48 text-sm text-fg-tertiary">
+                    <Loader2 class="h-16 w-16 animate-spin" size={16} />
                     Searching…
                   </div>
                 }
@@ -376,10 +376,10 @@ export const SessionSearchDialog: Component<{
                       <For each={res().data}>
                         {(group) => (
                           <div>
-                            <div class="sticky top-0 z-[1] border-b border-border bg-surface-raised px-3 py-2 text-xs font-medium">
+                            <div class="sticky top-0 z-[1] border-b border-border bg-surface-raised px-12 py-8 text-xs font-medium">
                               {group.sessionId}
                               {group.userId && (
-                                <span class="ml-2 text-fg-tertiary">{group.userId}</span>
+                                <span class="ml-8 text-fg-tertiary">{group.userId}</span>
                               )}
                             </div>
                             <For each={group.hits.slice(0, 2)}>

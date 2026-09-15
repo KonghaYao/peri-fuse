@@ -106,12 +106,12 @@ export const TracesPage: Component = () => {
   };
 
   const toolbar = () => (
-    <div class="flex flex-wrap items-center gap-2">
+    <div class="flex flex-wrap items-center gap-8">
       <FilterInput
         ref={(handle) => {
           nameFilterRef = handle;
         }}
-        class="w-44"
+        class="w-176"
         placeholder="Filter by name…"
         icon={Search}
         value={tableState.filters().name}
@@ -121,7 +121,7 @@ export const TracesPage: Component = () => {
         ref={(handle) => {
           userIdFilterRef = handle;
         }}
-        class="w-44"
+        class="w-176"
         placeholder="Filter by userId…"
         icon={User}
         value={tableState.filters().userId}
@@ -131,14 +131,14 @@ export const TracesPage: Component = () => {
         ref={(handle) => {
           environmentFilterRef = handle;
         }}
-        class="w-44"
+        class="w-176"
         placeholder="Filter by environment…"
         icon={Globe}
         value={tableState.filters().environment}
         onCommit={(value) => tableState.setFilter("environment", value)}
       />
       <DateFilterInput
-        class="w-44"
+        class="w-176"
         title="From timestamp"
         boundary="start"
         placeholder="From date"
@@ -146,7 +146,7 @@ export const TracesPage: Component = () => {
         onCommit={(value) => tableState.setFilter("fromTimestamp", value)}
       />
       <DateFilterInput
-        class="w-44"
+        class="w-176"
         title="To timestamp"
         boundary="end"
         placeholder="To date"
@@ -162,7 +162,7 @@ export const TracesPage: Component = () => {
           environmentFilterRef?.commit();
         }}
       >
-        <Search class="h-4 w-4" size={16} />
+        <Search class="h-16 w-16" size={16} />
         Search
       </Button>
       <Show when={tableState.activeFilterCount() > 0}>
@@ -181,13 +181,13 @@ export const TracesPage: Component = () => {
       <PageHeaderShell title="Traces" description="All traces ingested into this lite project." />
 
       <div class="flex min-h-0 flex-1">
-        <div class="flex min-w-0 flex-1 flex-col overflow-hidden px-4 py-3">
+        <div class="flex min-w-0 flex-1 flex-col overflow-hidden px-16 py-12">
           <Show
             when={!coreQuery.isPending}
             fallback={
-              <div class="space-y-2">
-                <Skeleton class="h-9 w-full" />
-                <Skeleton class="h-64 w-full" />
+              <div class="space-y-8">
+                <Skeleton class="h-36 w-full" />
+                <Skeleton class="h-256 w-full" />
               </div>
             }
           >

@@ -42,10 +42,10 @@ const MessageLine: Component<{ message: ExtractedMessage }> = (props) => {
   const text = () => contentToText(props.message.content);
   const line = () => (props.message.toolCalls ? toolCallsText(props.message.toolCalls) : text());
   return (
-    <div class="flex items-baseline gap-1.5 text-xs">
+    <div class="flex items-baseline gap-6 text-xs">
       <span
         class={cn(
-          "w-16 shrink-0 font-mono text-[10px] uppercase",
+          "w-64 shrink-0 font-mono text-[10px] uppercase",
           ROLE_TEXT[props.message.role] ?? "text-fg-tertiary",
         )}
       >
@@ -70,7 +70,7 @@ const SectionLabel: Component<{ children: string; class?: string }> = (props) =>
 const SnippetBlock: Component<{ label: string; value: unknown }> = (props) => {
   const text = () => contentToText(props.value);
   return (
-    <div class="space-y-1">
+    <div class="space-y-4">
       <SectionLabel>{props.label}</SectionLabel>
       <Show when={text()} fallback={<p class="text-xs text-fg-tertiary">—</p>}>
         <p class="whitespace-pre-wrap break-words text-xs leading-relaxed text-fg-secondary">
@@ -115,7 +115,7 @@ const AnswerBlock: Component<{ answer: AnswerView }> = (props) => {
 
   if (props.answer.kind === "chat") {
     return (
-      <div class="space-y-0.5">
+      <div class="space-y-2">
         <For each={props.answer.messages}>
           {(message, index) => {
             const text = () => contentToText(message.content);
@@ -144,18 +144,18 @@ const AnswerBlock: Component<{ answer: AnswerView }> = (props) => {
   }
 
   return (
-    <div class="space-y-1">
+    <div class="space-y-4">
       <p class="whitespace-pre-wrap break-words text-xs leading-relaxed text-fg-secondary">
         {truncate(props.answer.text, MAX_ANSWER_CHARS)}
       </p>
       <Show when={props.answer.kind === "reasoning" && props.answer.thinking}>
         {(thinking) => (
           <details class="group">
-            <summary class="flex cursor-pointer select-none items-center gap-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-fg-tertiary hover:text-fg-secondary [&::-webkit-details-marker]:hidden">
-              <ChevronRight class="h-3 w-3 transition-transform group-open:rotate-90" size={12} />
+            <summary class="flex cursor-pointer select-none items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-fg-tertiary hover:text-fg-secondary [&::-webkit-details-marker]:hidden">
+              <ChevronRight class="h-12 w-12 transition-transform group-open:rotate-90" size={12} />
               thinking
             </summary>
-            <p class="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-fg-tertiary">
+            <p class="mt-4 whitespace-pre-wrap break-words text-xs leading-relaxed text-fg-tertiary">
               {truncate(thinking(), 600)}
             </p>
           </details>
@@ -191,15 +191,15 @@ export const ObservationPreview: Component<{ observation: Observation }> = (prop
   });
 
   return (
-    <div class="space-y-3">
+    <div class="space-y-12">
       <Show when={isGeneration() && (model() || messages())}>
-        <div class="space-y-1">
+        <div class="space-y-4">
           <SectionLabel>Context</SectionLabel>
           <Show when={model()}>
             <div class="tnum font-mono text-[11px] text-fg-tertiary">model: {model()}</div>
           </Show>
           <Show when={visibleMessages().length > 0}>
-            <div class="space-y-0.5">
+            <div class="space-y-2">
               <For each={visibleMessages()}>{(message) => <MessageLine message={message} />}</For>
               <Show when={hiddenCount() > 0}>
                 <p class="text-[11px] text-fg-tertiary">… {hiddenCount()} earlier message(s)</p>
@@ -210,7 +210,7 @@ export const ObservationPreview: Component<{ observation: Observation }> = (prop
       </Show>
 
       <Show when={isGeneration()}>
-        <div class="space-y-1">
+        <div class="space-y-4">
           <SectionLabel class="text-brand">Answer</SectionLabel>
           <Show when={answer()} fallback={<p class="text-xs text-fg-tertiary">—</p>}>
             {(value) => <AnswerBlock answer={value()} />}

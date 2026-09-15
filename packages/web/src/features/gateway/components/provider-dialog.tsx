@@ -121,7 +121,7 @@ export const ProviderDialog: Component<{
           </DialogDescription>
         </DialogHeader>
 
-        <Form errors={errors()} onSubmit={handleSubmit} class="space-y-4">
+        <Form errors={errors()} onSubmit={handleSubmit} class="space-y-16">
           <FormField name="name">
             <FormItem>
               <FormLabel>Name</FormLabel>
@@ -187,7 +187,7 @@ export const ProviderDialog: Component<{
             </FormItem>
           </FormField>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-2 gap-12">
             <FormField name="budgetLimit">
               <FormItem>
                 <FormLabel>Budget Limit ($)</FormLabel>
@@ -217,7 +217,7 @@ export const ProviderDialog: Component<{
             </FormField>
           </div>
 
-          <div class="flex justify-end gap-2 pt-2">
+          <div class="flex justify-end gap-8 pt-8">
             <Button type="button" variant="default" onClick={() => props.onOpenChange(false)}>
               Cancel
             </Button>
@@ -227,7 +227,7 @@ export const ProviderDialog: Component<{
               disabled={props.isPending}
               busy={props.isPending}
             >
-              {props.isPending ? <Loader2 class="h-4 w-4 animate-spin" size={16} /> : null}
+              {props.isPending ? <Loader2 class="h-16 w-16 animate-spin" size={16} /> : null}
               {isEdit() ? "Save" : "Create"}
             </Button>
           </div>

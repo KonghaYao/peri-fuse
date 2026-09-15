@@ -18,14 +18,14 @@ export const ObservationDetailPanel: Component<{
 }> = (props) => {
   const o = () => props.observation;
   return (
-    <div class="space-y-4">
-      <div class="flex flex-wrap items-center gap-2">
+    <div class="space-y-16">
+      <div class="flex flex-wrap items-center gap-8">
         <MonitorObservationTypeBadge type={o().type} />
         <span class="text-base font-semibold text-fg-primary">{o().name ?? "(unnamed)"}</span>
         <MonitorObservationLevelBadge level={o().level} />
       </div>
 
-      <div class="grid grid-cols-2 gap-2">
+      <div class="grid grid-cols-2 gap-8">
         <StatChip
           icon={Clock}
           label={o().type === "EVENT" ? "At" : "Duration"}
@@ -47,7 +47,7 @@ export const ObservationDetailPanel: Component<{
         />
       </div>
 
-      <div class="space-y-1 text-xs text-fg-tertiary">
+      <div class="space-y-4 text-xs text-fg-tertiary">
         <p>Start: {formatDateTime(o().startTime)}</p>
         <p>End: {formatDateTime(o().endTime)}</p>
         <p class="font-mono">ID: {o().id}</p>
@@ -66,7 +66,7 @@ export const ObservationDetailPanel: Component<{
       <Show when={props.scores.length > 0}>
         <Separator />
         <div>
-          <h3 class="mb-2 text-sm font-semibold text-fg-primary">Scores</h3>
+          <h3 class="mb-8 text-sm font-semibold text-fg-primary">Scores</h3>
           <ScoreListShell scores={props.scores} />
         </div>
       </Show>
@@ -80,16 +80,16 @@ export const TraceDetailPanel: Component<{
   metadata: unknown;
   scores: ScoreSummary[];
 }> = (props) => (
-  <div class="space-y-4">
-    <div class="flex items-center gap-2 text-base font-semibold text-fg-primary">
-      <ListTree class="h-4 w-4 text-brand" size={16} />
+  <div class="space-y-16">
+    <div class="flex items-center gap-8 text-base font-semibold text-fg-primary">
+      <ListTree class="h-16 w-16 text-brand" size={16} />
       Trace
     </div>
     <ObservationIoTabs input={props.input} output={props.output} metadata={props.metadata} />
     <Separator />
     <div>
-      <h3 class="mb-2 flex items-center gap-1.5 text-sm font-semibold text-fg-primary">
-        <Star class="h-3.5 w-3.5 text-fg-tertiary" size={14} />
+      <h3 class="mb-8 flex items-center gap-6 text-sm font-semibold text-fg-primary">
+        <Star class="h-14 w-14 text-fg-tertiary" size={14} />
         Scores ({props.scores.length})
       </h3>
       <ScoreListShell scores={props.scores} />

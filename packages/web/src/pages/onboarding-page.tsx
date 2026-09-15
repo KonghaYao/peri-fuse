@@ -82,33 +82,33 @@ export const OnboardingPage: Component = () => {
   const busy = () => createProject.isPending || activateProject.isPending;
 
   return (
-    <div class="flex min-h-full flex-col items-center justify-center px-6 py-12">
+    <div class="flex min-h-full flex-col items-center justify-center px-24 py-48">
       <div class="w-full max-w-md">
-        <div class="mb-8 flex flex-col items-center text-center">
-          <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brand shadow-sm">
-            <Database class="h-6 w-6 text-brand-fg" size={24} />
+        <div class="mb-32 flex flex-col items-center text-center">
+          <div class="mb-16 flex h-48 w-48 items-center justify-center rounded-xl bg-brand shadow-sm">
+            <Database class="h-24 w-24 text-brand-fg" size={24} />
           </div>
           <h1 class="text-2xl font-semibold tracking-[-0.02em] text-fg-primary">
             Peri-Fuse
-            <span class="ml-2 align-middle text-xs font-medium uppercase tracking-[0.1em] text-fg-tertiary">
+            <span class="ml-8 align-middle text-xs font-medium uppercase tracking-[0.1em] text-fg-tertiary">
               Lite
             </span>
           </h1>
-          <p class="mt-2 max-w-sm text-sm text-fg-tertiary">
+          <p class="mt-8 max-w-sm text-sm text-fg-tertiary">
             Lightweight, self-hosted LLM observability. Create a project to start tracing your
             applications.
           </p>
         </div>
 
         <Card class="border-line bg-surface-raised shadow-sm">
-          <CardContent class="p-4">
+          <CardContent class="p-16">
             <label
               for="new-project"
-              class="mb-2 block text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary"
+              class="mb-8 block text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary"
             >
               Create a new project
             </label>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-8">
               <Input
                 id="new-project"
                 placeholder="Project name…"
@@ -124,9 +124,9 @@ export const OnboardingPage: Component = () => {
                 busy={createProject.isPending}
                 leadingIcon={
                   createProject.isPending ? (
-                    <Loader2 class="h-4 w-4 animate-spin" size={16} />
+                    <Loader2 class="h-16 w-16 animate-spin" size={16} />
                   ) : (
-                    <FolderPlus class="h-4 w-4" size={16} />
+                    <FolderPlus class="h-16 w-16" size={16} />
                   )
                 }
               >
@@ -134,7 +134,7 @@ export const OnboardingPage: Component = () => {
               </Button>
             </div>
 
-            <div class="my-4 flex items-center gap-3">
+            <div class="my-16 flex items-center gap-12">
               <span class="h-px flex-1 bg-border" />
               <span class="text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
                 Or open existing
@@ -145,21 +145,21 @@ export const OnboardingPage: Component = () => {
             <Show
               when={!(projectsQuery.isPending && !projectError() && !hasCachedProjects())}
               fallback={
-                <div class="space-y-2">
-                  <Skeleton class="h-12 w-full" />
-                  <Skeleton class="h-12 w-full" />
+                <div class="space-y-8">
+                  <Skeleton class="h-48 w-full" />
+                  <Skeleton class="h-48 w-full" />
                 </div>
               }
             >
-              <div class="space-y-2">
+              <div class="space-y-8">
                 <Show when={projectError()}>
                   <div
                     role="alert"
-                    class="flex items-start gap-2 rounded-md border border-danger/30 bg-danger-subtle p-3"
+                    class="flex items-start gap-8 rounded-md border border-danger/30 bg-danger-subtle p-12"
                   >
                     <AlertCircle
                       aria-hidden="true"
-                      class="mt-0.5 h-4 w-4 shrink-0 text-danger"
+                      class="mt-2 h-16 w-16 shrink-0 text-danger"
                       size={16}
                     />
                     <div class="min-w-0 flex-1">
@@ -188,22 +188,22 @@ export const OnboardingPage: Component = () => {
                   <Show
                     when={projects().length > 0}
                     fallback={
-                      <p class="py-2 text-center text-sm text-fg-tertiary">
+                      <p class="py-8 text-center text-sm text-fg-tertiary">
                         No projects yet — create your first one above.
                       </p>
                     }
                   >
-                    <div class="space-y-1.5">
+                    <div class="space-y-24">
                       <For each={projects()}>
                         {(p) => (
                           <button
                             type="button"
                             disabled={busy()}
                             onClick={() => enterProject(p.id)}
-                            class="group flex w-full items-center gap-3 rounded-md border border-line px-3.5 py-2.5 text-left transition-colors duration-150 hover:border-line-strong hover:bg-surface-overlay/60 disabled:opacity-60"
+                            class="group flex w-full items-center gap-12 rounded-md border border-line px-14 py-10 text-left transition-colors duration-150 hover:border-line-strong hover:bg-surface-overlay/60 disabled:opacity-60"
                           >
-                            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-subtle text-brand">
-                              <Database class="h-4 w-4" size={16} />
+                            <div class="flex h-32 w-32 shrink-0 items-center justify-center rounded-md bg-brand-subtle text-brand">
+                              <Database class="h-16 w-16" size={16} />
                             </div>
                             <div class="min-w-0 flex-1">
                               <p class="truncate text-sm font-medium text-fg-primary">{p.name}</p>
@@ -215,13 +215,13 @@ export const OnboardingPage: Component = () => {
                               when={activateProject.isPending && activateProject.variables === p.id}
                               fallback={
                                 <ChevronRight
-                                  class="h-4 w-4 shrink-0 text-fg-tertiary transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-fg-primary"
+                                  class="h-16 w-16 shrink-0 text-fg-tertiary transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-fg-primary"
                                   size={16}
                                 />
                               }
                             >
                               <Loader2
-                                class="h-4 w-4 shrink-0 animate-spin text-fg-tertiary"
+                                class="h-16 w-16 shrink-0 animate-spin text-fg-tertiary"
                                 size={16}
                               />
                             </Show>
@@ -236,11 +236,11 @@ export const OnboardingPage: Component = () => {
           </CardContent>
         </Card>
 
-        <div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="mt-32 grid grid-cols-1 gap-16 sm:grid-cols-3">
           <For each={highlights}>
             {(h) => (
-              <div class="flex flex-col items-center gap-1.5 text-center">
-                <h.icon class="h-4 w-4 text-brand" strokeWidth={1.75} size={16} />
+              <div class="flex flex-col items-center gap-6 text-center">
+                <h.icon class="h-16 w-16 text-brand" strokeWidth={1.75} size={16} />
                 <p class="text-[13px] font-medium text-fg-secondary">{h.title}</p>
                 <p class="text-xs leading-relaxed text-fg-tertiary">{h.body}</p>
               </div>

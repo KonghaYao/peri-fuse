@@ -24,7 +24,7 @@ export function HighlightedText(props: {
       if (start > at) pieces.push(<span>{props.text.slice(at, start)}</span>);
       if (end > start) {
         pieces.push(
-          <mark class="rounded bg-warning/30 px-0.5">{props.text.slice(start, end)}</mark>,
+          <mark class="rounded bg-warning/30 px-2">{props.text.slice(start, end)}</mark>,
         );
       }
       at = Math.max(at, end);
@@ -42,15 +42,15 @@ export const HitRow: Component<{
   <button
     type="button"
     onClick={props.onClick}
-    class={`w-full border-b border-border px-3 py-3 text-left transition-colors ${props.selected ? "bg-surface-overlay" : "hover:bg-surface-overlay/60"}`}
+    class={`w-full border-b border-border px-12 py-12 text-left transition-colors ${props.selected ? "bg-surface-overlay" : "hover:bg-surface-overlay/60"}`}
   >
-    <div class="mb-1 flex items-center justify-between gap-2 text-[11px] text-fg-tertiary">
+    <div class="mb-4 flex items-center justify-between gap-8 text-[11px] text-fg-tertiary">
       <span class="font-medium uppercase">{props.hit.role}</span>
       <span>
         {new Date(props.hit.recordTime).toLocaleString()} · Message {props.hit.messageOrder + 1}
       </span>
     </div>
-    <p class="line-clamp-3 text-sm text-fg-primary">
+    <p class="line-clamp-12 text-sm text-fg-primary">
       <HighlightedText text={props.hit.snippet} ranges={props.hit.highlight} query={props.query} />
     </p>
   </button>
@@ -72,9 +72,9 @@ export const ContextMessage: Component<{
 
   return (
     <div
-      class={`rounded-md border p-3 ${props.message.role === "user" ? "border-brand/20 bg-brand/5" : "border-border bg-surface-raised"}`}
+      class={`rounded-md border p-12 ${props.message.role === "user" ? "border-brand/20 bg-brand/5" : "border-border bg-surface-raised"}`}
     >
-      <div class="mb-1 flex items-center justify-between text-[11px] font-medium uppercase text-fg-tertiary">
+      <div class="mb-4 flex items-center justify-between text-[11px] font-medium uppercase text-fg-tertiary">
         <span>{props.message.role}</span>
         {props.message.messageOrder !== undefined && (
           <span>Message {props.message.messageOrder + 1}</span>
@@ -94,12 +94,12 @@ export const ContextMessage: Component<{
         )}
       </p>
       {blockError() && (
-        <p class="mt-2 text-xs text-danger">Could not load the rest of this message.</p>
+        <p class="mt-8 text-xs text-danger">Could not load the rest of this message.</p>
       )}
       {long() && props.message.blocks.length === 0 && (
         <button
           type="button"
-          class="mt-2 text-xs text-brand hover:underline"
+          class="mt-8 text-xs text-brand hover:underline"
           onClick={() => setExpanded((value) => !value)}
           disabled={loadingBlock()}
         >
@@ -107,7 +107,7 @@ export const ContextMessage: Component<{
         </button>
       )}
       {(hasEarlierBlocks() || hasLaterBlocks()) && (
-        <div class="mt-2 flex gap-3 text-xs text-brand">
+        <div class="mt-8 flex gap-12 text-xs text-brand">
           {hasEarlierBlocks() && (
             <button
               type="button"

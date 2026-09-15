@@ -53,7 +53,7 @@ import { cn } from "@/shared/lib/utils";
 const PAGE_SIZE = 50;
 
 const Stat: Component<{ label: string; value: string | number | JSX.Element }> = (props) => (
-  <div class="flex flex-col gap-0.5">
+  <div class="flex flex-col gap-2">
     <span class="text-xs text-fg-tertiary">{props.label}</span>
     <span class="text-sm font-medium text-fg-primary">{props.value}</span>
   </div>
@@ -79,11 +79,11 @@ const TraceObservationsLoader: Component<{
 
   return (
     <Show when={props.expanded}>
-      <Show when={!query.isPending} fallback={<Skeleton class="ml-6 h-20 w-[calc(100%-1.5rem)]" />}>
+      <Show when={!query.isPending} fallback={<Skeleton class="ml-24 h-80 w-[calc(100%-1.5rem)]" />}>
         <Show
           when={!query.isError}
           fallback={
-            <InlineNotice tone="danger" role="alert" class="ml-6 mr-2">
+            <InlineNotice tone="danger" role="alert" class="ml-24 mr-8">
               {query.error instanceof Error ? query.error.message : "Failed to load observations"}
             </InlineNotice>
           }
@@ -93,13 +93,13 @@ const TraceObservationsLoader: Component<{
             selectedId={props.selectedId}
             onSelect={props.onSelect}
             omitNoise={props.omitNoise}
-            class="ml-4"
+            class="ml-16"
           />
           <Show when={query.hasNextPage}>
             <Button
               variant="ghost"
               size="sm"
-              class="ml-6 mt-1"
+              class="ml-24 mt-4"
               disabled={query.isFetchingNextPage}
               onClick={() => void query.fetchNextPage()}
             >
@@ -123,16 +123,16 @@ const TraceRootRow: Component<{
     onClick={props.onToggle}
     onKeyDown={(event) => event.key === "Enter" && props.onToggle()}
     aria-expanded={props.expanded}
-    class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-surface-overlay/50"
+    class="flex cursor-pointer items-center gap-6 rounded-md px-8 py-6 text-sm transition-colors hover:bg-surface-overlay/50"
   >
     <ChevronRight
-      class={cn("h-3.5 w-3.5 shrink-0 transition-transform", props.expanded && "rotate-90")}
+      class={cn("h-14 w-14 shrink-0 transition-transform", props.expanded && "rotate-90")}
       size={14}
     />
-    <ListTree class="h-3.5 w-3.5 shrink-0 text-success" size={14} />
+    <ListTree class="h-14 w-14 shrink-0 text-success" size={14} />
     <span class="truncate font-semibold">{props.trace.name ?? "(unnamed trace)"}</span>
     <span class="shrink-0 text-xs text-fg-tertiary">{formatDateTime(props.trace.timestamp)}</span>
-    <span class="ml-auto flex shrink-0 items-center gap-1.5 pl-2">
+    <span class="ml-auto flex shrink-0 items-center gap-6 pl-8">
       <Show when={props.trace.latency !== null}>
         <span class="font-mono text-[11px] text-fg-tertiary">
           {formatIntervalSeconds(props.trace.latency!)}
@@ -143,9 +143,9 @@ const TraceRootRow: Component<{
         onClick={(event: MouseEvent) => event.stopPropagation()}
         title="Open trace detail"
         aria-label="Open trace detail"
-        class="rounded p-0.5 text-fg-tertiary transition-colors hover:bg-surface-inset hover:text-fg-primary"
+        class="rounded p-2 text-fg-tertiary transition-colors hover:bg-surface-inset hover:text-fg-primary"
       >
-        <ArrowUpRight class="h-3.5 w-3.5" size={14} />
+        <ArrowUpRight class="h-14 w-14" size={14} />
       </A>
     </span>
   </div>
@@ -258,22 +258,22 @@ const SessionDetailContent: Component<{
 
   return (
     <div class="flex h-full flex-col">
-      <div class="border-b border-border px-6 py-4">
+      <div class="border-b border-border px-24 py-16">
         <A
           href="/sessions"
-          class="mb-2 inline-flex items-center gap-1 text-xs text-fg-tertiary hover:text-fg-primary"
+          class="mb-8 inline-flex items-center gap-4 text-xs text-fg-tertiary hover:text-fg-primary"
         >
-          <ArrowLeft class="h-3.5 w-3.5" size={14} />
+          <ArrowLeft class="h-14 w-14" size={14} />
           Sessions
         </A>
-        <div class="flex items-center justify-between gap-4">
+        <div class="flex items-center justify-between gap-16">
           <div class="min-w-0">
             <h1 class="truncate text-lg font-semibold tracking-tight text-fg-primary">
               {props.sessionId}
             </h1>
             <Show when={session()}>
               {(current) => (
-                <div class="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-fg-tertiary">
+                <div class="mt-2 flex flex-wrap items-center gap-8 text-sm text-fg-tertiary">
                   <span>Started {formatDateTime(current().createdAt)}</span>
                   <Badge tone="neutral" class="font-normal">
                     Full session · all times and environments
@@ -286,10 +286,10 @@ const SessionDetailContent: Component<{
             <Button
               variant="secondary"
               size="sm"
-              class="shrink-0 gap-1.5"
+              class="shrink-0 gap-6"
               onClick={() => setTimelineOpen(true)}
             >
-              <ChartNoAxesCombined class="h-4 w-4" size={16} />
+              <ChartNoAxesCombined class="h-16 w-16" size={16} />
               Page timeline
             </Button>
           </Show>
@@ -302,10 +302,10 @@ const SessionDetailContent: Component<{
             !session()!.traces.some((trace) => trace.id === props.traceAnchor)
           }
         >
-          <div class="mt-3 rounded border border-warning/30 bg-warning/10 p-3 text-sm">
+          <div class="mt-12 rounded border border-warning/30 bg-warning/10 p-12 text-sm">
             The target trace is on another session page. Open its details directly to view it:
             <A
-              class="ml-2 text-brand underline"
+              class="ml-8 text-brand underline"
               href={`/traces/${encodeURIComponent(props.traceAnchor!)}`}
             >
               Open target trace
@@ -315,7 +315,7 @@ const SessionDetailContent: Component<{
 
         <Show when={session()}>
           {(current) => (
-            <div class="mt-4 flex flex-wrap gap-x-8 gap-y-3">
+            <div class="mt-16 flex flex-wrap gap-x-32 gap-y-12">
               <Stat label="Duration" value={formatIntervalSeconds(current().sessionDuration)} />
               <Stat label="Traces" value={current().countTraces} />
               <Stat label="Total Tokens" value={formatTokens(current().totalTokens)} />
@@ -323,8 +323,8 @@ const SessionDetailContent: Component<{
                 label="Users"
                 value={
                   current().users.length > 0 ? (
-                    <span class="flex items-center gap-1">
-                      <Users class="h-3.5 w-3.5 text-fg-tertiary" size={14} />
+                    <span class="flex items-center gap-4">
+                      <Users class="h-14 w-14 text-fg-tertiary" size={14} />
                       {current().users.join(", ")}
                       {current().usersTruncated ? ", …" : ""}
                     </span>
@@ -337,7 +337,7 @@ const SessionDetailContent: Component<{
                 label="Environment"
                 value={
                   current().environment ? (
-                    <Badge tone="neutral" class="rounded-sm px-1 font-normal">
+                    <Badge tone="neutral" class="rounded-sm px-4 font-normal">
                       {current().environment}
                     </Badge>
                   ) : (
@@ -351,7 +351,7 @@ const SessionDetailContent: Component<{
       </div>
 
       <MonitorTraceTurnTreeShell
-        class="min-h-0 flex-1 p-4"
+        class="min-h-0 flex-1 p-16"
         treeToolbar={
           <Button size="sm" variant="ghost" onClick={() => setOmitNoise((value) => !value)}>
             {omitNoise() ? "Hide noise" : "Show all"}
@@ -361,15 +361,15 @@ const SessionDetailContent: Component<{
           <Show
             when={!sessionQuery.isPending}
             fallback={
-              <div class="space-y-3 p-2">
-                <For each={[0, 1, 2]}>{() => <Skeleton class="h-24 w-full" />}</For>
+              <div class="space-y-12 p-8">
+                <For each={[0, 1, 2]}>{() => <Skeleton class="h-96 w-full" />}</For>
               </div>
             }
           >
             <Show
               when={!sessionQuery.isError}
               fallback={
-                <InlineNotice tone="danger" role="alert" class="m-4">
+                <InlineNotice tone="danger" role="alert" class="m-16">
                   {sessionQuery.error instanceof Error
                     ? sessionQuery.error.message
                     : "Failed to load session"}
@@ -379,16 +379,16 @@ const SessionDetailContent: Component<{
               <Show
                 when={session()?.traces.length}
                 fallback={
-                  <EmptyState variant="inline" title="No traces in this session." class="m-4" />
+                  <EmptyState variant="inline" title="No traces in this session." class="m-16" />
                 }
               >
                 <ScrollArea class="h-full">
-                  <div class="p-2">
+                  <div class="p-8">
                     <For each={session()?.traces ?? []}>
                       {(trace, index) => (
                         <div>
                           <Show when={index() > 0}>
-                            <div class="my-2 border-t border-border" />
+                            <div class="my-8 border-t border-border" />
                           </Show>
                           <TraceRootRow
                             trace={trace}
@@ -438,14 +438,14 @@ const SessionDetailContent: Component<{
               </Show>
             }
           >
-            <Skeleton class="h-64 w-full" />
+            <Skeleton class="h-256 w-full" />
           </Show>
         }
       />
 
       <Show when={session()?.meta}>
         {(meta) => (
-          <div class="border-t border-border px-4 py-2">
+          <div class="border-t border-border px-16 py-8">
             <PaginationControls
               current={props.page}
               pageSize={PAGE_SIZE}

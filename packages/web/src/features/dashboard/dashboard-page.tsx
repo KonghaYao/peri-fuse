@@ -46,31 +46,31 @@ const KpiCard: Component<{
   icon: typeof ListTree;
   accent: string;
 }> = (props) => (
-  <Card class="relative overflow-hidden py-4">
+  <Card class="relative overflow-hidden py-16">
     <span class={cn("absolute inset-y-0 left-0 w-[3px]", props.accent)} />
-    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-1.5">
+    <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-6">
       <CardTitle class="text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
         {props.title}
       </CardTitle>
-      <props.icon class="h-4 w-4 text-fg-tertiary" size={16} />
+      <props.icon class="h-16 w-16 text-fg-tertiary" size={16} />
     </CardHeader>
     <CardContent>
       <div class="tnum font-mono text-2xl font-semibold tracking-tight text-fg-primary">
         {props.value}
       </div>
       <Show when={props.sub}>
-        <p class="mt-0.5 text-xs text-fg-tertiary">{props.sub}</p>
+        <p class="mt-2 text-xs text-fg-tertiary">{props.sub}</p>
       </Show>
     </CardContent>
   </Card>
 );
 
 const DashboardLoading: Component = () => (
-  <div class="space-y-4">
-    <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <For each={Array.from({ length: 8 })}>{() => <Skeleton class="h-28" />}</For>
+  <div class="space-y-16">
+    <div class="grid grid-cols-2 gap-16 lg:grid-cols-4">
+      <For each={Array.from({ length: 8 })}>{() => <Skeleton class="h-112" />}</For>
     </div>
-    <Skeleton class="h-80" />
+    <Skeleton class="h-320" />
   </div>
 );
 
@@ -91,15 +91,15 @@ const DashboardBody: Component<{ range: RangeKey }> = (props) => {
       <Show
         when={!query.error}
         fallback={
-          <div class="rounded-md border border-danger/30 bg-danger-subtle px-4 py-3">
+          <div class="rounded-md border border-danger/30 bg-danger-subtle px-16 py-12">
             <p class="text-sm font-medium text-danger">Could not load dashboard.</p>
-            <p class="mt-1 text-sm text-fg-secondary">
+            <p class="mt-4 text-sm text-fg-secondary">
               {query.error instanceof Error ? query.error.message : "Request failed"}
             </p>
             <Button
               variant="default"
               size="sm"
-              class="mt-3"
+              class="mt-12"
               disabled={query.isFetching}
               onClick={retry}
             >
@@ -110,8 +110,8 @@ const DashboardBody: Component<{ range: RangeKey }> = (props) => {
       >
         <Show when={dashboard()}>
           {(data) => (
-            <div class="space-y-6" aria-busy={query.isFetching}>
-              <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div class="space-y-24" aria-busy={query.isFetching}>
+              <div class="grid grid-cols-2 gap-16 lg:grid-cols-4">
                 <KpiCard
                   title="Traces"
                   value={formatNumber(data().summary.totalTraces)}
@@ -167,18 +167,18 @@ const DashboardBody: Component<{ range: RangeKey }> = (props) => {
 
               <ActivityChart data={data().daily} />
 
-              <div class="grid gap-4 lg:grid-cols-3">
+              <div class="grid gap-16 lg:grid-cols-3">
                 <LatencyTrendChart data={data().daily} />
                 <ErrorsChart data={data().daily} />
                 <LevelsDonut data={data().levels} />
               </div>
 
-              <div class="grid gap-4 md:grid-cols-2">
+              <div class="grid gap-16 md:grid-cols-2">
                 <TokensByModelChart data={data().byModel} />
                 <LatencyByModelChart data={data().byModel} />
               </div>
 
-              <div class="grid gap-4 lg:grid-cols-3">
+              <div class="grid gap-16 lg:grid-cols-3">
                 <CacheTrendChart data={data().daily} />
                 <ScoreTrendChart data={data().daily} />
                 <TopUsersChart data={data().topUsers} />
@@ -209,15 +209,15 @@ export const DashboardPage: Component = () => {
         title="Dashboard"
         description="Overview of the telemetry stored in this lite project."
         actions={
-          <div class="flex items-center gap-2">
-            <div class="flex items-center rounded-md border border-border p-0.5">
+          <div class="flex items-center gap-8">
+            <div class="flex items-center rounded-md border border-border p-2">
               <For each={RANGE_PRESETS}>
                 {(preset) => (
                   <button
                     type="button"
                     onClick={() => setRange(preset.key)}
                     class={cn(
-                      "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                      "rounded px-10 py-4 text-xs font-medium transition-colors",
                       range() === preset.key
                         ? "bg-accent text-fg-primary"
                         : "text-fg-tertiary hover:text-fg-secondary",
@@ -237,7 +237,7 @@ export const DashboardPage: Component = () => {
         }
       />
 
-      <div class="flex-1 overflow-y-auto p-6">
+      <div class="flex-1 overflow-y-auto p-24">
         <Show when={range()} keyed>
           {(activeRange) => <DashboardBody range={activeRange} />}
         </Show>

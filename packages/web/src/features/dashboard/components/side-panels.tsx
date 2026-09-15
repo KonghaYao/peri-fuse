@@ -92,14 +92,14 @@ export const RecentErrorsPanel: Component<{ data: DashboardRecentError[] }> = (p
     <ul class="divide-y divide-border">
       <For each={props.data}>
         {(error) => (
-          <li class="flex items-start gap-2.5 py-2.5">
-            <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-danger" size={16} />
+          <li class="flex items-start gap-10 py-10">
+            <AlertTriangle class="mt-2 h-16 w-16 shrink-0 text-danger" size={16} />
             <div class="min-w-0 flex-1">
-              <div class="flex items-baseline justify-between gap-2">
+              <div class="flex items-baseline justify-between gap-8">
                 <span class="truncate text-sm font-medium text-fg-primary">
                   {error.name ?? "(unnamed)"}
                   <Show when={error.type}>
-                    <span class="ml-1.5 text-xs font-normal text-fg-tertiary">{error.type}</span>
+                    <span class="ml-6 text-xs font-normal text-fg-tertiary">{error.type}</span>
                   </Show>
                 </span>
                 <span class="shrink-0 text-xs text-fg-tertiary">
@@ -107,15 +107,15 @@ export const RecentErrorsPanel: Component<{ data: DashboardRecentError[] }> = (p
                 </span>
               </div>
               <Show when={error.statusMessage}>
-                <p class="mt-0.5 truncate text-xs text-fg-tertiary">{error.statusMessage}</p>
+                <p class="mt-2 truncate text-xs text-fg-tertiary">{error.statusMessage}</p>
               </Show>
               <Show when={error.traceId}>
                 {(traceId) => (
                   <A
                     href={`/traces/${encodeURIComponent(traceId())}`}
-                    class="mt-0.5 inline-flex items-center gap-0.5 text-xs text-brand hover:underline"
+                    class="mt-2 inline-flex items-center gap-2 text-xs text-brand hover:underline"
                   >
-                    View trace <ArrowUpRight class="h-3 w-3" size={12} />
+                    View trace <ArrowUpRight class="h-12 w-12" size={12} />
                   </A>
                 )}
               </Show>
@@ -126,9 +126,9 @@ export const RecentErrorsPanel: Component<{ data: DashboardRecentError[] }> = (p
     </ul>
     <A
       href="/errors"
-      class="mt-3 inline-flex items-center gap-1 text-xs font-medium text-danger hover:underline"
+      class="mt-12 inline-flex items-center gap-4 text-xs font-medium text-danger hover:underline"
     >
-      Investigate all errors <ArrowUpRight class="h-3 w-3" size={12} />
+      Investigate all errors <ArrowUpRight class="h-12 w-12" size={12} />
     </A>
   </ChartCard>
 );
