@@ -73,9 +73,9 @@ export { SCORE_TO_TRACE_OBSERVATIONS_INTERVAL } from "./repositories/constants";
 export * from "./repositories/definitions";
 export * from "./repositories/observations";
 export { scoreDomainToV3 } from "./repositories/scores";
-export * from "./repositories/traces";
 // Trace retrieval
-export { getTraceByIdFromTracesTable as getTraceById } from "./repositories/traces";
+export { getTraceById } from "./repositories/trace-detail";
+export * from "./repositories/traces";
 // S3 stubs
 export { getS3EventStorageClient } from "./s3";
 export * from "./session-search";

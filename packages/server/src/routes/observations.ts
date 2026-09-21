@@ -79,6 +79,7 @@ app.get("/api/public/observations", authMiddleware, responseCache(2_000), async 
     toStartTime: query.toStartTime ?? undefined,
     version: query.version ?? undefined,
     advancedFilters: query.filter,
+    includeIO: query.fields !== "summary",
   };
 
   const [items, count] = await Promise.all([

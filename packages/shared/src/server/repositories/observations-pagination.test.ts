@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { initializeIoSchema, installIoReader } from "../adapters/io-compression";
 import { initializeTelemetrySchema } from "../adapters/sqlite-telemetry-schema";
 import type { TelemetryQueryOpts } from "../adapters/types";
 import { FilterList, StringFilter } from "../queries/clickhouse-sql/clickhouse-filter";
@@ -25,6 +26,8 @@ const filter = new FilterList(
 
 beforeAll(() => {
   initializeTelemetrySchema(db);
+  initializeIoSchema(db);
+  installIoReader(db);
   const insert = db.prepare(`
     INSERT INTO observations
       (project_id, id, type, level, start_time, is_deleted, input)

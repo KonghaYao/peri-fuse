@@ -84,6 +84,10 @@ app.post("/api/public/otel/v1/traces", authMiddleware, async (c) => {
   }
 
   if (!resourceSpans || resourceSpans.length === 0) {
+    if (contentType.includes("application/x-protobuf")) {
+      c.header("Content-Type", "application/x-protobuf");
+      return c.body(new Uint8Array());
+    }
     return c.json({});
   }
 
@@ -119,8 +123,44 @@ app.post("/api/public/otel/v1/traces", authMiddleware, async (c) => {
     ingestionVersion,
   });
 
-  const result = await (processor.publishToOtelIngestionQueue(resourceSpans) as Promise<any>);
-  return c.json(result ?? {});
+  let result: unknown;
+  try {
+    result = await processor.publishToOtelIngestionQueue(resourceSpans);
+  } catch {
+    logger.error("OTLP ingestion failed before acknowledgement");
+    return c.json({ error: "Failed to persist telemetry" }, 503);
+  }
+  // Lite 同步落库失败必须让 OTLP exporter 看到可重试的 HTTP 状态。
+  if (
+    result &&
+    typeof result === "object" &&
+    "errors" in result &&
+    Array.isArray(result.errors) &&
+    result.errors.some(
+      (error: unknown) =>
+        error !== null &&
+        typeof error === "object" &&
+        "status" in error &&
+        typeof error.status === "number" &&
+        error.status >= 500,
+    )
+  ) {
+    return c.json({ error: "Failed to persist telemetry" }, 503);
+  }
+  if (
+    result &&
+    typeof result === "object" &&
+    "errors" in result &&
+    Array.isArray(result.errors) &&
+    result.errors.length > 0
+  ) {
+    return c.json({ error: "Invalid telemetry events" }, 400);
+  }
+  if (contentType.includes("application/x-protobuf")) {
+    c.header("Content-Type", "application/x-protobuf");
+    return c.body(new Uint8Array());
+  }
+  return c.json({});
 });
 
 export default app;

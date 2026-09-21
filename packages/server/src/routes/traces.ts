@@ -132,7 +132,7 @@ app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), asyn
       db.query<Record<string, unknown>>({
         query: `
           SELECT ${traceProjection}
-          FROM traces
+          FROM perifuse_read_traces
           WHERE project_id = @projectId AND id IN (${placeholders}) AND is_deleted = 0
         `,
         params,
@@ -179,7 +179,7 @@ app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), asyn
     return c.json(metrics);
   } catch (error) {
     logger.error("[lite-server] traces/metrics query failed", error);
-    return c.json([], 200);
+    throw error;
   }
 });
 

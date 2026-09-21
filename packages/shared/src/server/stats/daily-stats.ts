@@ -29,6 +29,8 @@ import {
   TRACE_METRICS_CACHED_TOKENS_SQL,
   TRACE_METRICS_GROSS_INPUT_TOKENS_SQL,
 } from "../adapters/sqlite-telemetry-adapter";
+import type { TelemetryQueryOpts } from "../adapters/types";
+import { repairDirtyDays } from "./daily-stats-dirty";
 import { LATENCY_BUCKET_COUNT, latencyBucketCaseSql } from "./histogram";
 
 /** Generation latency in ms (NULL when either endpoint is missing). */
@@ -290,8 +292,29 @@ const nextDayStart = (day: string) => {
 };
 
 /** Recompute and upsert the rollup rows for one (project, day). */
+const recomputations = new Map<string, Promise<void>>();
+
+/** 同一桶的重算串行化，避免并发 DELETE/INSERT 留下已消失的模型。 */
 export async function recomputeDay(projectId: string, day: string): Promise<void> {
+  const key = JSON.stringify([projectId, day]);
+  const previous = recomputations.get(key) ?? Promise.resolve();
+  const current = previous.catch(() => {}).then(() => recomputeDayRows(projectId, day));
+  recomputations.set(key, current);
+  try {
+    await current;
+  } finally {
+    if (recomputations.get(key) === current) recomputations.delete(key);
+  }
+}
+
+async function recomputeDayRows(projectId: string, day: string): Promise<void> {
   const db = getTelemetryDB();
+  const params = { projectId, day };
+  const [state] = await db.query<{ revision: number }>({
+    query: "SELECT revision FROM daily_stats_dirty WHERE project_id=@projectId AND day=@day",
+    params,
+  });
+  const revision = state?.revision ?? null;
   const from = dayStart(day);
   const to = dayStart(nextDayStart(day));
   const [stats, models] = await Promise.all([
@@ -299,7 +322,8 @@ export async function recomputeDay(projectId: string, day: string): Promise<void
     computeRangeModelStats(projectId, from, to),
   ]);
 
-  await db.command({
+  const commands: TelemetryQueryOpts[] = [];
+  commands.push({
     query: `
       INSERT OR REPLACE INTO daily_stats (
         project_id, day, traces, users_json, observations, generations, errors,
@@ -336,12 +360,12 @@ export async function recomputeDay(projectId: string, day: string): Promise<void
   });
 
   // Replace the day's model rows wholesale so vanished models disappear too.
-  await db.command({
+  commands.push({
     query: "DELETE FROM daily_model_stats WHERE project_id = @projectId AND day = @day",
     params: { projectId, day },
   });
   for (const m of models) {
-    await db.command({
+    commands.push({
       query: `
         INSERT OR REPLACE INTO daily_model_stats (
           project_id, day, model, observations, tokens, lat_count, lat_sum_ms, lat_hist
@@ -359,6 +383,17 @@ export async function recomputeDay(projectId: string, day: string): Promise<void
       },
     });
   }
+  if (!db.commandBatch) throw new Error("Atomic daily statistics publication unavailable");
+  commands.push({
+    query: "UPDATE daily_stats_dirty SET dirty=0 WHERE project_id=@projectId AND day=@day",
+    params,
+  });
+  await db.commandBatch(commands, {
+    query: `SELECT 1 WHERE (SELECT revision FROM daily_stats_dirty
+      WHERE project_id=@projectId AND day=@day) IS @revision
+      AND NOT EXISTS (SELECT 1 FROM telemetry_retention_state WHERE @day < cutoff_day)`,
+    params: { ...params, revision },
+  });
 }
 
 /** Load materialized days in [fromDay, toDay] inclusive. */
@@ -368,6 +403,7 @@ export async function loadMaterializedDays(
   toDay: string | null,
 ): Promise<{ days: DayStats[]; models: Map<string, ModelDayStats[]> }> {
   const db = getTelemetryDB();
+  await repairDirtyDays(projectId, recomputeDay);
   const where = ["project_id = @projectId"];
   const params: Record<string, unknown> = { projectId };
   if (fromDay) {

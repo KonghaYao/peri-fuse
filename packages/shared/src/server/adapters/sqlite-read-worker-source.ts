@@ -1,3 +1,5 @@
+import { IO_READER_SOURCE } from "./io-compression";
+
 /** Inline worker source keeps development and bundled entry points identical. */
 export const SQLITE_READ_WORKER_SOURCE = `
 const { parentPort, workerData } = require("node:worker_threads");
@@ -5,6 +7,7 @@ const Database = require(workerData.betterSqlitePath);
 const db = new Database(workerData.dbPath, { readonly: true, fileMustExist: true });
 db.pragma("busy_timeout = 5000");
 db.pragma("cache_size = -8000");
+${IO_READER_SOURCE}
 const stmtCache = new Map();
 let statementBytes = 0;
 parentPort.on("message", ({ id, sql, params, maxResultRows, maxResultBytes }) => {

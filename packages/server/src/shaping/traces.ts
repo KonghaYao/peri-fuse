@@ -11,9 +11,13 @@ import {
   getTracesCountForPublicApi as _getTracesCountForPublicApi,
   createPublicApiTracesColumnMapping,
   deriveFilters,
+  liteGetTracesTable,
   type TraceQueryType,
   tracesTableUiColumnDefinitions,
 } from "@peri-fuse/shared/src/server";
+
+import { isLiteMode } from "@peri-fuse/shared/src/server/adapters";
+import { parseJsonValue } from "./trace-metrics";
 
 const publicApiTracesFilterParams = createPublicApiTracesColumnMapping("traces", "t");
 
@@ -33,6 +37,29 @@ export const generateTracesForPublicApi = ({
     tracesTableUiColumnDefinitions,
     tracesTableCols,
   );
+  if (isLiteMode()) {
+    return liteGetTracesTable({
+      projectId: props.projectId,
+      filter,
+      orderBy,
+      limit: props.limit,
+      page: (props.page ?? 1) - 1,
+      includeIO: props.fields === undefined || props.fields.includes("io"),
+    }).then((rows) =>
+      rows.map((row) => ({
+        ...row,
+        input: parseJsonValue(row.input),
+        output: parseJsonValue(row.output),
+        createdAt: row.timestamp,
+        updatedAt: row.timestamp,
+        htmlPath: `/project/${props.projectId}/traces/${row.id}`,
+        observations: [],
+        scores: [],
+        totalCost: 0,
+        latency: 0,
+      })),
+    );
+  }
   return _generateTracesForPublicApi({
     projectId: props.projectId,
     filter,

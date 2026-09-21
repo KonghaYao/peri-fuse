@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
+import { encodeIoRow, initializeIoSchema } from "../adapters/io-compression";
 import { initializeTelemetrySchema } from "../adapters/sqlite-telemetry-schema";
 import { SessionSearchLifecycle } from "./lifecycle";
 import { SessionSearchStorage } from "./storage";
@@ -15,6 +16,7 @@ describe("session search worker lifecycle", () => {
     );
     const db = new Database(dbPath);
     initializeTelemetrySchema(db);
+    initializeIoSchema(db);
     const lifecycle = new SessionSearchLifecycle(db);
     lifecycle.start();
     db.exec("ALTER TABLE search_dirty RENAME TO search_dirty_broken");
@@ -50,6 +52,7 @@ describe("session search worker lifecycle", () => {
     const dbPath = path.join(mkdtempSync(path.join(os.tmpdir(), "peri-search-")), "telemetry.db");
     const db = new Database(dbPath);
     initializeTelemetrySchema(db);
+    initializeIoSchema(db);
     db.prepare("INSERT INTO traces(id,project_id,timestamp,input,output) VALUES(?,?,?,?,?)").run(
       "trace-1",
       "project-1",
@@ -57,6 +60,19 @@ describe("session search worker lifecycle", () => {
       JSON.stringify({ messages: [{ role: "user", content: "worker unique phrase" }] }),
       JSON.stringify({ messages: [{ role: "assistant", content: "worker answer" }] }),
     );
+    const packed = encodeIoRow(
+      "traces",
+      {
+        input: JSON.stringify({
+          messages: [{ role: "user", content: "worker unique phrase 中文 ".repeat(100) }],
+        }),
+      },
+      true,
+    );
+    expect(packed.input_codec).toBe(1);
+    db.prepare(
+      "UPDATE traces SET input=?, input_codec=?, input_raw_size=? WHERE project_id=? AND id=?",
+    ).run(packed.input, packed.input_codec, packed.input_raw_size, "project-1", "trace-1");
     new SessionSearchStorage(db).markDirty({
       projectId: "project-1",
       kind: "trace",

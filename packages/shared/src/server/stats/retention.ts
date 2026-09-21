@@ -36,6 +36,13 @@ export async function purgeOlderThan(
 ): Promise<Record<string, number>> {
   const db = getTelemetryDB();
   const cutoffDay = cutoff.slice(0, 10);
+  // 持久化完整日期淘汰边界，阻止其他连接的在途快照重新发布过期桶。
+  signal?.throwIfAborted();
+  await db.command({
+    query: `INSERT INTO telemetry_retention_state(id, cutoff_day) VALUES(1, @cutoffDay)
+      ON CONFLICT(id) DO UPDATE SET cutoff_day=MAX(cutoff_day, excluded.cutoff_day)`,
+    params: { cutoffDay },
+  });
   const targets: Array<{ table: string; where: string }> = [
     { table: "observations", where: "start_time < @cutoff" },
     { table: "scores", where: "timestamp < @cutoff" },
@@ -43,6 +50,18 @@ export async function purgeOlderThan(
     { table: "trace_metrics", where: "(timestamp IS NULL OR timestamp < @cutoff)" },
     { table: "daily_stats", where: "day < @cutoffDay" },
     { table: "daily_model_stats", where: "day < @cutoffDay" },
+    { table: "daily_stats_dirty", where: "day < @cutoffDay" },
+    {
+      table: "ingestion_field_versions",
+      where: ["traces", "observations", "scores"]
+        .map(
+          (table) =>
+            `(entity_type='${table}' AND NOT EXISTS (SELECT 1 FROM ${table} e
+          WHERE e.project_id=ingestion_field_versions.project_id
+            AND e.id=ingestion_field_versions.entity_id))`,
+        )
+        .join(" OR "),
+    },
   ];
 
   const deleted: Record<string, number> = {};

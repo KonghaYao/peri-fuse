@@ -2,6 +2,7 @@ import { getTelemetryDB } from "../adapters";
 import { withTelemetryQuerySignal } from "../adapters/telemetry-query-context";
 import { logger } from "../logger";
 import { recomputeDay } from "./daily-stats";
+import { repairDirtyDays } from "./daily-stats-dirty";
 import { startMaintenanceLoop } from "./maintenance-loop";
 
 /** Yield to the event loop so chunked maintenance never starves HTTP traffic. */
@@ -18,12 +19,14 @@ export async function refreshRecentDays(signal?: AbortSignal): Promise<void> {
   for (;;) {
     signal?.throwIfAborted();
     const projects: Array<{ project_id: string }> = await db.query({
-      query: `SELECT DISTINCT project_id FROM traces
-        WHERE (@cursor IS NULL OR project_id > @cursor) ORDER BY project_id LIMIT 200`,
+      query: `SELECT project_id FROM (
+        SELECT project_id FROM traces UNION SELECT project_id FROM daily_stats_dirty WHERE dirty=1
+      ) WHERE (@cursor IS NULL OR project_id > @cursor) ORDER BY project_id LIMIT 200`,
       params: { cursor },
       signal,
     });
     for (const p of projects) {
+      await repairDirtyDays(p.project_id, recomputeDay);
       for (const day of days) {
         signal?.throwIfAborted();
         try {

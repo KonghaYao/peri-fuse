@@ -34,7 +34,7 @@ export const applyInputOutputRendering = (
   io: string | null | undefined,
   renderingProps: RenderingProps,
 ): JsonNested | string | null => {
-  if (!io) return null;
+  if (io == null) return null;
   let result: JsonNested | string = io;
 
   if (renderingProps.truncated && io.length > env.LANGFUSE_SERVER_SIDE_IO_CHAR_LIMIT) {

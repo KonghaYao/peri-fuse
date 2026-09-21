@@ -52,6 +52,7 @@ type Row = {
   display_text: string;
   display_start: number;
   display_end: number;
+  next_start: number | null;
   trace_id: string | null;
   session_id: string | null;
 };
@@ -139,37 +140,40 @@ export async function getSessionContext(
     }
   }
   if (!orders.length) throw new Error("CONTEXT_UNAVAILABLE");
-  const messages: ContextMessage[] = [];
-  for (const order of orders) {
-    const anchorChunk = order === Number(anchor.message_order) ? Number(anchor.chunk_no) : 0;
-    const blockBefore = blockBeforeCursor !== undefined;
-    const firstChunk =
+  const blockBefore = blockBeforeCursor !== undefined;
+  const windows = orders.map((order) => ({
+    order,
+    chunk:
       blockCursor || blockBeforeCursor
         ? (blockCursor ?? blockBeforeCursor)!.c
-        : Math.max(0, anchorChunk - 2);
-    const fetchedRows = await read<Row>(
-      `SELECT o.occurrence_id,o.role,o.field,o.message_order,o.chunk_no,t.display_text,o.display_start,o.display_end,o.trace_id,o.session_id FROM search_occurrences o JOIN search_texts t ON t.text_id=o.text_id JOIN search_source_revisions sr ON sr.project_id=o.project_id AND sr.source_kind=o.source_kind AND sr.source_id=o.source_id AND sr.revision=o.source_version WHERE o.project_id=@projectId AND o.source_kind=@kind AND o.source_id=@source AND o.source_version=@version AND o.message_order=@order AND o.chunk_no ${blockBefore ? "<=" : ">="} @chunk ORDER BY o.chunk_no ${blockBefore ? "DESC" : "ASC"} LIMIT @limit`,
-      { projectId, kind, source, version, order, chunk: firstChunk, limit: MAX_BLOCKS + 1 },
-    );
+        : Math.max(0, (order === Number(anchor.message_order) ? Number(anchor.chunk_no) : 0) - 2),
+  }));
+  // 每页一次批量读取；窗口函数在过滤 chunk 之前取得下一块边界，避免逐 message/块查询。
+  const fetched = await read<Row>(
+    `WITH source AS (
+      SELECT o.*, LEAD(display_start) OVER (PARTITION BY message_order ORDER BY chunk_no) AS next_start
+      FROM search_occurrences o
+      JOIN search_source_revisions sr ON sr.project_id=o.project_id AND sr.source_kind=o.source_kind
+        AND sr.source_id=o.source_id AND sr.revision=o.source_version
+      WHERE o.project_id=@projectId AND o.source_kind=@kind AND o.source_id=@source AND o.source_version=@version
+        AND o.message_order IN (SELECT json_extract(value,'$.order') FROM json_each(@windows))
+    ), ranked AS (
+      SELECT source.*, ROW_NUMBER() OVER (PARTITION BY message_order ORDER BY chunk_no ${blockBefore ? "DESC" : "ASC"}) AS rn
+      FROM source JOIN json_each(@windows) w ON message_order=json_extract(w.value,'$.order')
+      WHERE chunk_no ${blockBefore ? "<=" : ">="} json_extract(w.value,'$.chunk')
+    ) SELECT o.occurrence_id,o.role,o.field,o.message_order,o.chunk_no,t.display_text,
+      o.display_start,o.display_end,o.next_start,o.trace_id,o.session_id
+      FROM ranked o JOIN search_texts t ON t.text_id=o.text_id AND t.project_id=o.project_id
+      WHERE rn<=@limit ORDER BY message_order, rn`,
+    { projectId, kind, source, version, windows: JSON.stringify(windows), limit: MAX_BLOCKS + 1 },
+  );
+  const messages: ContextMessage[] = [];
+  for (const { order, chunk: firstChunk } of windows) {
+    const fetchedRows = fetched.filter((row) => row.message_order === order);
     const rows = fetchedRows.slice(0, MAX_BLOCKS).sort((a, b) => a.chunk_no - b.chunk_no);
     if (!rows.length) continue;
     const hasMore = fetchedRows.length > MAX_BLOCKS;
-    const nextChunkStart = async (row: Row): Promise<number> => {
-      const next = await read<{ display_start: number }>(
-        `SELECT o.display_start FROM search_occurrences o WHERE o.project_id=@projectId AND o.source_kind=@kind AND o.source_id=@source AND o.source_version=@version AND o.message_order=@order AND o.chunk_no>@chunk ORDER BY o.chunk_no LIMIT 1`,
-        { projectId, kind, source, version, order, chunk: row.chunk_no },
-      );
-      return next[0]?.display_start ?? row.display_end;
-    };
-    const boundaries = await Promise.all(
-      rows.map((row, index) =>
-        rows[index + 1]?.display_start !== undefined
-          ? Promise.resolve(rows[index + 1].display_start)
-          : index === rows.length - 1 && (hasMore || blockBefore)
-            ? nextChunkStart(row)
-            : Promise.resolve(row.display_end),
-      ),
-    );
+    const boundaries = rows.map((row) => row.next_start ?? row.display_end);
     const blocks = rows.map((row, index) => {
       const nextStart = boundaries[index];
       // display_start is the storage-owned absolute offset. Keep the range up to

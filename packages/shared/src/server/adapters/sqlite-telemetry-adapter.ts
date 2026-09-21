@@ -16,6 +16,10 @@ import Database from "better-sqlite3";
 import { logger } from "../logger";
 import { isSessionSearchAvailable } from "../session-search/schema";
 import { SessionSearchStorage } from "../session-search/storage";
+import { initializeDailyStatsDirty } from "../stats/daily-stats-dirty";
+import { refreshIngestionMetrics } from "./ingestion-metrics";
+import { initializeIngestionVersions, selectVersionedColumns } from "./ingestion-versions";
+import { encodeIoRow, initializeIoSchema, installIoReader, ioColumns } from "./io-compression";
 import {
   DEFAULT_MAX_RESULT_BYTES,
   DEFAULT_MAX_RESULT_ROWS,
@@ -64,7 +68,13 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   private analyzeWriteCounter = 0;
   private static readonly ANALYZE_WRITE_THRESHOLD = 50_000;
 
+  private readonly compressIo: boolean;
   constructor(dbPath?: string) {
+    const compression = process.env.PERIFUSE_IO_COMPRESSION_WRITE;
+    if (compression !== undefined && compression !== "off" && compression !== "on") {
+      throw new Error("IO_COMPRESSION_INVALID_CONFIG");
+    }
+    this.compressIo = compression === "on";
     const rawPath = dbPath ?? process.env.LANGFUSE_SQLITE_DB_PATH ?? DEFAULT_DB_PATH;
     // Resolve relative paths from the monorepo root so the DB location is
     // consistent regardless of which package's CWD starts the process.
@@ -84,10 +94,16 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     this.db.pragma("busy_timeout = 5000");
     this.db.pragma("cache_size = -64000"); // 64MB cache
     this.db.pragma("foreign_keys = ON");
+    // REPLACE 的隐式 DELETE 也必须标记旧日桶。
+    this.db.pragma("recursive_triggers = ON");
 
     // Initialize schema
     initializeTelemetrySchema(this.db);
     new TelemetrySchemaMigrations(this.db).migrate();
+    initializeIngestionVersions(this.db);
+    initializeDailyStatsDirty(this.db);
+    initializeIoSchema(this.db);
+    installIoReader(this.db);
     this.analyzeTables();
 
     logger.info(`[SQLiteTelemetryAdapter] Database opened at ${resolvedPath}`);
@@ -144,7 +160,10 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   }
 
   async query<T = Record<string, unknown>>(opts: TelemetryQueryOpts): Promise<T[]> {
-    opts = { ...opts, signal: opts.signal ?? currentTelemetryQuerySignal() };
+    opts = {
+      ...opts,
+      signal: opts.signal ?? currentTelemetryQuerySignal(),
+    };
     opts.signal?.throwIfAborted();
     for (const limit of [opts.timeoutMs, opts.maxResultRows, opts.maxResultBytes]) {
       if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
@@ -221,10 +240,84 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     }
   }
 
+  async commandBatch(commands: TelemetryQueryOpts[], guard?: TelemetryQueryOpts): Promise<boolean> {
+    return this.db
+      .transaction(() => {
+        // 先拿写锁再验证，其他连接不能在验证与发布之间修改源数据。
+        if (guard && !this.db.prepare(guard.query).get(guard.params ?? {})) return false;
+        for (const opts of commands) this.db.prepare(opts.query).run(opts.params ?? {});
+        return true;
+      })
+      .immediate();
+  }
+
   async insert<T = Record<string, unknown>>(opts: TelemetryInsertOpts<T>): Promise<void> {
     if (opts.records.length === 0) return;
 
-    const columns = Object.keys(opts.records[0] as Record<string, unknown>);
+    if (opts.updateColumns) {
+      const updateColumns = opts.updateColumns;
+      this.db.transaction(() => {
+        const affected = new Map<string, Set<string>>();
+        const collect = (row: Record<string, unknown>) => {
+          const projectId = String(row.project_id);
+          const traceId =
+            opts.table === "traces"
+              ? row.id
+              : (
+                  this.db
+                    .prepare("SELECT trace_id FROM observations WHERE project_id=? AND id=?")
+                    .get(projectId, row.id) as { trace_id: string | null } | undefined
+                )?.trace_id;
+          if (typeof traceId !== "string") return;
+          if (!affected.has(projectId)) affected.set(projectId, new Set());
+          affected.get(projectId)!.add(traceId);
+        };
+        opts.records.forEach((record, index) => {
+          const row = record as Record<string, unknown>;
+          const encoded = encodeIoRow(opts.table, row, this.compressIo);
+          const columns = Object.keys(encoded);
+          const requested = updateColumns[index].filter((c) => columns.includes(c));
+          const updates = opts.eventIds
+            ? selectVersionedColumns(
+                this.db,
+                opts.table,
+                row,
+                requested,
+                opts.eventIds[index],
+                opts.inheritColumns?.[index],
+              )
+            : requested;
+          const clauses = updates.flatMap((c) =>
+            ioColumns(opts.table, c).map((column) => `${column}=excluded.${column}`),
+          );
+          for (const c of opts.inheritColumns?.[index] ?? []) {
+            if (!opts.eventIds && !requested.includes(c) && (c === "input" || c === "output")) {
+              for (const column of ioColumns(opts.table, c)) {
+                clauses.push(`${column}=CASE WHEN ${opts.table}.${c}_codec=0 AND
+                  ${opts.table}.${c} IS NULL
+                  THEN excluded.${column} ELSE ${opts.table}.${column} END`);
+              }
+            }
+          }
+          collect(row);
+          const sql = `INSERT INTO ${opts.table} (${columns.join(",")})
+            VALUES (${columns.map((c) => `@${c}`).join(",")})
+            ON CONFLICT(project_id,id) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`;
+          this.db.prepare(sql).run(encoded);
+          this.markSearchDirty(opts.table, row);
+          collect(row);
+        });
+        for (const [projectId, traceIds] of affected) {
+          for (const traceId of traceIds) refreshIngestionMetrics(this.db, projectId, traceId);
+        }
+      })();
+      this.maybeReanalyze();
+      return;
+    }
+
+    const columns = Object.keys(opts.records[0] as Record<string, unknown>).flatMap((c) =>
+      ioColumns(opts.table, c),
+    );
     const placeholders = columns.map((c) => `@${c}`).join(", ");
     const sql = `INSERT OR REPLACE INTO ${opts.table} (${columns.join(", ")}) VALUES (${placeholders})`;
 
@@ -232,7 +325,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       const stmt = this.db.prepare(sql);
       const insertMany = this.db.transaction((records: T[]) => {
         for (const record of records) {
-          stmt.run(record as Record<string, unknown>);
+          stmt.run(encodeIoRow(opts.table, record as Record<string, unknown>, this.compressIo));
           this.markSearchDirty(opts.table, record as Record<string, unknown>);
         }
       });
@@ -252,7 +345,9 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   async mergeInsert<T = Record<string, unknown>>(opts: TelemetryInsertOpts<T>): Promise<void> {
     if (opts.records.length === 0) return;
 
-    const columns = Object.keys(opts.records[0] as Record<string, unknown>);
+    const columns = Object.keys(opts.records[0] as Record<string, unknown>).flatMap((c) =>
+      ioColumns(opts.table, c),
+    );
     const placeholders = columns.map((c) => `@${c}`).join(", ");
 
     // Determine PK columns for the ON CONFLICT target
@@ -265,11 +360,15 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         : ["id"];
 
     // Build SET clause: only overwrite when incoming value is non-null
-    const updateCols = columns.filter((c) => !pkColumns.includes(c));
+    const updateCols = Object.keys(opts.records[0] as Record<string, unknown>).filter(
+      (c) => !pkColumns.includes(c),
+    );
     const setClauses = updateCols
-      .map(
-        (c) =>
-          `${c} = CASE WHEN excluded.${c} IS NOT NULL THEN excluded.${c} ELSE ${opts.table}.${c} END`,
+      .flatMap((c) =>
+        ioColumns(opts.table, c).map(
+          (column) =>
+            `${column} = CASE WHEN excluded.${c} IS NOT NULL THEN excluded.${column} ELSE ${opts.table}.${column} END`,
+        ),
       )
       .join(", ");
 
@@ -279,7 +378,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       const stmt = this.db.prepare(sql);
       const insertMany = this.db.transaction((records: T[]) => {
         for (const record of records) {
-          stmt.run(record as Record<string, unknown>);
+          stmt.run(encodeIoRow(opts.table, record as Record<string, unknown>, this.compressIo));
           this.markSearchDirty(opts.table, record as Record<string, unknown>);
         }
       });
@@ -308,11 +407,10 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         kind: table === "traces" ? "trace" : "observation",
         eventTime: typeof eventTime === "string" ? eventTime : undefined,
       });
-    } catch (error) {
-      // Dirty marking is part of the write contract: swallowing this would make
-      // a successful telemetry update permanently invisible to search.
-      logger.error(`[SQLiteTelemetryAdapter] Failed to mark ${table} source dirty`, error);
-      throw error;
+    } catch {
+      // 不记录 SQLite 原始异常，避免包含遥测正文。
+      logger.error(`[SQLiteTelemetryAdapter] Failed to mark ${table} source dirty`);
+      throw new Error("Failed to mark ingestion source dirty");
     }
   }
 

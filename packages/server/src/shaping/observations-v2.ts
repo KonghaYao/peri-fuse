@@ -249,7 +249,7 @@ export function buildObservationsV2Select(fields: ReadonlySet<ObservationV2Field
   if (fields.has("trace_context")) {
     columns.push(traceColumn("tags"), traceColumn("release"), traceColumn("name", "trace_name"));
   }
-  return `SELECT\n    ${columns.join(",\n    ")}\n  FROM observations o`;
+  return `SELECT\n    ${columns.join(",\n    ")}\n  FROM perifuse_read_observations o`;
 }
 
 function mapObservationRow(row: Record<string, unknown>): EventsObservationRecordReadType {
@@ -265,8 +265,8 @@ function mapObservationRow(row: Record<string, unknown>): EventsObservationRecor
     level: row.level ? String(row.level) : null,
     status_message: row.status_message ? String(row.status_message) : null,
     version: row.version ? String(row.version) : null,
-    input: row.input ? String(row.input) : null,
-    output: row.output ? String(row.output) : null,
+    input: row.input != null ? String(row.input) : null,
+    output: row.output != null ? String(row.output) : null,
     provided_model_name: row.model ? String(row.model) : null,
     internal_model_id: null,
     model_parameters: row.model_parameters ? String(row.model_parameters) : null,

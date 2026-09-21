@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
+import { initializeIoSchema } from "../adapters/io-compression";
 import { initializeTelemetrySchema } from "../adapters/sqlite-telemetry-schema";
 import { enqueueBackfill } from "./backfill";
 import { processDirty } from "./indexer";
@@ -11,6 +12,7 @@ import { SessionSearchStorage } from "./storage";
 function open(file: string) {
   const db = new Database(file);
   initializeTelemetrySchema(db);
+  initializeIoSchema(db);
   return db;
 }
 describe("bounded persistent session search backfill", () => {

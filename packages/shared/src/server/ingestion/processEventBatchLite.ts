@@ -5,19 +5,14 @@
  * full mode, then writes directly to SQLite via the TelemetryDBAdapter.
  */
 
-import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import { UnauthorizedError } from "../../errors";
 import { getTelemetryDB } from "../adapters";
-import {
-  TRACE_METRICS_CACHE_CREATION_TOKENS_SQL,
-  TRACE_METRICS_CACHED_TOKENS_SQL,
-  TRACE_METRICS_GROSS_INPUT_TOKENS_SQL,
-} from "../adapters/sqlite-telemetry-adapter";
 import type { AuthHeaderValidVerificationResultIngestion } from "../auth/types";
 import { getClickhouseEntityType } from "../clickhouse/schemaUtils";
 import { logger } from "../logger";
 import type { IngestionAttribution } from "./ingestionAttribution";
+import { liteEntityId, liteUpdateColumns } from "./lite-patch";
 import { createIngestionEventSchema, eventTypes } from "./types";
 
 type ProcessEventBatchLiteOptions = {
@@ -34,6 +29,12 @@ function serializeValue(value: unknown): unknown {
   if (typeof value === "boolean") return value ? 1 : 0;
   if (typeof value === "object") return JSON.stringify(value);
   return value;
+}
+
+// 正文进入 codec 前固定为 SQLite 原 TEXT；数字/布尔沿用原 TEXT affinity 结果。
+function serializeIo(value: unknown): string | null {
+  const serialized = serializeValue(value);
+  return serialized == null ? null : String(serialized);
 }
 
 /**
@@ -87,7 +88,7 @@ function eventToRow(
   const now = new Date().toISOString().replace("T", " ").replace("Z", "");
 
   const baseRow: Record<string, unknown> = {
-    id: body.id,
+    id: body.id ?? liteEntityId(projectId, event.type, event.id),
     project_id: projectId,
     created_at: now,
     updated_at: now,
@@ -113,8 +114,8 @@ function eventToRow(
         public: body.public ? 1 : 0,
         bookmarked: 0,
         tags: serializeValue(body.tags) ?? "[]",
-        input: serializeValue(body.input) ?? null,
-        output: serializeValue(body.output) ?? null,
+        input: serializeIo(body.input),
+        output: serializeIo(body.output),
         session_id: body.sessionId ?? null,
         environment: (body.environment as string) ?? "default",
       },
@@ -138,8 +139,8 @@ function eventToRow(
           : null,
         metadata: serializeValue(body.metadata) ?? "{}",
         model: body.model ?? null,
-        input: serializeValue(body.input) ?? null,
-        output: serializeValue(body.output) ?? null,
+        input: serializeIo(body.input),
+        output: serializeIo(body.output),
         level: (body.level as string) ?? "DEFAULT",
         status_message: body.statusMessage ?? null,
         completion_start_time: body.completionStartTime
@@ -187,7 +188,7 @@ function eventToRow(
         // Upstream semantics: the server generates the id when absent (the
         // SDK's score events carry the id only on the event envelope, never
         // in the body).
-        id: body.id ?? randomUUID(),
+        id: baseRow.id,
         trace_id: body.traceId ?? null,
         observation_id: body.observationId ?? null,
         session_id: body.sessionId ?? null,
@@ -221,7 +222,7 @@ function eventToRow(
       row: {
         ...baseRow,
         // Upstream semantics: the server generates the id when absent.
-        id: body.id ?? randomUUID(),
+        id: baseRow.id,
         dataset_run_id: body.runId,
         dataset_item_id: body.datasetItemId,
         dataset_id: body.datasetId,
@@ -274,7 +275,17 @@ export const processEventBatchLite = async (
     dataset_run_items: [],
   };
 
-  for (const event of input) {
+  const eventIds: Record<string, string[]> = {};
+  const updates: Record<string, string[][]> = {};
+  // 批内预排序减少无效覆盖；跨请求冲突由事务内持久化的逐字段版本解决。
+  const ordered = [...input].sort((a, b) => {
+    const time = (v: unknown) => {
+      if (!v || typeof v !== "object" || !("timestamp" in v)) return 0;
+      return Date.parse(String(v.timestamp)) || 0;
+    };
+    return time(a) - time(b);
+  });
+  for (const event of ordered) {
     const parsed = ingestionSchema.safeParse(event);
     if (!parsed.success) {
       errors.push({
@@ -300,61 +311,51 @@ export const processEventBatchLite = async (
     const result = eventToRow(ingestionEvent, projectId);
     if (result) {
       rowsByTable[result.table].push(result.row);
-      successes.push({ id: ingestionEvent.id, status: 201 });
+      eventIds[result.table] ??= [];
+      eventIds[result.table].push(ingestionEvent.id);
+      const raw = (event as { body: Record<string, unknown> }).body;
+      updates[result.table] ??= [];
+      updates[result.table].push(
+        liteUpdateColumns(raw, ingestionEvent.body as Record<string, unknown>),
+      );
     } else {
       // Unknown entity type – still mark as success (e.g. sdk-log)
       successes.push({ id: ingestionEvent.id, status: 201 });
     }
   }
 
-  // Merge multiple trace rows for the same traceId (OTEL generates one
-  // trace-create per span that carries trace-level attributes). Later events
-  // override earlier ones on a per-field basis; null/undefined never overwrites
-  // a previously-set value. This mirrors ClickHouse's ReplacingMergeTree
-  // coalesce semantics used in the full ingestion pipeline.
-  const mergedTraces = new Map<string, Record<string, unknown>>();
-  for (const row of rowsByTable.traces) {
-    const id = row.id as string;
-    const existing = mergedTraces.get(id);
-    if (!existing) {
-      mergedTraces.set(id, { ...row });
-    } else {
-      for (const [key, value] of Object.entries(row)) {
-        if (value != null && value !== "" && value !== "[]" && value !== "{}") {
-          existing[key] = value;
-        }
-      }
-      // Always advance updated_at / event_ts to the latest event
-      existing.updated_at = row.updated_at;
-      existing.event_ts = row.event_ts;
-    }
-  }
-  rowsByTable.traces = [...mergedTraces.values()];
+  // 不再批内合并：每个 envelope 都经过相同的字段级 UPSERT 规则。
 
   // Propagate input/output from observations to traces that lack them.
   // Some OTEL SDKs (e.g. peri-agent) only set IO on observation-level spans
   // (like agent-run) without setting langfuse.trace.input/output attributes.
   // This makes traces appear "half-recorded" in the UI. We fix this by
   // inheriting IO from the root observation or its nearest children.
-  const hasIO = (v: unknown): boolean => v != null && v !== "" && v !== "null" && v !== '""';
-  for (const trace of rowsByTable.traces) {
+  const hasIO = (v: unknown): boolean => v != null;
+  const inherited = rowsByTable.traces.map(() => [] as string[]);
+  for (const [index, trace] of rowsByTable.traces.entries()) {
+    const explicit = updates.traces[index];
+    const inherit = (source: Record<string, unknown>) => {
+      for (const field of ["input", "output"]) {
+        if (!explicit.includes(field) && !hasIO(trace[field]) && hasIO(source[field])) {
+          trace[field] = source[field];
+          inherited[index].push(field);
+        }
+      }
+    };
     if (hasIO(trace.input) && hasIO(trace.output)) continue;
     const traceObs = rowsByTable.observations.filter((o) => o.trace_id === trace.id);
     if (traceObs.length === 0) continue;
     // Prefer the root observation (no parent)
     const root = traceObs.find((o) => !o.parent_observation_id || o.parent_observation_id === "");
-    if (root) {
-      if (!hasIO(trace.input) && hasIO(root.input)) trace.input = root.input;
-      if (!hasIO(trace.output) && hasIO(root.output)) trace.output = root.output;
-    }
+    if (root) inherit(root);
     // If still missing, try direct children of the root (or all obs)
     if (!hasIO(trace.input) || !hasIO(trace.output)) {
       const children = root
         ? traceObs.filter((o) => o.parent_observation_id === root.id)
         : traceObs;
       for (const child of children) {
-        if (!hasIO(trace.input) && hasIO(child.input)) trace.input = child.input;
-        if (!hasIO(trace.output) && hasIO(child.output)) trace.output = child.output;
+        inherit(child);
         if (hasIO(trace.input) && hasIO(trace.output)) break;
       }
     }
@@ -365,69 +366,29 @@ export const processEventBatchLite = async (
   for (const [table, rows] of Object.entries(rowsByTable)) {
     if (rows.length === 0) continue;
     try {
-      if (table === "traces" && db.mergeInsert) {
-        // Use merge semantics for traces: later events only overwrite
-        // non-null fields, preserving name/userId/tags from earlier events.
-        await db.mergeInsert({
-          table: table as "traces" | "observations" | "scores" | "dataset_run_items",
-          records: rows,
-        });
-      } else {
-        await db.insert({
-          table: table as "traces" | "observations" | "scores" | "dataset_run_items",
-          records: rows,
-        });
-      }
-    } catch (error) {
+      await db.insert({
+        table,
+        records: rows,
+        ...(table === "traces" ? { inheritColumns: inherited } : {}),
+        ...(table === "traces" || table === "observations"
+          ? { updateColumns: updates[table], eventIds: eventIds[table] }
+          : {}),
+      });
+      successes.push(...eventIds[table].map((id) => ({ id, status: 201 })));
+    } catch {
+      // SQLite 异常可能包含用户数据，不进入响应或日志。
       logger.error(`[processEventBatchLite] Failed to insert into ${table}`, {
-        error: error instanceof Error ? error.message : String(error),
         rowCount: rows.length,
       });
-    }
-  }
-
-  // Update materialized trace_metrics for affected traces
-  if (rowsByTable.observations.length > 0) {
-    const affectedTraceIds = new Set<string>();
-    for (const obs of rowsByTable.observations) {
-      if (obs.trace_id) affectedTraceIds.add(String(obs.trace_id));
-    }
-    if (affectedTraceIds.size > 0) {
-      try {
-        const placeholders = [...affectedTraceIds].map((_, i) => `@tid${i}`).join(",");
-        const params: Record<string, unknown> = { projectId };
-        [...affectedTraceIds].forEach((id, i) => {
-          params[`tid${i}`] = id;
-        });
-        await db.command({
-          query: `
-            INSERT OR REPLACE INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count, total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens, cached_tokens, cache_creation_tokens, gross_input_tokens, timestamp)
-            SELECT o.project_id, o.trace_id, t.user_id, t.session_id,
-                   COUNT(*),
-                   COALESCE(SUM(o.total_cost), 0),
-                   COALESCE(SUM(COALESCE(json_extract(o.cost_details, '$.input'), 0)), 0),
-                   COALESCE(SUM(COALESCE(json_extract(o.cost_details, '$.output'), 0)), 0),
-                   COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.input'), 0)), 0),
-                   COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.output'), 0)), 0),
-                   COALESCE(SUM(COALESCE(json_extract(o.usage_details, '$.total'),
-                       COALESCE(json_extract(o.usage_details, '$.input'), 0) +
-                       COALESCE(json_extract(o.usage_details, '$.output'), 0))), 0),
-                   ${TRACE_METRICS_CACHED_TOKENS_SQL},
-                   ${TRACE_METRICS_CACHE_CREATION_TOKENS_SQL},
-                   ${TRACE_METRICS_GROSS_INPUT_TOKENS_SQL},
-                   t.timestamp
-            FROM observations o
-            LEFT JOIN traces t ON t.project_id = o.project_id AND t.id = o.trace_id
-            WHERE o.project_id = @projectId AND o.trace_id IN (${placeholders}) AND o.is_deleted = 0
-            GROUP BY o.project_id, o.trace_id
-          `,
-          params,
-        });
-      } catch (error) {
-        logger.error("[processEventBatchLite] Failed to update trace_metrics", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+      errors.push(
+        ...eventIds[table].map((id) => ({
+          id,
+          status: 500,
+          message: "Failed to persist ingestion event",
+          error: "InternalServerError",
+        })),
+      );
+      rowsByTable[table] = [];
     }
   }
 

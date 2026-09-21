@@ -47,6 +47,12 @@ export interface TelemetryInsertOpts<T = Record<string, unknown>> {
   table: string;
   records: T[];
   tags?: Record<string, string>;
+  /** ingestion 专用：每行允许更新的列；其余值仅用于首次插入。 */
+  updateColumns?: string[][];
+  /** 与 envelope 时间共同构成字段版本的稳定排序键。 */
+  eventIds?: string[];
+  /** ingestion 正文继承：仅填从未提供的字段，显式空串不可覆盖。 */
+  inheritColumns?: string[][];
 }
 
 /**
@@ -63,6 +69,8 @@ export interface TelemetryDBAdapter {
 
   /** Execute a write command (INSERT, UPDATE, DELETE, DDL). */
   command(opts: TelemetryQueryOpts): Promise<{ changes: number }>;
+  /** SQLite 派生表整批原子发布，避免中间 DELETE 对读者可见。 */
+  commandBatch?(commands: TelemetryQueryOpts[], guard?: TelemetryQueryOpts): Promise<boolean>;
 
   /** Insert records into a table. */
   insert<T = Record<string, unknown>>(opts: TelemetryInsertOpts<T>): Promise<void>;

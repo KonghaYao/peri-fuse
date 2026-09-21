@@ -9,13 +9,17 @@ import { type EventsObservation, type Observation, observationsTableCols } from 
 import {
   generateObservationsForPublicApi as _generateObservationsForPublicApi,
   getObservationsCountForPublicApi as _getObservationsCountForPublicApi,
+  convertObservation,
   createPublicApiObservationsColumnMapping,
   deriveFilters,
+  liteGetObservationsTable,
   type ObservationPriceFields,
   observationsTableUiColumnDefinitions,
   reduceUsageOrCostDetails,
   StringFilter,
 } from "@peri-fuse/shared/src/server";
+
+import { isLiteMode } from "@peri-fuse/shared/src/server/adapters";
 
 type ObservationsApiQueryProps = {
   page: number;
@@ -32,6 +36,7 @@ type ObservationsApiQueryProps = {
   toStartTime?: string;
   version?: string;
   advancedFilters?: FilterState;
+  includeIO?: boolean;
 };
 
 const publicApiObservationsFilterParams = createPublicApiObservationsColumnMapping(
@@ -65,6 +70,15 @@ function buildObservationsFilter(props: ObservationsApiQueryProps) {
 
 export const generateObservationsForPublicApi = (props: ObservationsApiQueryProps) => {
   const filter = buildObservationsFilter(props);
+  if (isLiteMode()) {
+    return liteGetObservationsTable(
+      props.projectId,
+      props.limit,
+      props.page - 1,
+      filter,
+      props.includeIO ?? true,
+    ).then((rows) => rows.map((row) => convertObservation(row)));
+  }
   return _generateObservationsForPublicApi({
     projectId: props.projectId,
     filter,

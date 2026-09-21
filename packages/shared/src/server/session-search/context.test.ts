@@ -3,15 +3,18 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { initializeTelemetrySchema } from "../adapters/sqlite-telemetry-schema";
 import { getSessionContext } from "./context";
 import { extractMessages } from "./extraction";
+import { querySessionSearchRead } from "./read-pool";
 import { SessionSearchStorage } from "./storage";
 
 const db = new Database(":memory:");
 vi.mock("./read-pool", () => ({
-  querySessionSearchRead: async (
-    adapter: { query: (options: { query: string; params: Record<string, unknown> }) => unknown },
-    query: string,
-    params: Record<string, unknown>,
-  ) => adapter.query({ query, params }),
+  querySessionSearchRead: vi.fn(
+    async (
+      adapter: { query: (options: { query: string; params: Record<string, unknown> }) => unknown },
+      query: string,
+      params: Record<string, unknown>,
+    ) => adapter.query({ query, params }),
+  ),
 }));
 vi.mock("../adapters", () => ({
   getTelemetryDB: () => ({
@@ -55,12 +58,14 @@ describe("session context projection", () => {
         "SELECT occurrence_id,source_version,message_order FROM search_occurrences WHERE project_id=? AND message_order=15 LIMIT 1",
       )
       .get(project) as { occurrence_id: string; source_version: number; message_order: number };
+    vi.mocked(querySessionSearchRead).mockClear();
     const result = await getSessionContext(project, {
       occurrenceId: row.occurrence_id,
       sourceVersion: row.source_version,
       before: 2,
       after: 2,
     });
+    expect(querySessionSearchRead).toHaveBeenCalledTimes(4);
     expect(result.data.messages.map((m) => m.messageOrder)).toEqual([13, 14, 15, 16, 17]);
     expect(result.meta.afterCursor).toBeTruthy();
   });

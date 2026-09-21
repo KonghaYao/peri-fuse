@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { installIoReader } from "../adapters/io-compression";
 import { extractMessages } from "./extraction";
 import { type SearchSource, SessionSearchStorage } from "./storage";
 
@@ -6,13 +7,14 @@ export function readSource(
   db: Database.Database,
   source: SearchSource,
 ): { input: unknown; output: unknown; type?: string; traceId?: string; eventTime?: string } | null {
+  installIoReader(db);
   const table = source.kind === "trace" ? "traces" : "observations";
   const columns =
     source.kind === "trace"
       ? "input,output,NULL as type,is_deleted,id as traceId,timestamp as eventTime"
       : "input,output,type,is_deleted,trace_id as traceId,start_time as eventTime";
   const row = db
-    .prepare(`SELECT ${columns} FROM ${table} WHERE project_id=? AND id=?`)
+    .prepare(`SELECT ${columns} FROM perifuse_read_${table} WHERE project_id=? AND id=?`)
     .get(source.projectId, source.id) as
     | {
         input: unknown;
@@ -32,10 +34,11 @@ export function processDirty(db: Database.Database, limit = 100): number {
   let budget = 2 * 1024 * 1024;
   for (const source of storage.listDirty(limit)) {
     try {
+      installIoReader(db);
       const table = source.kind === "trace" ? "traces" : "observations";
       const size = db
         .prepare(
-          `SELECT COALESCE(length(CAST(input AS BLOB)),0)+COALESCE(length(CAST(output AS BLOB)),0) AS bytes FROM ${table} WHERE project_id=? AND id=?`,
+          `SELECT perifuse_io_bytes(input,input_codec,input_raw_size)+perifuse_io_bytes(output,output_codec,output_raw_size) AS bytes FROM ${table} WHERE project_id=? AND id=?`,
         )
         .get(source.projectId, source.id) as { bytes: number } | undefined;
       const bytes = size?.bytes ?? 0;
