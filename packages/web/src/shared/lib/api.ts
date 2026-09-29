@@ -259,6 +259,19 @@ export async function getObservationDetail(observationId: string): Promise<Obser
   return observationFromV2(row);
 }
 
+/** Fetch graph preview output without reading or transferring the generation's input. */
+export async function getObservationOutput(observationId: string): Promise<unknown> {
+  const filter = JSON.stringify([
+    { type: "string", column: "id", operator: "=", value: observationId },
+  ]);
+  const page = await request<CursorPage<Record<string, unknown>>>(
+    `/api/public/v2/observations${toQueryString({ filter, limit: 1, fields: "core,output" })}`,
+  );
+  const row = page.data[0];
+  if (!row) throw new ApiError(404, `Observation ${observationId} not found`);
+  return parseJsonIfPossible(row.output);
+}
+
 export function listObservations(params: ObservationListParams = {}): Promise<Paged<Observation>> {
   return request<Paged<Observation>>(
     `/api/public/observations${toQueryString({ ...params, fields: "summary" })}`,

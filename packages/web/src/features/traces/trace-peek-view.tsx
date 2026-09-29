@@ -14,6 +14,7 @@ import {
   Clock,
   Copy,
   Cpu,
+  GitBranch,
   Layers,
   ListTree,
   Star,
@@ -30,6 +31,7 @@ import {
   StatChip,
 } from "@/shared/components/observation-detail";
 import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
+import { ObservationTraceGraphDialog } from "@/shared/components/observation-trace-graph-dialog";
 import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
 import { toast } from "@/shared/components/toast";
 import { Badge } from "@/shared/components/ui/badge";
@@ -53,6 +55,7 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
   const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
   const [omitNoise, setOmitNoise] = useState(true);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [traceGraphOpen, setTraceGraphOpen] = useState(false);
   const observationsQuery = useTraceObservationsQuery(traceId);
   const observations = observationsQuery.data?.pages.flatMap((page) => page.data) ?? [];
   const traceIoQuery = useTraceIoQuery(traceId, selectedId === null);
@@ -90,6 +93,10 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
           </h2>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="sm" className="h-8" onClick={() => setTraceGraphOpen(true)}>
+            <GitBranch className="h-4 w-4" />
+            Trace graph
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -288,6 +295,13 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
           open={timelineOpen}
           onOpenChange={setTimelineOpen}
           omitNoise={omitNoise}
+        />
+      )}
+      {traceView && (
+        <ObservationTraceGraphDialog
+          trace={traceView}
+          open={traceGraphOpen}
+          onOpenChange={setTraceGraphOpen}
         />
       )}
     </aside>

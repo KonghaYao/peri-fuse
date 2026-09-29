@@ -12,6 +12,7 @@ import {
   Clock,
   Copy,
   Cpu,
+  GitBranch,
   Layers,
   ListTree,
   Star,
@@ -26,6 +27,7 @@ import {
   StatChip,
 } from "@/shared/components/observation-detail";
 import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
+import { ObservationTraceGraphDialog } from "@/shared/components/observation-trace-graph-dialog";
 import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
 import { ErrorState } from "@/shared/components/state";
 import { toast } from "@/shared/components/toast";
@@ -102,6 +104,7 @@ export function TraceDetailPage() {
   const { traceId } = useParams<{ traceId: string }>();
   const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
   const [timelineOpen, setTimelineOpen] = useState(false);
+  const [traceGraphOpen, setTraceGraphOpen] = useState(false);
 
   const query = useTraceQuery(traceId);
   const trace = query.data;
@@ -193,6 +196,15 @@ export function TraceDetailPage() {
           />
           <StatChip icon={Cpu} label="Tokens" value={formatTokens(totalTokens)} />
           <StatChip icon={Star} label="Scores" value={String(trace.scores.length)} />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-11 self-end"
+            onClick={() => setTraceGraphOpen(true)}
+          >
+            <GitBranch className="h-3.5 w-3.5" />
+            Trace graph
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -291,6 +303,11 @@ export function TraceDetailPage() {
         trace={traceView}
         open={timelineOpen}
         onOpenChange={setTimelineOpen}
+      />
+      <ObservationTraceGraphDialog
+        trace={traceView}
+        open={traceGraphOpen}
+        onOpenChange={setTraceGraphOpen}
       />
     </div>
   );

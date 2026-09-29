@@ -11,6 +11,7 @@ const PAGE_ROUTES = [
   /^\/$/,
   /^\/(dashboard|errors|observations|users|scores|settings)\/?$/,
   /^\/(traces|sessions)(\/[^/]+)?\/?$/,
+  /^\/demo\/trace-graph\/?$/,
   /^\/gateway(\/(providers|models|usage|logs))?\/?$/,
 ];
 const PROTOCOL_PATH = /^\/(api|v1|mcp|\.well-known)(\/|$)/;

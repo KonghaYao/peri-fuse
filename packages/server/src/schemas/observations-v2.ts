@@ -38,6 +38,7 @@ export const OBSERVATION_V2_FIELD_GROUPS = [
   "basic",
   "time",
   "io",
+  "output", // Lite UI extension: fetch agent responses without reading large inputs.
   "metadata",
   "model",
   "usage",

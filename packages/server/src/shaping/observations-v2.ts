@@ -232,7 +232,8 @@ export function buildObservationsV2Select(fields: ReadonlySet<ObservationV2Field
   if (fields.has("time")) {
     columns.push("o.completion_start_time", "o.created_at", "o.updated_at");
   }
-  if (fields.has("io")) columns.push("o.input", "o.output");
+  if (fields.has("io")) columns.push("o.input");
+  if (fields.has("io") || fields.has("output")) columns.push("o.output");
   if (fields.has("metadata")) columns.push("o.metadata");
   if (fields.has("model")) columns.push("o.model", "o.model_parameters");
   if (fields.has("usage")) {
@@ -449,11 +450,9 @@ export function transformDbToApiObservationV2(
     result.updatedAt = iso(observation.updatedAt);
   }
 
-  if (include("io")) {
-    // input/output are rendered according to parseIoAsJson during conversion.
-    result.input = observation.input ?? null;
-    result.output = observation.output ?? null;
-  }
+  // `output` is a Lite UI extension; SDK `io` still includes both fields.
+  if (include("io")) result.input = observation.input ?? null;
+  if (include("io") || include("output")) result.output = observation.output ?? null;
 
   if (include("metadata")) {
     result.metadata = truncateMetadata(observation.metadata, opts.expandMetadata);

@@ -20,9 +20,11 @@ import {
 import { useObservationsQuery } from "@/shared/hooks/queries";
 import { useTableState } from "@/shared/hooks/use-table-state";
 import { formatDateTime, formatTokens } from "@/shared/lib/format";
+import { OBSERVATION_TYPES } from "@/shared/lib/observation-types";
 import type { Observation } from "@/shared/lib/types";
 
 const PAGE_SIZE = 25;
+const TYPE_OPTIONS = OBSERVATION_TYPES.map((type) => ({ value: type, label: type }));
 
 type ObservationFilters = {
   name?: string;
@@ -52,10 +54,7 @@ export function ObservationsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        title="Observations"
-        description="Spans, generations and events across all traces."
-      />
+      <PageHeader title="Observations" description="All observation types across all traces." />
 
       <div className="flex flex-wrap items-center gap-2 px-6 py-3">
         <FilterInput
@@ -71,11 +70,7 @@ export function ObservationsPage() {
           allLabel="All types"
           value={tableState.filters.type}
           onCommit={(v) => tableState.setFilter("type", v)}
-          options={[
-            { value: "SPAN", label: "SPAN" },
-            { value: "GENERATION", label: "GENERATION" },
-            { value: "EVENT", label: "EVENT" },
-          ]}
+          options={TYPE_OPTIONS}
         />
         <FilterInput
           ref={environmentFilterRef}

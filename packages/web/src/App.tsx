@@ -18,6 +18,11 @@ const TracesPage = lazy(() =>
 const TraceDetailPage = lazy(() =>
   import("@/features/traces/trace-detail-page").then((m) => ({ default: m.TraceDetailPage })),
 );
+const TraceGraphDemoPage = lazy(() =>
+  import("@/features/traces/trace-graph-demo-page").then((m) => ({
+    default: m.TraceGraphDemoPage,
+  })),
+);
 const SessionsPage = lazy(() =>
   import("@/features/sessions/sessions-page").then((m) => ({ default: m.SessionsPage })),
 );
@@ -117,6 +122,14 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<RootRedirect />} />
+          <Route
+            path="demo/trace-graph"
+            element={
+              <Suspense fallback={<PageFallback />}>
+                <TraceGraphDemoPage />
+              </Suspense>
+            }
+          />
           <Route
             path="dashboard"
             element={
