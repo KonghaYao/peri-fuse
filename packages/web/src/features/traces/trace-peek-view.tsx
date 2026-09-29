@@ -1,13 +1,4 @@
-/**
- * Trace Peek View — Spectra §8.
- *
- * A wide side panel that pushes the table aside (not an overlay) when a trace
- * row is clicked. It surfaces the observation tree directly (like the full
- * trace-detail page) in a two-pane layout: a compact meta band on top, then
- * the selectable observation tree on the left driving the detail pane on the
- * right (trace-level IO + scores when the root is selected). "Open full view"
- * navigates to the dedicated trace-detail page.
- */
+/** Trace list preview: execution graph with details floating over the graph. */
 import {
   ArrowUpRight,
   ChartNoAxesCombined,
@@ -17,70 +8,38 @@ import {
   GitBranch,
   Layers,
   ListTree,
-  Star,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { LocalIsoDate } from "@/shared/components/local-iso-date";
-import {
-  IoTabs,
-  ObservationDetail,
-  ScoreList,
-  StatChip,
-} from "@/shared/components/observation-detail";
+import { StatChip } from "@/shared/components/observation-detail";
 import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
 import { ObservationTraceGraphDialog } from "@/shared/components/observation-trace-graph-dialog";
-import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
+import { ObservationTraceGraphView } from "@/shared/components/observation-trace-graph-view";
 import { toast } from "@/shared/components/toast";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
-import { ScrollArea } from "@/shared/components/ui/scroll-area";
-import { Separator } from "@/shared/components/ui/separator";
 import { Skeleton } from "@/shared/components/ui/skeleton";
-import {
-  useObservationDetailQuery,
-  useTraceIoQuery,
-  useTraceObservationsQuery,
-  useTraceQuery,
-} from "@/shared/hooks/queries";
+import { useTraceObservationsQuery, useTraceQuery } from "@/shared/hooks/queries";
 import { formatLatency, formatTokens } from "@/shared/lib/format";
-import { cn } from "@/shared/lib/utils";
 
 export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: () => void }) {
   const query = useTraceQuery(traceId);
   const trace = query.data;
 
-  const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
-  const [omitNoise, setOmitNoise] = useState(true);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [traceGraphOpen, setTraceGraphOpen] = useState(false);
   const observationsQuery = useTraceObservationsQuery(traceId);
   const observations = observationsQuery.data?.pages.flatMap((page) => page.data) ?? [];
-  const traceIoQuery = useTraceIoQuery(traceId, selectedId === null);
-  const selectedQuery = useObservationDetailQuery(selectedId);
-  const tree = useMemo(() => buildTree(observations, { omitNoise }), [observations, omitNoise]);
-
   const copyId = () => {
     navigator.clipboard.writeText(traceId);
     toast.success("Trace ID copied");
   };
 
   const totalTokens = observations.reduce((acc, o) => acc + (o.totalTokens || 0), 0);
-  const selected = selectedQuery.data ?? null;
-  const selectedScores = selected
-    ? (trace?.scores.filter((s) => s.observationId === selected.id) ?? [])
-    : [];
-  const traceView = trace
-    ? {
-        ...trace,
-        input: traceIoQuery.data?.input,
-        output: traceIoQuery.data?.output,
-        metadata: traceIoQuery.data?.metadata,
-        observations,
-      }
-    : null;
+  const traceView = trace ? { ...trace, observations } : null;
 
   return (
     <aside className="flex h-full w-[760px] max-w-[85vw] shrink-0 flex-col border-l border-border bg-surface-raised animate-[spectra-slide-in-right_250ms_cubic-bezier(0.32,0.72,0,1)]">
@@ -178,114 +137,7 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
             </div>
           </div>
 
-          {/* Two panes: tree (left) | detail (right) */}
-          <div className="flex min-h-0 flex-1">
-            {/* Observation tree */}
-            <div className="flex w-[320px] shrink-0 flex-col border-r border-border">
-              <div className="flex shrink-0 items-center gap-1.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-fg-tertiary">
-                <ListTree className="h-3.5 w-3.5" />
-                Observation tree
-                <span className="ml-auto">
-                  <OmitNoiseToggle omitNoise={omitNoise} onChange={setOmitNoise} />
-                </span>
-              </div>
-              <ScrollArea className="min-h-0 flex-1">
-                <div className="px-2 pb-2">
-                  {/* Virtual root representing the trace itself */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setSelectedId(null)}
-                    onKeyDown={(e) => e.key === "Enter" && setSelectedId(null)}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors",
-                      selectedId === null
-                        ? "bg-brand-subtle text-fg-primary shadow-[inset_2px_0_0_0_var(--brand)]"
-                        : "text-fg-secondary hover:bg-surface-overlay/50 hover:text-fg-primary",
-                    )}
-                  >
-                    <ListTree className="h-3.5 w-3.5 shrink-0 text-brand" />
-                    <span className="truncate font-medium">{trace.name ?? "trace root"}</span>
-                    <span className="tnum ml-auto shrink-0 font-mono text-[11px] text-fg-tertiary">
-                      {formatLatency(trace.latency)}
-                    </span>
-                  </div>
-                  {tree.map((node) => (
-                    <ObservationNode
-                      key={node.observation.id}
-                      node={node}
-                      depth={1}
-                      selectedId={selectedId ?? null}
-                      onSelect={setSelectedId}
-                    />
-                  ))}
-                  {tree.length === 0 && (
-                    <p className="px-2 py-4 text-sm text-fg-tertiary">
-                      {observationsQuery.isLoading
-                        ? "Loading observations…"
-                        : "No observations in this trace."}
-                    </p>
-                  )}
-                  {observationsQuery.hasNextPage && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mt-2 w-full"
-                      disabled={observationsQuery.isFetchingNextPage}
-                      onClick={() => observationsQuery.fetchNextPage()}
-                    >
-                      {observationsQuery.isFetchingNextPage ? "Loading…" : "Load more observations"}
-                    </Button>
-                  )}
-                </div>
-              </ScrollArea>
-            </div>
-
-            {/* Detail pane — follows the tree selection */}
-            <ScrollArea className="min-h-0 min-w-0 flex-1">
-              <div className="min-w-0 p-4">
-                {selectedId === undefined ? (
-                  <div className="flex h-40 items-center justify-center text-sm text-fg-tertiary">
-                    Select the trace root or an observation to load its details.
-                  </div>
-                ) : selectedQuery.isLoading ? (
-                  <Skeleton className="h-52 w-full" />
-                ) : selectedQuery.error ? (
-                  <p className="text-sm text-danger">
-                    {selectedQuery.error instanceof Error
-                      ? selectedQuery.error.message
-                      : "Failed to load observation"}
-                  </p>
-                ) : selected ? (
-                  <ObservationDetail observation={selected} scores={selectedScores} />
-                ) : traceIoQuery.isLoading ? (
-                  <Skeleton className="h-52 w-full" />
-                ) : traceIoQuery.error ? (
-                  <p className="text-sm text-danger">
-                    {traceIoQuery.error instanceof Error
-                      ? traceIoQuery.error.message
-                      : "Failed to load trace IO"}
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    <IoTabs
-                      input={traceView?.input}
-                      output={traceView?.output}
-                      metadata={traceView?.metadata}
-                    />
-                    <Separator />
-                    <div>
-                      <h3 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-fg-primary">
-                        <Star className="h-3.5 w-3.5 text-fg-tertiary" />
-                        Scores ({trace.scores.length})
-                      </h3>
-                      <ScoreList scores={trace.scores} />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-          </div>
+          {traceView && <ObservationTraceGraphView trace={traceView} />}
         </>
       ) : null}
 
@@ -294,7 +146,6 @@ export function TracePeekView({ traceId, onClose }: { traceId: string; onClose: 
           trace={traceView}
           open={timelineOpen}
           onOpenChange={setTimelineOpen}
-          omitNoise={omitNoise}
         />
       )}
       {traceView && (

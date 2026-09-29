@@ -1,5 +1,5 @@
 import { ArrowDown, GitBranch } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import {
   buildTraceGraphDisplay,
   type TraceGraphDisplayRow,
@@ -114,11 +114,13 @@ export function ObservationTraceGraph({
   selectedId,
   onSelect,
   className,
+  headerActions,
 }: {
   observations: Observation[];
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   className?: string;
+  headerActions?: ReactNode;
 }) {
   const [compact, setCompact] = useState(true);
   const model = useMemo(() => buildTraceGraph(observations), [observations]);
@@ -134,6 +136,7 @@ export function ObservationTraceGraph({
           <span className="flex items-center gap-1.5 text-xs font-semibold text-fg-primary">
             <GitBranch className="h-3.5 w-3.5 text-brand" /> Trace graph
           </span>
+          {headerActions}
           <span className="ml-auto text-[10px] text-fg-tertiary">
             {pointCount} points · {model.branchCount} branches
           </span>
