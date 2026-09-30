@@ -3,7 +3,7 @@
  * Maps provider type strings to adapter constructors.
  */
 import { AnthropicAdapter } from "./anthropic.js";
-import { BaseProviderAdapter, type ProviderConfig } from "./base.js";
+import type { BaseProviderAdapter, ProviderConfig } from "./base.js";
 import { OpenAIAdapter } from "./openai.js";
 
 type AdapterConstructor = new (config: ProviderConfig) => BaseProviderAdapter;
@@ -20,7 +20,9 @@ const registry = new Map<string, AdapterConstructor>([
 export function createAdapter(type: string, config: ProviderConfig): BaseProviderAdapter {
   const Constructor = registry.get(type);
   if (!Constructor) {
-    throw new Error(`Unknown provider type: "${type}". Available: ${[...registry.keys()].join(", ")}`);
+    throw new Error(
+      `Unknown provider type: "${type}". Available: ${[...registry.keys()].join(", ")}`,
+    );
   }
   return new Constructor(config);
 }
@@ -28,9 +30,8 @@ export function createAdapter(type: string, config: ProviderConfig): BaseProvide
 /**
  * Register a custom provider adapter type.
  */
-export function registerAdapter(type: string, constructor: AdapterConstructor): void {
-  registry.set(type, constructor);
+export function registerAdapter(type: string, adapterConstructor: AdapterConstructor): void {
+  registry.set(type, adapterConstructor);
 }
 
-export { BaseProviderAdapter, type ProviderConfig } from "./base.js";
-export { ProviderError } from "./base.js";
+export { BaseProviderAdapter, type ProviderConfig, ProviderError } from "./base.js";

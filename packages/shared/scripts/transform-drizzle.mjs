@@ -13,12 +13,12 @@
  *
  * Usage: node scripts/transform-drizzle.mjs
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
-const prismaPath = ROOT + "prisma/schema.sqlite.prisma";
-const introspectedPath = ROOT + "drizzle/schema.ts";
-const outDir = ROOT + "src/db/schema";
+const prismaPath = `${ROOT}prisma/schema.sqlite.prisma`;
+const introspectedPath = `${ROOT}drizzle/schema.ts`;
+const outDir = `${ROOT}src/db/schema`;
 
 // ── 1. Parse Prisma schema for semantic types ──────────────────────
 const SEMANTIC = new Set(["DateTime", "Boolean", "BigInt", "Decimal", "Float"]);
@@ -108,7 +108,7 @@ for (const line of schemaLines) {
           ".$defaultFn(() => new Date()).$onUpdateFn(() => new Date())",
         );
       } else {
-        rest = ".$onUpdateFn(() => new Date())" + rest;
+        rest = `.$onUpdateFn(() => new Date())${rest}`;
       }
     }
     stats.DateTime++;
@@ -117,7 +117,7 @@ for (const line of schemaLines) {
     // strip any existing boolean default, then restore the prisma one
     rest = rest.replace(/\.default\((true|false)\)/, "");
     const def = boolDefault[`${tableSql}.${col}`];
-    if (def) rest = `.default(${def})` + rest;
+    if (def) rest = `.default(${def})${rest}`;
     stats.Boolean++;
   } else if (t === "BigInt") {
     // drizzle SQLite integer has no bigint mode; store as INTEGER (number).
@@ -142,23 +142,20 @@ let result = out.join("\n");
 // ── 3. Fix imports (drop now-unused `numeric` / `sql`) ─────────────
 const usesNumeric = /numeric\(/.test(result);
 const usesSql = /sql`/.test(result);
-result = result.replace(
-  /import \{([^}]*)\} from "drizzle-orm\/sqlite-core"/,
-  (full, names) => {
-    const kept = names
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s && !(s === "numeric" && !usesNumeric))
-      .join(", ");
-    return `import { ${kept} } from "drizzle-orm/sqlite-core"`;
-  },
-);
+result = result.replace(/import \{([^}]*)\} from "drizzle-orm\/sqlite-core"/, (_full, names) => {
+  const kept = names
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s && !(s === "numeric" && !usesNumeric))
+    .join(", ");
+  return `import { ${kept} } from "drizzle-orm/sqlite-core"`;
+});
 if (!usesSql) {
   result = result.replace(/\n?\s*import \{ sql \} from "drizzle-orm"\n/, "\n");
 }
 
 mkdirSync(outDir, { recursive: true });
-writeFileSync(outDir + "/schema.ts", result);
+writeFileSync(`${outDir}/schema.ts`, result);
 console.log("Transform stats:", stats);
 console.log("usesNumeric:", usesNumeric, "usesSql:", usesSql);
-console.log("Wrote", outDir + "/schema.ts");
+console.log("Wrote", `${outDir}/schema.ts`);

@@ -3,14 +3,10 @@
  * Works with OpenAI, Azure OpenAI, Ollama, vLLM, and any OpenAI-compatible endpoint.
  */
 import type { PeriMessage, PeriRequest, PeriResponse, PeriStreamChunk } from "../protocol/types.js";
-import { BaseProviderAdapter, type ProviderConfig } from "./base.js";
+import { BaseProviderAdapter } from "./base.js";
 
 export class OpenAIAdapter extends BaseProviderAdapter {
   readonly type = "openai";
-
-  constructor(config: ProviderConfig) {
-    super(config);
-  }
 
   getHeaders(): Record<string, string> {
     return {
@@ -101,13 +97,15 @@ export class OpenAIAdapter extends BaseProviderAdapter {
       },
       finishReason: choice.finish_reason ?? null,
       // Attach usage if present (some providers include it in the final chunk)
-      ...(raw.usage ? {
-        usage: {
-          promptTokens: raw.usage.prompt_tokens ?? 0,
-          completionTokens: raw.usage.completion_tokens ?? 0,
-          totalTokens: raw.usage.total_tokens ?? 0,
-        },
-      } : {}),
+      ...(raw.usage
+        ? {
+            usage: {
+              promptTokens: raw.usage.prompt_tokens ?? 0,
+              completionTokens: raw.usage.completion_tokens ?? 0,
+              totalTokens: raw.usage.total_tokens ?? 0,
+            },
+          }
+        : {}),
     };
   }
 

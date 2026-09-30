@@ -113,7 +113,10 @@ async function findLegacyApiKeyBySecret(
 // Unified auth middleware
 // ---------------------------------------------------------------------------
 
-export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<Response | void> {
+export async function unifiedAuth(
+  c: Context<GatewayEnv>,
+  next: Next,
+): Promise<Response | undefined> {
   const authHeader = c.req.header("authorization");
 
   if (!authHeader) {
@@ -171,7 +174,8 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
     c.set("apiKeyPrefix", cached.publicKey);
     const gwConfig = await getGatewayConfig(cached.publicKey, cached.projectId);
     c.set("apiKeyRecord", gwConfig);
-    return next();
+    await next();
+    return;
   }
 
   // Verify against shared DB
@@ -319,7 +323,7 @@ export async function unifiedAuth(c: Context<GatewayEnv>, next: Next): Promise<R
   c.set("apiKeyPrefix", resolvedPublicKey);
   c.set("apiKeyRecord", gwConfig);
 
-  return next();
+  await next();
 }
 
 /**

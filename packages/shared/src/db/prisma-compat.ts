@@ -12,13 +12,7 @@ import { sql as _sql, type SQL } from "drizzle-orm";
 /** A raw SQL fragment, equivalent to the former `Prisma.Sql`. */
 export type Sql = SQL;
 
-type _JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | _JsonValue[]
-  | { [key: string]: _JsonValue };
+type _JsonValue = string | number | boolean | null | _JsonValue[] | { [key: string]: _JsonValue };
 
 /**
  * Error mirroring `Prisma.PrismaClientKnownRequestError` so existing

@@ -114,13 +114,6 @@ body {
   display: flex; flex-direction: column;
   transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-.app.collapsed .sidebar { width: 64px; }
-.app.collapsed .nav-label, .app.collapsed .brand-text,
-.app.collapsed .nav-group-label, .app.collapsed .project-info,
-.app.collapsed .kbd { display: none; }
-.app.collapsed .nav-item { justify-content: center; padding: 0 8px; }
-.app.collapsed .project-switcher { justify-content: center; padding: 8px; }
-
 .brand {
   height: 52px; display: flex; align-items: center; gap: 10px;
   padding: 0 16px; border-bottom: 1px solid var(--border-default);
@@ -458,12 +451,20 @@ th.num { text-align: right; }
   border-top: 1px dashed var(--border-strong);
 }
 .component-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; }
-.hidden { display: none !important; }
+.cmdk-overlay.hidden { display: none; }
 
 /* Refresh selector */
 .refresh-select { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-tertiary); }
 .refresh-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); animation: pulse 2s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Collapsed overrides follow the base component styles. */
+.app.collapsed .sidebar { width: 64px; }
+.app.collapsed .nav-label, .app.collapsed .brand-text,
+.app.collapsed .nav-group-label, .app.collapsed .project-info,
+.app.collapsed .kbd { display: none; }
+.app.collapsed .nav-item { justify-content: center; padding: 0 8px; }
+.app.collapsed .project-switcher { justify-content: center; padding: 8px; }
 </style>
 </head>
 <body>
@@ -919,7 +920,7 @@ days.forEach((d, i) => {
   chart.appendChild(g);
 });
 
-function toggleTheme() { document.documentElement.classList.toggle('dark'); }
+window.toggleTheme = () => { document.documentElement.classList.toggle('dark'); };
 function toggleSidebar() { document.getElementById('app').classList.toggle('collapsed'); }
 function toggleCmdk() { document.getElementById('cmdk').classList.toggle('hidden'); }
 

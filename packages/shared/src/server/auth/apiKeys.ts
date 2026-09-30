@@ -1,9 +1,9 @@
 import * as crypto from "node:crypto";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
-import { v4 } from "uuid";
 import { compare, hash } from "bcryptjs";
+import { and, eq } from "drizzle-orm";
 import type { Cluster, Redis } from "ioredis";
+import { v4 } from "uuid";
 import type { Db } from "../../db";
 import { apiKeys } from "../../db/schema/index.js";
 import { env } from "../../env";
@@ -71,8 +71,7 @@ export async function createAndAddApiKeysToDb(p: {
 
   const hashFromProvidedKey = createShaHash(sk, salt);
 
-  const entity =
-    p.scope === "PROJECT" ? { projectId: p.entityId } : { organizationId: p.entityId };
+  const entity = p.scope === "PROJECT" ? { projectId: p.entityId } : { organizationId: p.entityId };
 
   const apiKey = await p.prisma
     .insert(apiKeys)

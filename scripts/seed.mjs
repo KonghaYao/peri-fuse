@@ -17,7 +17,7 @@ async function manage(path, init) {
 }
 
 // 1. Find (or create) the demo project.
-let projects = await manage("/api/manage/projects");
+const projects = await manage("/api/manage/projects");
 let project = projects.find((p) => p.name === "demo");
 if (!project) {
   project = await manage("/api/manage/projects", {
@@ -79,8 +79,17 @@ for (let i = 0; i < 40; i++) {
       environment: pick(ENVS),
       release: "2026.07",
       version: i % 4 === 0 ? "canary" : "stable",
-      input: { messages: [{ role: "user", content: `Sample prompt #${i}: explain observability.` }] },
-      output: { choices: [{ role: "assistant", content: `Observability is measuring internal state from outputs. (trace ${i})` }] },
+      input: {
+        messages: [{ role: "user", content: `Sample prompt #${i}: explain observability.` }],
+      },
+      output: {
+        choices: [
+          {
+            role: "assistant",
+            content: `Observability is measuring internal state from outputs. (trace ${i})`,
+          },
+        ],
+      },
       metadata: { source: "seed-script", index: i },
     },
   });

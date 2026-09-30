@@ -71,7 +71,9 @@ export class DefaultViewService {
         and(
           eq(defaultViews.projectId, projectId),
           inArray(defaultViews.viewName, compatibleViewNames),
-          userId ? or(eq(defaultViews.userId, userId), isNull(defaultViews.userId)) : isNull(defaultViews.userId),
+          userId
+            ? or(eq(defaultViews.userId, userId), isNull(defaultViews.userId))
+            : isNull(defaultViews.userId),
         ),
       );
 

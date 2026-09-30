@@ -1,6 +1,6 @@
 import { Decimal } from "decimal.js";
 import { asc, eq, sql } from "drizzle-orm";
-import { type Model } from "../../";
+import type { Model } from "../../";
 import { prisma } from "../../db";
 import { pricingTiers as pricingTiersTable } from "../../db/schema/index.js";
 import { env } from "../../env";

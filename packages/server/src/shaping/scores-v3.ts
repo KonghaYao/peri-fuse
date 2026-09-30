@@ -16,8 +16,8 @@
  * scoreDomainToV3 (same pipeline as the upstream ClickHouse implementation).
  */
 import {
-  ScoreDataTypeEnum,
   type JsonNested,
+  ScoreDataTypeEnum,
   type ScoreDomain,
   type ScoreFieldGroupV3,
 } from "@peri-fuse/shared";

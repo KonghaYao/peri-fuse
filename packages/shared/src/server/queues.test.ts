@@ -27,7 +27,7 @@ describe("WebhookOutboundEnvelopeSchema (discriminated union)", () => {
     const parsed = WebhookOutboundEnvelopeSchema.safeParse(validMonitorEnvelope);
     expect(parsed.success).toBe(true);
     if (parsed.success && parsed.data.type === "monitor-alert") {
-      expect(parsed.data.payload.severity).toBe("ALERT");
+      expect(parsed.data).toEqual(validMonitorEnvelope);
     }
   });
 
@@ -38,6 +38,25 @@ describe("WebhookOutboundEnvelopeSchema (discriminated union)", () => {
   it("rejects a monitor-alert envelope with missing payload", () => {
     const { payload: _unused, ...withoutPayload } = validMonitorEnvelope;
     expect(WebhookOutboundEnvelopeSchema.safeParse(withoutPayload).success).toBe(false);
+  });
+
+  it("rejects scheduler jobs where an outbound webhook envelope is required", () => {
+    expect(
+      WebhookOutboundEnvelopeSchema.safeParse({
+        type: "monitor-alert",
+        monitorId: "mon_01",
+        projectId: "proj_01",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates the nested monitor severity", () => {
+    expect(
+      WebhookOutboundEnvelopeSchema.safeParse({
+        ...validMonitorEnvelope,
+        payload: { ...validMonitorEnvelope.payload, severity: "INVALID" },
+      }).success,
+    ).toBe(false);
   });
 });
 

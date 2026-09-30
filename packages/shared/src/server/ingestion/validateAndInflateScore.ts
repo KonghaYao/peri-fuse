@@ -1,3 +1,4 @@
+import { and, eq } from "drizzle-orm";
 import {
   ANNOTATION_SCORE_REQUIRES_CONFIG_ID_MESSAGE,
   CORRECTION_NAME,
@@ -9,7 +10,6 @@ import {
   type ScoreDomain,
   ScorePropsAgainstConfig,
 } from "../../../src";
-import { and, eq } from "drizzle-orm";
 import { prisma } from "../../db";
 import { scoreConfigs } from "../../db/schema/index.js";
 import { InvalidRequestError, LangfuseNotFoundError } from "../../errors";

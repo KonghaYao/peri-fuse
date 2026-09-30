@@ -2,8 +2,8 @@
  * Model resolver — resolves a model alias to available deployments.
  */
 import { and, eq, ne } from "drizzle-orm";
-import { getDb } from "../db.js";
 import { modelDeployment, provider } from "../db/schema.js";
+import { getDb } from "../db.js";
 import { decrypt } from "../utils/crypto.js";
 
 export interface ResolvedDeployment {
@@ -25,7 +25,10 @@ export interface ResolvedDeployment {
  * Resolve a model name to a list of available deployments within a project.
  * Filters out disabled providers and those in cooldown.
  */
-export async function resolveModel(modelName: string, projectId: string): Promise<ResolvedDeployment[]> {
+export async function resolveModel(
+  modelName: string,
+  projectId: string,
+): Promise<ResolvedDeployment[]> {
   const db = getDb();
 
   const rows = await db

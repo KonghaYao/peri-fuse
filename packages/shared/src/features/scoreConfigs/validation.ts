@@ -1,5 +1,5 @@
-import type { ScoreConfig as ScoreConfigDbType } from "../../db/types.js";
 import type { z } from "zod";
+import type { ScoreConfig as ScoreConfigDbType } from "../../db/types.js";
 import { type ScoreConfigDomain, ScoreConfigSchema } from "../../domain/score-configs";
 
 /**

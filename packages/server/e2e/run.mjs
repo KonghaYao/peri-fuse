@@ -140,7 +140,7 @@ async function main() {
       // Verify data persisted
       const res = await fetch(`http://localhost:${PORT}/api/public/traces?limit=1`, {
         headers: {
-          Authorization: "Basic " + Buffer.from(`${creds.pk}:${creds.sk}`).toString("base64"),
+          Authorization: `Basic ${Buffer.from(`${creds.pk}:${creds.sk}`).toString("base64")}`,
         },
       });
       const data = await res.json();

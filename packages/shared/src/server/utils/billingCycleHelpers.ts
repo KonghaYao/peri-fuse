@@ -1,5 +1,5 @@
-import type { Organization } from "../../db/types.js";
 import { getDaysInMonth, subMonths } from "date-fns";
+import type { Organization } from "../../db/types.js";
 
 /**
  * Start of day in UTC (00:00:00.000Z)

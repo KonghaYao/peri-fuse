@@ -34,7 +34,7 @@ function check(name, cond, extra) {
     fail++;
     failures.push(name);
     console.log(
-      `  ✗ ${name}${extra !== undefined ? " — " + JSON.stringify(extra)?.slice(0, 200) : ""}`,
+      `  ✗ ${name}${extra !== undefined ? ` — ${JSON.stringify(extra)?.slice(0, 200)}` : ""}`,
     );
   }
 }
@@ -48,7 +48,7 @@ async function api(method, path, body, useAuth = true) {
     headers: {
       "Content-Type": "application/json",
       ...(useAuth
-        ? { Authorization: "Basic " + Buffer.from(`${PK}:${SK}`).toString("base64") }
+        ? { Authorization: `Basic ${Buffer.from(`${PK}:${SK}`).toString("base64")}` }
         : {}),
     },
     body: body ? JSON.stringify(body) : undefined,

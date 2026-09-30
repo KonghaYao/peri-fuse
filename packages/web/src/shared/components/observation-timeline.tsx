@@ -17,7 +17,7 @@ import {
   BAR_COLORS,
   BandBlock,
   buildDurationOpacity,
-  DurationOpacity,
+  type DurationOpacity,
   formatClock,
   isSubagentObservation,
   LABEL_W,

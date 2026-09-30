@@ -1,5 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.6/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
@@ -44,6 +45,9 @@
       "!**/.langfuse",
       "!**/pnpm-lock.yaml",
       "!**/otel-proto",
+      "!**/drizzle/meta",
+      "!packages/shared/src/db/schema/schema.ts",
+      "!packages/shared/src/db/schema/relations.ts",
       "!**/*.css",
       "!**/*.svg"
     ]

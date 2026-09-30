@@ -238,6 +238,7 @@ pnpm run svc:logs             # 查看服务日志
 ### 代码风格
 
 - Biome 统一 lint + format：2 空格缩进、双引号、分号、100 字符行宽。
+- Biome 遵循 `.gitignore`，不检查本地运行产物；Drizzle 生成的 `src/db/schema/schema.ts`、`relations.ts` 和 `drizzle/meta/` 保持生成器格式，排除在 lint 范围外。手写的 schema 导出入口和生成脚本仍须通过检查。
 - TypeScript 业务代码避免 `as any`；确因第三方类型缺陷需要规避时，使用最小范围的类型收窄。
 - Zod 使用 v4（`zod` 包，非 `zod/v4` 子路径）。
 - `catch` 必须保留诊断上下文，不得吞错；对外错误不得泄露内部实现。

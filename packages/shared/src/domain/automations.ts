@@ -1,5 +1,5 @@
-import type { Action, Trigger } from "../db/types.js";
 import { z } from "zod";
+import type { Action, Trigger } from "../db/types.js";
 import type { FilterState } from "../types";
 
 export enum TriggerEventSource {

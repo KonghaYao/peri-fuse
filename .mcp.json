@@ -13,10 +13,7 @@
     "langfuse-stdio": {
       "type": "stdio",
       "command": "node",
-      "args": [
-        "packages/langfuse-mcp/dist/cli.js",
-        "--stdio"
-      ],
+      "args": ["packages/langfuse-mcp/dist/cli.js", "--stdio"],
       "protocolVersion": "2026-07-28"
     }
   }

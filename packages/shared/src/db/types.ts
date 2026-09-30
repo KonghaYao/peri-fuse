@@ -16,6 +16,9 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import type {
   account,
   actions,
+  annotationQueueAssignments,
+  annotationQueueItems,
+  annotationQueues,
   apiKeys,
   auditLogs,
   automationExecutions,
@@ -29,8 +32,8 @@ import type {
   commentReactions,
   comments,
   cronJobs,
-  dashboardWidgets,
   dashboards,
+  dashboardWidgets,
   datasetItemMedia,
   datasetItems,
   datasetRuns,
@@ -78,9 +81,6 @@ import type {
   verificationTokens,
   verifiedDomains,
   webCalloutEndpoints,
-  annotationQueueAssignments,
-  annotationQueueItems,
-  annotationQueues,
 } from "./schema/index.js";
 
 // ── row (select) types ──────────────────────────────────────────────
