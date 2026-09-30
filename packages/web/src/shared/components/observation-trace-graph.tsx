@@ -1,5 +1,5 @@
 import { ArrowDown, GitBranch } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildTraceGraphDisplay,
   type TraceGraphDisplayRow,
@@ -78,32 +78,6 @@ function GraphPoint({
   );
 }
 
-function GraphLegend() {
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-fg-tertiary">
-      <span className="inline-flex items-center gap-1.5">
-        <span className="font-mono text-[10px] font-semibold text-blue-600 dark:text-blue-400">
-          GEN
-        </span>
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="font-mono text-[10px] font-semibold text-orange-400 dark:text-orange-300">
-          TOOL
-        </span>
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="w-4 border-t-2 border-fg-tertiary" /> Sync
-      </span>
-      <span
-        className="inline-flex items-center gap-1.5"
-        title="Only the launch link is dashed; background work continues on a solid branch"
-      >
-        <span className="w-4 border-t-2 border-dashed border-fg-tertiary" /> BG launch
-      </span>
-    </div>
-  );
-}
-
 /**
  * Git-style execution order. Rows represent events or consecutive tools; timestamps describe
  * relative start time while branch lines describe ancestry, not duration.
@@ -123,74 +97,68 @@ export function ObservationTraceGraph({
   headerActions?: ReactNode;
 }) {
   const [compact, setCompact] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(760);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const measure = () => {
+      const width = container.getBoundingClientRect().width;
+      if (width > 0) setContainerWidth(width);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
   const model = useMemo(() => buildTraceGraph(observations), [observations]);
-  const display = useMemo(() => buildTraceGraphDisplay(model, compact), [model, compact]);
   const graphWidth = Math.max(32, laneX(model.laneCount - 1) + 16);
-  const pointCount = model.nodes.filter(
-    (node) => node.kind === "generation" || node.kind === "tool",
-  ).length;
+  const groupColumns = Math.max(
+    1,
+    Math.floor((Math.max(containerWidth, graphWidth + 500) - graphWidth - 80) / 144),
+  );
+  const display = useMemo(
+    () => buildTraceGraphDisplay(model, compact, groupColumns),
+    [model, compact, groupColumns],
+  );
   return (
-    <div className={cn("bg-surface-raised", className)}>
-      <div className="space-y-2 border-b border-line px-3 py-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-fg-primary">
-            <GitBranch className="h-3.5 w-3.5 text-brand" /> Trace graph
-          </span>
-          {headerActions}
-          <span className="ml-auto text-[10px] text-fg-tertiary">
-            {pointCount} points · {model.branchCount} branches
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <GraphLegend />
-          <div
-            className="inline-flex rounded-md border border-line bg-surface-inset p-0.5"
-            aria-label="Graph layout"
-          >
-            {[
-              { label: "Compact", value: true },
-              { label: "Rows", value: false },
-            ].map((option) => (
-              <button
-                key={option.label}
-                type="button"
-                aria-pressed={compact === option.value}
-                onClick={() => setCompact(option.value)}
-                className={cn(
-                  "rounded px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-brand",
-                  compact === option.value
-                    ? "bg-surface-raised text-fg-primary shadow-sm"
-                    : "text-fg-tertiary hover:text-fg-primary",
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
+    <div ref={containerRef} className={cn("min-w-0 bg-surface-raised", className)}>
+      <div style={{ minWidth: graphWidth + 500 }}>
+        <div
+          className={cn(
+            TRACE_GRAPH_COLUMNS,
+            "h-8 border-b border-line bg-surface-inset text-left text-[10px] uppercase tracking-wide text-fg-tertiary",
+          )}
+          style={{ paddingLeft: graphWidth }}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 flex-1 truncate">Observation / agent output</span>
+            <span className="shrink-0 normal-case">{headerActions}</span>
+            <button
+              type="button"
+              aria-label={compact ? "Show individual rows" : "Group consecutive tools"}
+              aria-pressed={!compact}
+              title={compact ? "Show individual rows" : "Group consecutive tools"}
+              onClick={() => setCompact((value) => !value)}
+              className="shrink-0 rounded px-1 py-1 normal-case hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-brand"
+            >
+              {compact ? "Rows" : "Compact"}
+            </button>
           </div>
+          <span>Model / tokens</span>
+          <span className="text-right">Duration</span>
+          <span className="text-right">Time</span>
         </div>
-      </div>
-      {model.nodes.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-          <GitBranch className="h-7 w-7 text-fg-tertiary/60" />
-          <p className="text-sm text-fg-secondary">No generation or tool calls yet</p>
-          <p className="text-xs text-fg-tertiary">
-            Generation and tool calls will appear as trace points.
-          </p>
-        </div>
-      ) : (
-        <div style={{ minWidth: graphWidth + 500 }}>
-          <div
-            className={cn(
-              TRACE_GRAPH_COLUMNS,
-              "h-8 border-b border-line bg-surface-inset text-left text-[10px] uppercase tracking-wide text-fg-tertiary",
-            )}
-            style={{ paddingLeft: graphWidth }}
-          >
-            <span>Observation / agent output</span>
-            <span>Model / tokens</span>
-            <span className="text-right">Duration</span>
-            <span className="text-right">Time</span>
+        {model.nodes.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
+            <GitBranch className="h-7 w-7 text-fg-tertiary/60" />
+            <p className="text-sm text-fg-secondary">No generation or tool calls yet</p>
+            <p className="text-xs text-fg-tertiary">
+              Generation and tool calls will appear as trace points.
+            </p>
           </div>
+        ) : (
           <div className="relative">
             {display.rows.map((row) => (
               <TraceGraphRow
@@ -198,6 +166,7 @@ export function ObservationTraceGraph({
                 row={row}
                 startTime={model.startTime}
                 graphWidth={graphWidth}
+                groupColumns={groupColumns}
                 selectedId={selectedId}
                 onSelect={onSelect}
               />
@@ -235,8 +204,8 @@ export function ObservationTraceGraph({
               ))}
             </svg>
           </div>
-        </div>
-      )}
+        )}
+      </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-[10px] text-fg-tertiary">
         <span className="inline-flex items-center gap-1">
           <ArrowDown className="h-3 w-3" /> Time order ·{" "}

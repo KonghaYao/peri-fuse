@@ -73,6 +73,20 @@ function model(kinds: TraceGraphNode["kind"][], lanes = kinds.map(() => 0)): Tra
 }
 
 describe("trace graph compact layout", () => {
+  it("adjusts wrapped group heights and downstream positions as available columns change", () => {
+    const input = model(["generation", "tool", "tool", "tool", "tool", "tool", "generation"]);
+    const narrow = buildTraceGraphDisplay(input, true, 2);
+    const wide = buildTraceGraphDisplay(input, true, 5);
+    expect(narrow.rows[1].height).toBe(76);
+    expect(wide.rows[1].height).toBe(28);
+    expect(narrow.rows[2].top).toBe(104);
+    expect(wide.rows[2].top).toBe(56);
+    expect(narrow.height).toBe(132);
+    expect(narrow.edges).toEqual(wide.edges);
+    expect(narrow.rows.flatMap((row) => row.nodes)).toEqual(input.nodes);
+    expect(buildTraceGraphDisplay(input, false, 2).height).toBe(input.nodes.length * 28);
+  });
+
   it("groups consecutive tools and reconnects the following generation without losing nodes", () => {
     const input = model(["generation", "tool", "tool", "tool", "tool", "generation"]);
     const display = buildTraceGraphDisplay(input, true);

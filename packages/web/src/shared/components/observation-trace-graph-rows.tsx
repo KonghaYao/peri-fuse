@@ -70,7 +70,7 @@ export function traceGraphTypeColor(node: TraceGraphNode) {
 }
 
 /** Plain colored type labels leave the branch markers and names easy to scan. */
-function TypeText({ node }: { node: TraceGraphNode }) {
+function TypeText({ node, count }: { node: TraceGraphNode; count?: number }) {
   const label = {
     generation: "GEN",
     tool: "TOOL",
@@ -81,11 +81,13 @@ function TypeText({ node }: { node: TraceGraphNode }) {
     <span
       data-graph-type={node.kind}
       className={cn(
-        "w-7 shrink-0 font-mono text-[10px] font-semibold tracking-wide",
+        "shrink-0 whitespace-nowrap font-mono text-[10px] font-semibold tracking-wide",
+        count ? "w-16" : "w-7",
         traceGraphTypeColor(node),
       )}
     >
       {label}
+      {count ? ` ×${count}` : ""}
     </span>
   );
 }
@@ -112,11 +114,13 @@ function NodeGroup({
   row,
   startTime,
   graphWidth,
+  groupColumns,
   ...selection
 }: Selection & {
   row: TraceGraphDisplayRow;
   startTime: number;
   graphWidth: number;
+  groupColumns: number;
 }) {
   const forkGroup = row.nodes[0].kind === "fork";
   const typeNode = row.nodes.find((node) => node.observation?.level === "ERROR") ?? row.nodes[0];
@@ -127,20 +131,27 @@ function NodeGroup({
       className="relative flex items-center gap-1.5 pr-2"
       style={{ height: row.height, paddingLeft: graphWidth }}
     >
-      <TypeText node={forkGroup ? { ...typeNode, background: false } : typeNode} />
-      <div className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:thin]">
+      <TypeText
+        node={forkGroup ? { ...typeNode, background: false } : typeNode}
+        count={row.nodes.length}
+      />
+      <div
+        className="grid min-w-0 flex-1 gap-1 py-1"
+        style={{
+          gridTemplateColumns: `repeat(${Math.min(groupColumns, row.nodes.length)}, minmax(0, 1fr))`,
+        }}
+      >
         {row.nodes.map((node) => (
           <Selectable
             key={node.id}
             node={node}
             {...selection}
             titleExtra={`Started +${formatMs(node.timestamp - startTime)}`}
-            className="inline-flex h-5 max-w-[210px] shrink-0 items-center gap-1 whitespace-nowrap rounded border border-line/70 bg-surface-inset/30 px-1.5"
+            className="inline-flex h-5 min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded border border-line/70 bg-surface-inset/30 px-1.5"
           >
             <span
               className={cn(
-                "truncate text-[11px] font-medium",
-                forkGroup ? "max-w-[180px]" : "max-w-[120px]",
+                "min-w-0 flex-1 truncate text-[11px] font-medium",
                 node.observation?.level === "ERROR" ? "text-danger" : "text-fg-primary",
               )}
             >
@@ -152,16 +163,6 @@ function NodeGroup({
             </span>
           </Selectable>
         ))}
-        <span
-          className="shrink-0 text-[10px] text-fg-tertiary"
-          title={
-            forkGroup
-              ? "Subagents sharing a launch point"
-              : "Consecutive tools, ordered left to right"
-          }
-        >
-          ×{row.nodes.length}
-        </span>
       </div>
     </div>
   );
@@ -172,14 +173,24 @@ export function TraceGraphRow({
   row,
   startTime,
   graphWidth,
+  groupColumns = 4,
   ...selection
 }: Selection & {
   row: TraceGraphDisplayRow;
   startTime: number;
   graphWidth: number;
+  groupColumns?: number;
 }) {
   if (row.nodes.length > 1)
-    return <NodeGroup row={row} startTime={startTime} graphWidth={graphWidth} {...selection} />;
+    return (
+      <NodeGroup
+        row={row}
+        startTime={startTime}
+        graphWidth={graphWidth}
+        groupColumns={groupColumns}
+        {...selection}
+      />
+    );
   const node = row.nodes[0];
   const observation = node.observation;
   const structural = node.kind === "fork" || node.kind === "join";

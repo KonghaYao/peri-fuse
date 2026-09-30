@@ -28,7 +28,11 @@ function isForkGroup(row: TraceGraphDisplayRow): boolean {
 }
 
 /** Group adjacent tools or sibling forks; a fork group has one shared launch point. */
-export function buildTraceGraphDisplay(model: TraceGraphModel, compact: boolean) {
+export function buildTraceGraphDisplay(
+  model: TraceGraphModel,
+  compact: boolean,
+  groupColumns = Number.POSITIVE_INFINITY,
+) {
   const rows: TraceGraphDisplayRow[] = [];
   const displayIndex: number[] = [];
   for (const node of model.nodes) {
@@ -44,6 +48,9 @@ export function buildTraceGraphDisplay(model: TraceGraphModel, compact: boolean)
   let height = 0;
   for (const row of rows) {
     if (isForkGroup(row)) row.lane = row.nodes[0].parentLane ?? 0;
+    if (row.nodes.length > 1) {
+      row.height = Math.max(28, Math.ceil(row.nodes.length / Math.max(1, groupColumns)) * 24 + 4);
+    }
     row.top = height;
     height += row.height;
   }
