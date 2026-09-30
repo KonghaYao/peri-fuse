@@ -1,7 +1,7 @@
 /**
  * Admin API — Provider CRUD (project-scoped).
  */
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
 import { auditLog, credential, modelDeployment, provider } from "../../db/schema.js";
@@ -10,6 +10,7 @@ import { clearProviderRoutingState } from "../../router/index.js";
 import { nextBudgetResetAt } from "../../spend/budget-period.js";
 import { encrypt } from "../../utils/crypto.js";
 import { generateId } from "../../utils/id.js";
+import { validateEnabled } from "./filter-query.js";
 
 const providers = new Hono<GatewayEnv>();
 
@@ -26,8 +27,17 @@ function serializeProvider<T extends { apiKeyEncrypted: string | null }>(
 providers.get("/", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
+  const raw = c.req.query();
+  const error = validateEnabled(raw);
+  if (error) return c.json({ error: { message: error } }, 400);
+  const conditions: SQL[] = [eq(provider.projectId, projectId)];
+  if (raw.name) conditions.push(eq(provider.name, raw.name));
+  if (raw.type) conditions.push(eq(provider.type, raw.type));
+  if (raw.status) conditions.push(eq(provider.status, raw.status));
+  if (raw.isEnabled !== undefined)
+    conditions.push(eq(provider.isEnabled, raw.isEnabled === "true"));
   const items = await db.query.provider.findMany({
-    where: eq(provider.projectId, projectId),
+    where: and(...conditions),
     orderBy: [desc(provider.createdAt)],
     with: {
       deployments: {

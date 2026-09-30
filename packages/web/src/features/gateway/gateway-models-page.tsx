@@ -21,13 +21,15 @@ import {
 import {
   useGwCreateModelMutation,
   useGwDeleteModelMutation,
-  useGwModelsQuery,
   useGwUpdateModelMutation,
 } from "@/shared/hooks/gateway-queries";
 import type { ModelDeployment } from "@/shared/lib/gateway-api";
+import { useFilteredModels } from "./components/gateway-filter-queries";
+import { GatewayFilters, useGatewayFilters } from "./components/gateway-filters";
 
 function ModelsContent() {
-  const modelsQuery = useGwModelsQuery();
+  const filters = useGatewayFilters("models");
+  const modelsQuery = useFilteredModels(filters.values);
   const createModel = useGwCreateModelMutation();
   const updateModel = useGwUpdateModelMutation();
   const deleteModel = useGwDeleteModelMutation();
@@ -87,9 +89,6 @@ function ModelsContent() {
     });
   };
 
-  if (modelsQuery.isLoading) return <LoadingRows />;
-  if (modelsQuery.error) return <ErrorState error={modelsQuery.error} />;
-
   return (
     <div className="p-6">
       <div className="mb-4 flex justify-end">
@@ -106,9 +105,22 @@ function ModelsContent() {
         </Button>
       </div>
 
+      <GatewayFilters
+        filters={filters}
+        fields={[
+          { name: "modelName", label: "Model alias (exact)" },
+          { name: "providerModel", label: "Provider model (exact)" },
+          { name: "providerId", label: "Provider ID" },
+          { name: "isEnabled", label: "Enabled", options: ["true", "false"] },
+        ]}
+      />
       <Card>
         <CardContent className="p-0">
-          {deployments.length === 0 ? (
+          {modelsQuery.isLoading ? (
+            <LoadingRows />
+          ) : modelsQuery.error ? (
+            <ErrorState error={modelsQuery.error} />
+          ) : deployments.length === 0 ? (
             <EmptyState message="No model deployments. Map a model alias to a provider." />
           ) : (
             <table className="w-full text-sm">

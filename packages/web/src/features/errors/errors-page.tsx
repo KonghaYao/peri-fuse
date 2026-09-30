@@ -78,37 +78,49 @@ export function ErrorsPage() {
   const [clock] = useState(() => Date.now());
   const searchRef = useRef<FilterInputHandle>(null);
   const environmentRef = useRef<FilterInputHandle>(null);
+  const traceRef = useRef<FilterInputHandle>(null);
+  const userRef = useRef<FilterInputHandle>(null);
+  const sessionRef = useRef<FilterInputHandle>(null);
   const range = searchParams.get("range") ?? "7d";
   const search = searchParams.get("search") ?? undefined;
   const type = searchParams.get("type") ?? undefined;
   const model = searchParams.get("model") ?? undefined;
   const environment = searchParams.get("environment") ?? undefined;
+  const traceId = searchParams.get("traceId") ?? undefined;
+  const userId = searchParams.get("userId") ?? undefined;
+  const sessionId = searchParams.get("sessionId") ?? undefined;
   const selectedId = searchParams.get("errorId") ?? undefined;
 
   const params = useMemo<ErrorQueryParams>(() => {
-    const duration = RANGE_MS[range] ?? RANGE_MS["7d"];
+    const duration = Object.hasOwn(RANGE_MS, range) ? RANGE_MS[range] : RANGE_MS["7d"];
     return {
       from: duration === null ? undefined : new Date(clock - duration).toISOString(),
       search,
       type,
       model,
       environment,
+      traceId,
+      userId,
+      sessionId,
     };
-  }, [clock, environment, model, range, search, type]);
+  }, [clock, environment, model, range, search, type, traceId, userId, sessionId]);
   const query = useErrorsQuery(params);
   const analysis = query.data?.pages[0];
   const errors = query.data?.pages.flatMap((page) => page.data) ?? [];
   const selected = errors.find((error) => error.id === selectedId);
 
-  const updateFilter = (key: string, value: string | undefined) => {
+  const setFilters = (updates: Record<string, string | undefined>) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current);
-      if (value) next.set(key, value);
-      else next.delete(key);
+      for (const [key, value] of Object.entries(updates)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
       next.delete("errorId");
       return next;
     });
   };
+  const updateFilter = (key: string, value: string | undefined) => setFilters({ [key]: value });
 
   const selectError = (id: string | undefined) => {
     setSearchParams(
@@ -123,7 +135,18 @@ export function ErrorsPage() {
   };
 
   const clearFilters = () => {
-    setSearchParams({ range });
+    for (const ref of [searchRef, environmentRef, traceRef, userRef, sessionRef]) {
+      ref.current?.reset();
+    }
+    setFilters({
+      search: undefined,
+      environment: undefined,
+      traceId: undefined,
+      userId: undefined,
+      sessionId: undefined,
+      type: undefined,
+      model: undefined,
+    });
   };
 
   return (
@@ -172,8 +195,13 @@ export function ErrorsPage() {
           size="sm"
           variant="secondary"
           onClick={() => {
-            searchRef.current?.commit();
-            environmentRef.current?.commit();
+            setFilters({
+              search: searchRef.current?.getValue(),
+              environment: environmentRef.current?.getValue(),
+              traceId: traceRef.current?.getValue(),
+              userId: userRef.current?.getValue(),
+              sessionId: sessionRef.current?.getValue(),
+            });
           }}
         >
           <Search className="h-3.5 w-3.5" /> Search
@@ -198,7 +226,28 @@ export function ErrorsPage() {
             label: `${item.model} (${item.count})`,
           }))}
         />
-        {(search || type || model || environment) && (
+        <FilterInput
+          ref={traceRef}
+          className="w-44"
+          placeholder="Exact trace ID…"
+          value={traceId}
+          onCommit={(value) => updateFilter("traceId", value)}
+        />
+        <FilterInput
+          ref={userRef}
+          className="w-44"
+          placeholder="Exact user ID…"
+          value={userId}
+          onCommit={(value) => updateFilter("userId", value)}
+        />
+        <FilterInput
+          ref={sessionRef}
+          className="w-44"
+          placeholder="Exact session ID…"
+          value={sessionId}
+          onCommit={(value) => updateFilter("sessionId", value)}
+        />
+        {(search || type || model || environment || traceId || userId || sessionId) && (
           <Button size="sm" variant="ghost" onClick={clearFilters}>
             <X className="h-3.5 w-3.5" /> Clear filters
           </Button>

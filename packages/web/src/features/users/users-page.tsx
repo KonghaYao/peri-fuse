@@ -98,15 +98,25 @@ export function UsersPage() {
           size="sm"
           variant="secondary"
           onClick={() => {
-            userFilterRef.current?.commit();
-            environmentFilterRef.current?.commit();
+            tableState.setFilters({
+              userId: userFilterRef.current?.getValue(),
+              environment: environmentFilterRef.current?.getValue(),
+            });
           }}
         >
           <Search className="h-4 w-4" />
           Search
         </Button>
         {tableState.activeFilterCount > 0 && (
-          <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              userFilterRef.current?.reset();
+              environmentFilterRef.current?.reset();
+              tableState.clearFilters();
+            }}
+          >
             <Search className="h-4 w-4" />
             Clear ({tableState.activeFilterCount})
           </Button>

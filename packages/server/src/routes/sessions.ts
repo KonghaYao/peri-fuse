@@ -37,6 +37,8 @@ const GetSessionsQuery = z.object({
     .max(SESSION_LIST_LIMIT_MAX)
     .default(SESSION_LIST_LIMIT_DEFAULT),
   userId: z.string().optional(),
+  sessionId: z.string().optional(),
+  tags: z.string().optional(),
   environment: z.string().optional(),
   fromTimestamp: z.string().datetime().optional(),
   toTimestamp: z.string().datetime().optional(),
@@ -133,13 +135,22 @@ app.get("/api/public/sessions", authMiddleware, responseCache(2_000), async (c) 
   if (!parsed.success) {
     return c.json({ message: "Invalid request data", error: parsed.error.issues }, 400);
   }
-  const { page, limit, userId, environment, fromTimestamp, toTimestamp } = parsed.data;
+  const { page, limit, userId, sessionId, tags, environment, fromTimestamp, toTimestamp } =
+    parsed.data;
   const { expr: orderExpr, dir: orderDir } = parseOrderBy(parsed.data.orderBy);
 
   const db = getTelemetryDB();
   try {
     const filters: string[] = [];
     const params: Record<string, unknown> = { projectId };
+    if (sessionId) {
+      filters.push("t.session_id = @sessionId");
+      params.sessionId = sessionId;
+    }
+    if (tags) {
+      filters.push("EXISTS (SELECT 1 FROM json_each(t.tags) WHERE value = @tag)");
+      params.tag = tags;
+    }
     if (userId) {
       // Substring match — the UI commits free text from a search box.
       filters.push("t.user_id LIKE @userId");

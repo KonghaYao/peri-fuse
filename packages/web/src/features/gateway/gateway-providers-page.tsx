@@ -21,13 +21,15 @@ import {
 import {
   useGwCreateProviderMutation,
   useGwDeleteProviderMutation,
-  useGwProvidersQuery,
   useGwUpdateProviderMutation,
 } from "@/shared/hooks/gateway-queries";
 import type { GatewayProvider } from "@/shared/lib/gateway-api";
+import { useFilteredProviders } from "./components/gateway-filter-queries";
+import { GatewayFilters, useGatewayFilters } from "./components/gateway-filters";
 
 function ProvidersContent() {
-  const providersQuery = useGwProvidersQuery();
+  const filters = useGatewayFilters("providers");
+  const providersQuery = useFilteredProviders(filters.values);
   const createProvider = useGwCreateProviderMutation();
   const updateProvider = useGwUpdateProviderMutation();
   const deleteProvider = useGwDeleteProviderMutation();
@@ -88,9 +90,6 @@ function ProvidersContent() {
     });
   };
 
-  if (providersQuery.isLoading) return <LoadingRows />;
-  if (providersQuery.error) return <ErrorState error={providersQuery.error} />;
-
   return (
     <div className="p-6">
       <div className="mb-4 flex justify-end">
@@ -106,9 +105,22 @@ function ProvidersContent() {
           Add Provider
         </Button>
       </div>
+      <GatewayFilters
+        filters={filters}
+        fields={[
+          { name: "name", label: "Provider name (exact)" },
+          { name: "type", label: "Provider type (exact)" },
+          { name: "status", label: "Health", options: ["healthy", "cooldown"] },
+          { name: "isEnabled", label: "Enabled", options: ["true", "false"] },
+        ]}
+      />
       <Card>
         <CardContent className="p-0">
-          {providers.length === 0 ? (
+          {providersQuery.isLoading ? (
+            <LoadingRows />
+          ) : providersQuery.error ? (
+            <ErrorState error={providersQuery.error} />
+          ) : providers.length === 0 ? (
             <EmptyState message="No providers yet. Add your first LLM provider." />
           ) : (
             <table className="w-full text-sm">

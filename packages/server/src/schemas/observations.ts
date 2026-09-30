@@ -32,6 +32,7 @@ export const GetObservationsV1Query = z.object({
   fields: z.enum(["summary"]).optional(),
   type: ObservationType.nullish(),
   name: z.string().nullish(),
+  model: z.string().nullish(),
   userId: z.string().nullish(),
   level: z.enum(ObservationLevel).nullish(),
   traceId: z.string().nullish(),

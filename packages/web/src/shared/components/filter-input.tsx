@@ -17,6 +17,8 @@ import { cn } from "@/shared/lib/utils";
 /** 供筛选栏的 Search 按钮触发提交（等价按 Enter）。 */
 export interface FilterInputHandle {
   commit: () => void;
+  getValue: () => string | undefined;
+  reset: () => void;
 }
 
 interface FilterInputProps {
@@ -59,7 +61,15 @@ export function FilterInput({
   // latest draft without re-creating the handle on every keystroke.
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  useImperativeHandle(ref, () => ({ commit: () => commitDraftRef.current(draftRef.current) }), []);
+  useImperativeHandle(
+    ref,
+    () => ({
+      commit: () => commitDraftRef.current(draftRef.current),
+      getValue: () => draftRef.current.trim() || undefined,
+      reset: () => setDraft(""),
+    }),
+    [],
+  );
 
   return (
     <div className={cn("relative", className)}>

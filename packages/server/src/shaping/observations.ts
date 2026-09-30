@@ -29,6 +29,7 @@ type ObservationsApiQueryProps = {
   userId?: string;
   level?: string;
   name?: string;
+  model?: string;
   type?: string;
   environment?: string | string[];
   parentObservationId?: string;

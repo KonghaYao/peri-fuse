@@ -1,12 +1,13 @@
 /**
  * Admin API — Model Deployment CRUD (project-scoped).
  */
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
 import { auditLog, modelDeployment, provider } from "../../db/schema.js";
 import { getDb } from "../../db.js";
 import { generateId } from "../../utils/id.js";
+import { validateEnabled } from "./filter-query.js";
 
 const models = new Hono<GatewayEnv>();
 
@@ -14,6 +15,15 @@ const models = new Hono<GatewayEnv>();
 models.get("/", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
+  const raw = c.req.query();
+  const error = validateEnabled(raw);
+  if (error) return c.json({ error: { message: error } }, 400);
+  const conditions: SQL[] = [eq(modelDeployment.projectId, projectId)];
+  if (raw.modelName) conditions.push(eq(modelDeployment.modelName, raw.modelName));
+  if (raw.providerModel) conditions.push(eq(modelDeployment.providerModel, raw.providerModel));
+  if (raw.providerId) conditions.push(eq(modelDeployment.providerId, raw.providerId));
+  if (raw.isEnabled !== undefined)
+    conditions.push(eq(modelDeployment.isEnabled, raw.isEnabled === "true"));
   const items = await db
     .select({
       deployment: modelDeployment,
@@ -30,7 +40,7 @@ models.get("/", async (c) => {
       provider,
       and(eq(modelDeployment.providerId, provider.id), eq(provider.projectId, projectId)),
     )
-    .where(eq(modelDeployment.projectId, projectId))
+    .where(and(...conditions))
     .orderBy(desc(modelDeployment.createdAt));
 
   const safe = items.map(({ deployment, provider: relatedProvider }) => ({

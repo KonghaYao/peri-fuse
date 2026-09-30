@@ -6,12 +6,15 @@ import {
   ListTree,
   Sparkles,
   Timer,
+  X,
   Zap,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
+import { DateFilterInput } from "@/shared/components/date-filter-input";
 import { ErrorState, PageHeader } from "@/shared/components/state";
+import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { useDashboardQuery } from "@/shared/hooks/queries";
@@ -74,6 +77,8 @@ export function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [clock] = useState(() => Date.now());
   const rangeParam = searchParams.get("range");
+  const from = searchParams.get("from") ?? undefined;
+  const to = searchParams.get("to") ?? undefined;
   const range: RangeKey = RANGE_PRESETS.some((preset) => preset.key === rangeParam)
     ? (rangeParam as RangeKey)
     : "30d";
@@ -82,6 +87,8 @@ export function DashboardPage() {
     setSearchParams(
       (current) => {
         const params = new URLSearchParams(current);
+        params.delete("from");
+        params.delete("to");
         if (next === "30d") params.delete("range");
         else params.set("range", next);
         return params;
@@ -91,10 +98,23 @@ export function DashboardPage() {
   };
 
   const params = useMemo<DashboardQueryParams>(() => {
+    if (from || to) return { from, to };
     const preset = RANGE_PRESETS.find((p) => p.key === range);
     if (!preset?.hours) return {};
     return { from: new Date(clock - preset.hours * 3600_000).toISOString() };
-  }, [clock, range]);
+  }, [clock, range, from, to]);
+
+  const setDate = (key: "from" | "to", value: string | undefined) => {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (value) next.set(key, value);
+        else next.delete(key);
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   const query = useDashboardQuery(params);
   const dashboard = query.data;
@@ -114,7 +134,7 @@ export function DashboardPage() {
                   onClick={() => setRange(p.key)}
                   className={cn(
                     "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                    range === p.key
+                    !from && !to && range === p.key
                       ? "bg-accent text-fg-primary"
                       : "text-fg-tertiary hover:text-fg-secondary",
                   )}
@@ -127,6 +147,33 @@ export function DashboardPage() {
           </div>
         }
       />
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-3">
+        <DateFilterInput
+          value={from}
+          onCommit={(value) => setDate("from", value)}
+          placeholder="From date…"
+          title="Dashboard start date"
+          boundary="start"
+        />
+        <DateFilterInput
+          value={to}
+          onCommit={(value) => setDate("to", value)}
+          placeholder="To date…"
+          title="Dashboard end date"
+          boundary="end"
+        />
+        {(from || to) && (
+          <Button size="sm" variant="ghost" onClick={() => setRange(range)}>
+            <X className="h-3.5 w-3.5" /> Clear custom dates
+          </Button>
+        )}
+        <span className="text-xs text-fg-tertiary">
+          {from || to
+            ? "Custom date window · omitted boundaries are unbounded"
+            : "Preset date window"}
+        </span>
+      </div>
 
       <div className="flex-1 overflow-y-auto p-6">
         {query.isLoading ? (

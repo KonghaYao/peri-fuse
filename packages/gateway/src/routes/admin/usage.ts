@@ -7,9 +7,16 @@ import { Hono } from "hono";
 import type { GatewayEnv } from "../../app.js";
 import { dailySpend } from "../../db/schema.js";
 import { getDb } from "../../db.js";
+import { usageConditions } from "./filter-query.js";
 
 const usage = new Hono<GatewayEnv>();
 const MAX_DAILY_USAGE_LIMIT = 200;
+
+usage.use("*", async (c, next) => {
+  const parsed = parseDailyUsageQuery(c.req.query());
+  if (parsed.ok === false) return c.json({ error: { message: parsed.message } }, 400);
+  await next();
+});
 
 interface DailyUsageQuery {
   startDate?: string;
@@ -99,13 +106,7 @@ usage.get("/daily", async (c) => {
 usage.get("/summary", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const { startDate, endDate, apiKey } = c.req.query();
-
-  const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
-  if (startDate) conditions.push(gte(dailySpend.date, startDate));
-  if (endDate) conditions.push(lte(dailySpend.date, endDate));
-  if (apiKey) conditions.push(eq(dailySpend.apiKey, apiKey));
-  const where = and(...conditions);
+  const where = usageConditions(projectId, c.req.query());
 
   const [result] = await db
     .select({
@@ -133,12 +134,7 @@ usage.get("/summary", async (c) => {
 usage.get("/by-model", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const { startDate, endDate } = c.req.query();
-
-  const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
-  if (startDate) conditions.push(gte(dailySpend.date, startDate));
-  if (endDate) conditions.push(lte(dailySpend.date, endDate));
-  const where = and(...conditions);
+  const where = usageConditions(projectId, c.req.query());
 
   const results = await db
     .select({
@@ -169,12 +165,7 @@ usage.get("/by-model", async (c) => {
 usage.get("/by-provider", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const { startDate, endDate } = c.req.query();
-
-  const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
-  if (startDate) conditions.push(gte(dailySpend.date, startDate));
-  if (endDate) conditions.push(lte(dailySpend.date, endDate));
-  const where = and(...conditions);
+  const where = usageConditions(projectId, c.req.query());
 
   const results = await db
     .select({
@@ -203,12 +194,7 @@ usage.get("/by-provider", async (c) => {
 usage.get("/by-key", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
-  const { startDate, endDate } = c.req.query();
-
-  const conditions: SQL[] = [eq(dailySpend.projectId, projectId)];
-  if (startDate) conditions.push(gte(dailySpend.date, startDate));
-  if (endDate) conditions.push(lte(dailySpend.date, endDate));
-  const where = and(...conditions);
+  const where = usageConditions(projectId, c.req.query());
 
   const results = await db
     .select({

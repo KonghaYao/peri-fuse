@@ -115,6 +115,13 @@ export function createPublicApiObservationsColumnMapping(
   return [
     userIdMapping,
     {
+      id: "model",
+      clickhouseSelect: "model",
+      filterType: "StringFilter",
+      clickhouseTable: tableName,
+      clickhousePrefix: tablePrefix,
+    },
+    {
       id: "traceId",
       clickhouseSelect: "trace_id",
       filterType: "StringFilter",

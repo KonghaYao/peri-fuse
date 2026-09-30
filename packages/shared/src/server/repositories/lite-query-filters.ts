@@ -194,16 +194,16 @@ export function liteBuildFilterWhere(
       if (operator === "none of") {
         const ands = values.map((v) => {
           const p = `tag${idx++}`;
-          params[p] = `%"${escapeLike(v)}"%`;
-          return `tags NOT LIKE @${p}`;
+          params[p] = v;
+          return `NOT EXISTS (SELECT 1 FROM json_each(tags) WHERE value = @${p})`;
         });
         conditions.push(ands.join(" AND "));
       } else {
         // "any of" / "all of" — for all of, require every value present.
         const parts = values.map((v) => {
           const p = `tag${idx++}`;
-          params[p] = `%"${escapeLike(v)}"%`;
-          return `tags LIKE @${p}`;
+          params[p] = v;
+          return `EXISTS (SELECT 1 FROM json_each(tags) WHERE value = @${p})`;
         });
         conditions.push(operator === "all of" ? parts.join(" AND ") : `(${parts.join(" OR ")})`);
       }

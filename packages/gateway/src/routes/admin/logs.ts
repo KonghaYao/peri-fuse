@@ -53,6 +53,14 @@ logs.get("/requests", async (c) => {
   }
   const { limit, offset, startDate, endDate } = parsedQuery.value;
   const { apiKey, model, provider, status, sessionId } = rawQuery;
+  const minDurationMs =
+    rawQuery.minDurationMs === undefined ? undefined : Number(rawQuery.minDurationMs);
+  if (
+    minDurationMs !== undefined &&
+    (!/^\d+$/.test(rawQuery.minDurationMs ?? "") || !Number.isSafeInteger(minDurationMs))
+  ) {
+    return c.json({ error: { message: "minDurationMs must be a non-negative integer" } }, 400);
+  }
 
   const conditions: SQL[] = [eq(spendLog.projectId, projectId)];
   if (apiKey) conditions.push(eq(spendLog.apiKey, apiKey));
@@ -60,6 +68,7 @@ logs.get("/requests", async (c) => {
   if (provider) conditions.push(eq(spendLog.provider, provider));
   if (status) conditions.push(eq(spendLog.status, status));
   if (sessionId) conditions.push(eq(spendLog.sessionId, sessionId));
+  if (minDurationMs !== undefined) conditions.push(gte(spendLog.requestDurationMs, minDurationMs));
   if (startDate) conditions.push(gte(spendLog.startTime, new Date(startDate).toISOString()));
   if (endDate) conditions.push(lte(spendLog.startTime, new Date(endDate).toISOString()));
   const where = and(...conditions);
@@ -108,11 +117,21 @@ logs.get("/errors", async (c) => {
     return c.json({ error: { message: parsedQuery.message } }, 400);
   }
   const { limit, offset, startDate, endDate } = parsedQuery.value;
-  const { modelGroup, exceptionType } = rawQuery;
+  const { modelGroup, exceptionType, statusCode, providerModel, modelId, apiBase } = rawQuery;
+  if (statusCode !== undefined && !/^[1-5]\d{2}$/.test(statusCode)) {
+    return c.json(
+      { error: { message: "statusCode must be a three-digit HTTP status (100-599)" } },
+      400,
+    );
+  }
 
   const conditions: SQL[] = [eq(errorLog.projectId, projectId)];
   if (modelGroup) conditions.push(eq(errorLog.modelGroup, modelGroup));
   if (exceptionType) conditions.push(eq(errorLog.exceptionType, exceptionType));
+  if (statusCode) conditions.push(eq(errorLog.statusCode, statusCode));
+  if (providerModel) conditions.push(eq(errorLog.providerModel, providerModel));
+  if (modelId) conditions.push(eq(errorLog.modelId, modelId));
+  if (apiBase) conditions.push(eq(errorLog.apiBase, apiBase));
   if (startDate) conditions.push(gte(errorLog.startTime, new Date(startDate).toISOString()));
   if (endDate) conditions.push(lte(errorLog.startTime, new Date(endDate).toISOString()));
   const where = and(...conditions);

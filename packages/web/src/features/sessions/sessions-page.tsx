@@ -6,7 +6,7 @@
  */
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { Globe, Search, User } from "lucide-react";
+import { Globe, Search, Tags, User } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AutoRefreshControl } from "@/shared/components/auto-refresh-control";
@@ -218,6 +218,8 @@ const columns: ColumnDef<SessionsTableRow, unknown>[] = [
 ];
 
 type SessionFilters = {
+  sessionId?: string;
+  tags?: string;
   userId?: string;
   environment?: string;
   fromTimestamp?: string;
@@ -229,8 +231,10 @@ export function SessionsPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const userFilterRef = useRef<FilterInputHandle>(null);
   const environmentFilterRef = useRef<FilterInputHandle>(null);
+  const sessionFilterRef = useRef<FilterInputHandle>(null);
+  const tagFilterRef = useRef<FilterInputHandle>(null);
   const tableState = useTableState<SessionFilters>({
-    filterKeys: ["userId", "environment", "fromTimestamp", "toTimestamp"],
+    filterKeys: ["sessionId", "tags", "userId", "environment", "fromTimestamp", "toTimestamp"],
     defaultSort: "createdAt.desc",
   });
 
@@ -278,6 +282,22 @@ export function SessionsPage() {
           toolbar={
             <div className="flex flex-wrap items-center gap-2">
               <FilterInput
+                ref={sessionFilterRef}
+                className="w-52"
+                placeholder="Exact session ID…"
+                value={tableState.filters.sessionId}
+                onCommit={(value) => tableState.setFilter("sessionId", value)}
+              />
+              <FilterInput
+                ref={tagFilterRef}
+                className="w-44"
+                placeholder="Exact trace tag…"
+                title="Match one exact trace tag (commas are part of the tag)"
+                icon={Tags}
+                value={tableState.filters.tags}
+                onCommit={(value) => tableState.setFilter("tags", value)}
+              />
+              <FilterInput
                 ref={userFilterRef}
                 className="w-44"
                 placeholder="Filter by userId…"
@@ -313,15 +333,29 @@ export function SessionsPage() {
                 size="sm"
                 variant="secondary"
                 onClick={() => {
-                  userFilterRef.current?.commit();
-                  environmentFilterRef.current?.commit();
+                  tableState.setFilters({
+                    sessionId: sessionFilterRef.current?.getValue(),
+                    tags: tagFilterRef.current?.getValue(),
+                    userId: userFilterRef.current?.getValue(),
+                    environment: environmentFilterRef.current?.getValue(),
+                  });
                 }}
               >
                 <Search className="h-4 w-4" />
                 Search
               </Button>
               {tableState.activeFilterCount > 0 && (
-                <Button size="sm" variant="ghost" onClick={tableState.clearFilters}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    userFilterRef.current?.reset();
+                    environmentFilterRef.current?.reset();
+                    sessionFilterRef.current?.reset();
+                    tagFilterRef.current?.reset();
+                    tableState.clearFilters();
+                  }}
+                >
                   <Search className="h-4 w-4" />
                   Clear ({tableState.activeFilterCount})
                 </Button>

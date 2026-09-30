@@ -165,9 +165,12 @@ export interface RequestLog {
 export interface ErrorLog {
   id: string;
   modelGroup: string | null;
-  provider: string;
+  providerModel: string;
+  modelId: string;
+  apiBase: string;
+  statusCode: string;
   exceptionType: string;
-  exceptionMessage: string;
+  exceptionString: string;
   requestKwargs: Record<string, unknown>;
   startTime: string;
 }
@@ -187,8 +190,10 @@ export interface AuditLogEntry {
 // Providers
 // ---------------------------------------------------------------------------
 
-export function gwListProviders(): Promise<{ data: GatewayProvider[] }> {
-  return gatewayRequest("/providers");
+export function gwListProviders(
+  params: { name?: string; type?: string; status?: string; isEnabled?: string } = {},
+): Promise<{ data: GatewayProvider[] }> {
+  return gatewayRequest(`/providers${toQueryString(params)}`);
 }
 
 export function gwCreateProvider(body: {
@@ -230,8 +235,15 @@ export function gwDeleteProvider(id: string): Promise<{ success: boolean }> {
 // Models
 // ---------------------------------------------------------------------------
 
-export function gwListModels(): Promise<{ data: ModelDeployment[] }> {
-  return gatewayRequest("/models");
+export function gwListModels(
+  params: {
+    modelName?: string;
+    providerModel?: string;
+    providerId?: string;
+    isEnabled?: string;
+  } = {},
+): Promise<{ data: ModelDeployment[] }> {
+  return gatewayRequest(`/models${toQueryString(params)}`);
 }
 
 export function gwCreateModel(body: {
@@ -268,32 +280,31 @@ export function gwDeleteModel(id: string): Promise<{ success: boolean }> {
 // Usage
 // ---------------------------------------------------------------------------
 
-export function gwUsageSummary(params: {
+export type UsageFilters = {
   startDate?: string;
   endDate?: string;
-}): Promise<UsageSummary> {
+  apiKey?: string;
+  model?: string;
+  provider?: string;
+};
+
+export function gwUsageSummary(params: UsageFilters): Promise<UsageSummary> {
   return gatewayRequest(`/usage/summary${toQueryString(params)}`);
 }
 
-export function gwUsageDaily(params: {
-  startDate?: string;
-  endDate?: string;
-  limit?: number;
-}): Promise<{ data: DailySpendRow[] }> {
+export function gwUsageDaily(
+  params: UsageFilters & {
+    limit?: number;
+  },
+): Promise<{ data: DailySpendRow[] }> {
   return gatewayRequest(`/usage/daily${toQueryString(params)}`);
 }
 
-export function gwUsageByModel(params: {
-  startDate?: string;
-  endDate?: string;
-}): Promise<{ data: UsageByModelRow[] }> {
+export function gwUsageByModel(params: UsageFilters): Promise<{ data: UsageByModelRow[] }> {
   return gatewayRequest(`/usage/by-model${toQueryString(params)}`);
 }
 
-export function gwUsageByProvider(params: {
-  startDate?: string;
-  endDate?: string;
-}): Promise<{ data: UsageByProviderRow[] }> {
+export function gwUsageByProvider(params: UsageFilters): Promise<{ data: UsageByProviderRow[] }> {
   return gatewayRequest(`/usage/by-provider${toQueryString(params)}`);
 }
 
@@ -304,7 +315,12 @@ export function gwUsageByProvider(params: {
 export function gwRequestLogs(params: {
   model?: string;
   provider?: string;
+  apiKey?: string;
   status?: string;
+  startDate?: string;
+  endDate?: string;
+  minDurationMs?: number;
+  sessionId?: string;
   limit?: number;
   offset?: number;
 }): Promise<{ data: RequestLog[]; total: number }> {
@@ -314,6 +330,12 @@ export function gwRequestLogs(params: {
 export function gwErrorLogs(params: {
   modelGroup?: string;
   exceptionType?: string;
+  statusCode?: string;
+  providerModel?: string;
+  modelId?: string;
+  apiBase?: string;
+  startDate?: string;
+  endDate?: string;
   limit?: number;
   offset?: number;
 }): Promise<{ data: ErrorLog[]; total: number }> {

@@ -5,11 +5,17 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/shared/components/state";
 import { Card, CardContent } from "@/shared/components/ui/card";
-import { Input } from "@/shared/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
-import { useGwErrorLogsQuery, useGwRequestLogsQuery } from "@/shared/hooks/gateway-queries";
 import type { RequestLog } from "@/shared/lib/gateway-api";
 import { cn } from "@/shared/lib/utils";
+import { useFilteredErrors, useFilteredRequests } from "./components/gateway-filter-queries";
+import {
+  GatewayFilters,
+  GatewayPagination,
+  isValidDuration,
+  logDateFilters,
+  useGatewayFilters,
+} from "./components/gateway-filters";
 
 const PAGE_SIZE = 50;
 
@@ -85,67 +91,53 @@ function RequestLogRow({ log }: { log: RequestLog }) {
 }
 
 function RequestLogsTab() {
-  const [model, setModel] = useState("");
-  const [provider, setProvider] = useState("");
-  const [status, setStatus] = useState("");
-  const [offset, setOffset] = useState(0);
-
-  const query = useGwRequestLogsQuery({
-    model: model || undefined,
-    provider: provider || undefined,
-    status: status || undefined,
-    limit: PAGE_SIZE,
-    offset,
-  });
-
-  if (query.isLoading) return <LoadingRows />;
-  if (query.error) return <ErrorState error={query.error} />;
+  const filters = useGatewayFilters("requests");
+  const durationValid = isValidDuration(filters.values.minDurationMs);
+  const query = useFilteredRequests(
+    {
+      ...filters.values,
+      ...logDateFilters(filters.values),
+      minDurationMs: filters.values.minDurationMs
+        ? Number(filters.values.minDurationMs)
+        : undefined,
+      limit: PAGE_SIZE,
+      offset: filters.offset,
+    },
+    durationValid,
+  );
 
   const logs = query.data?.data ?? [];
   const total = query.data?.total ?? 0;
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Input
-          className="w-40"
-          placeholder="Filter model…"
-          value={model}
-          onChange={(e) => {
-            setModel(e.target.value);
-            setOffset(0);
-          }}
-        />
-        <Input
-          className="w-40"
-          placeholder="Filter provider…"
-          value={provider}
-          onChange={(e) => {
-            setProvider(e.target.value);
-            setOffset(0);
-          }}
-        />
-        <select
-          className="h-9 rounded-md border border-border bg-surface-raised px-3 text-[13px] text-fg-secondary"
-          value={status}
-          onChange={(e) => {
-            setStatus(e.target.value);
-            setOffset(0);
-          }}
-        >
-          <option value="">All statuses</option>
-          <option value="success">Success</option>
-          <option value="failure">Failure</option>
-        </select>
-        <span className="ml-auto text-xs text-fg-tertiary">
-          {total} total · showing {offset + 1}–{Math.min(offset + PAGE_SIZE, total)}
-        </span>
-      </div>
+      <GatewayFilters
+        filters={filters}
+        fields={[
+          { name: "model", label: "Model (exact)" },
+          { name: "provider", label: "Provider (exact)" },
+          { name: "apiKey", label: "API key identifier" },
+          { name: "status", label: "Status", options: ["success", "failure"] },
+          { name: "sessionId", label: "Session ID" },
+          { name: "minDurationMs", label: "Minimum duration (ms)", type: "number" },
+          { name: "startDate", label: "From (UTC)", type: "date" },
+          { name: "endDate", label: "To (UTC, inclusive)", type: "date" },
+        ]}
+      />
+      {!durationValid && (
+        <p role="alert" className="text-xs text-danger">
+          Minimum duration must be a non-negative safe integer. Edit the filter and apply, or clear
+          filters.
+        </p>
+      )}
 
       <Card>
         <CardContent className="p-0">
-          {logs.length === 0 ? (
+          {query.isLoading ? (
+            <LoadingRows />
+          ) : query.error ? (
+            <ErrorState error={query.error} />
+          ) : logs.length === 0 ? (
             <EmptyState message="No request logs found." />
           ) : (
             <table className="w-full text-sm">
@@ -171,89 +163,111 @@ function RequestLogsTab() {
         </CardContent>
       </Card>
 
-      {/* Pagination */}
-      {total > PAGE_SIZE && (
-        <div className="flex justify-center gap-2">
-          <button
-            type="button"
-            className="rounded-md border border-border px-3 py-1.5 text-xs text-fg-secondary disabled:opacity-40"
-            disabled={offset === 0}
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-          >
-            Previous
-          </button>
-          <button
-            type="button"
-            className="rounded-md border border-border px-3 py-1.5 text-xs text-fg-secondary disabled:opacity-40"
-            disabled={offset + PAGE_SIZE >= total}
-            onClick={() => setOffset(offset + PAGE_SIZE)}
-          >
-            Next
-          </button>
-        </div>
-      )}
+      <GatewayPagination
+        filters={filters}
+        total={total}
+        pageSize={PAGE_SIZE}
+        disabled={query.isFetching}
+      />
     </div>
   );
 }
 
 function ErrorLogsTab() {
-  const query = useGwErrorLogsQuery({ limit: PAGE_SIZE });
-
-  if (query.isLoading) return <LoadingRows />;
-  if (query.error) return <ErrorState error={query.error} />;
+  const filters = useGatewayFilters("errors");
+  const query = useFilteredErrors({
+    ...filters.values,
+    ...logDateFilters(filters.values),
+    limit: PAGE_SIZE,
+    offset: filters.offset,
+  });
 
   const logs = query.data?.data ?? [];
 
   return (
-    <Card>
-      <CardContent className="p-0">
-        {logs.length === 0 ? (
-          <EmptyState message="No error logs. Everything looks healthy." />
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
-                <th className="px-4 py-2.5">Time</th>
-                <th className="px-4 py-2.5">Model</th>
-                <th className="hidden px-4 py-2.5 md:table-cell">Provider</th>
-                <th className="px-4 py-2.5">Exception</th>
-                <th className="px-4 py-2.5">Message</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((log) => (
-                <tr key={log.id} className="border-b border-border/50 hover:bg-surface-overlay/40">
-                  <td className="px-4 py-2.5 text-xs text-fg-tertiary">
-                    {new Date(log.startTime).toLocaleString()}
-                  </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-fg-primary">
-                    {log.modelGroup || "—"}
-                  </td>
-                  <td className="hidden px-4 py-2.5 text-xs text-fg-secondary md:table-cell">
-                    {log.provider || "—"}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span className="rounded bg-danger-subtle px-1.5 py-0.5 font-mono text-[10px] text-danger">
-                      {log.exceptionType}
-                    </span>
-                  </td>
-                  <td className="max-w-[300px] truncate px-4 py-2.5 text-xs text-fg-secondary">
-                    {log.exceptionMessage}
-                  </td>
+    <div>
+      <GatewayFilters
+        filters={filters}
+        fields={[
+          { name: "statusCode", label: "HTTP status (100–599)" },
+          { name: "modelGroup", label: "Model group (exact)" },
+          { name: "providerModel", label: "Provider model (exact)" },
+          { name: "modelId", label: "Deployment ID" },
+          { name: "apiBase", label: "API base (exact)" },
+          { name: "exceptionType", label: "Exception type (exact)" },
+          { name: "startDate", label: "From (UTC)", type: "date" },
+          { name: "endDate", label: "To (UTC, inclusive)", type: "date" },
+        ]}
+      />
+      <Card>
+        <CardContent className="p-0">
+          {query.isLoading ? (
+            <LoadingRows />
+          ) : query.error ? (
+            <ErrorState error={query.error} />
+          ) : logs.length === 0 ? (
+            <EmptyState message="No error logs. Everything looks healthy." />
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
+                  <th className="px-4 py-2.5">Time</th>
+                  <th className="px-4 py-2.5">Model</th>
+                  <th className="hidden px-4 py-2.5 md:table-cell">Provider Model</th>
+                  <th className="px-4 py-2.5">HTTP</th>
+                  <th className="px-4 py-2.5">Exception</th>
+                  <th className="px-4 py-2.5">Message</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </CardContent>
-    </Card>
+              </thead>
+              <tbody>
+                {logs.map((log) => (
+                  <tr
+                    key={log.id}
+                    className="border-b border-border/50 hover:bg-surface-overlay/40"
+                  >
+                    <td className="px-4 py-2.5 text-xs text-fg-tertiary">
+                      {new Date(log.startTime).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-fg-primary">
+                      {log.modelGroup || "—"}
+                    </td>
+                    <td className="hidden px-4 py-2.5 text-xs text-fg-secondary md:table-cell">
+                      {log.providerModel || "—"}
+                    </td>
+                    <td className="px-4 py-2.5 font-mono text-xs">{log.statusCode || "—"}</td>
+                    <td className="px-4 py-2.5">
+                      <span className="rounded bg-danger-subtle px-1.5 py-0.5 font-mono text-[10px] text-danger">
+                        {log.exceptionType}
+                      </span>
+                    </td>
+                    <td className="max-w-[300px] truncate px-4 py-2.5 text-xs text-fg-secondary">
+                      {log.exceptionString}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+      <GatewayPagination
+        filters={filters}
+        total={query.data?.total ?? 0}
+        pageSize={PAGE_SIZE}
+        disabled={query.isFetching}
+      />
+    </div>
   );
 }
 
 function LogsContent() {
+  const filters = useGatewayFilters("logs");
   return (
     <div className="p-6">
-      <Tabs defaultValue="requests">
+      <Tabs
+        value={filters.values.tab === "errors" ? "errors" : "requests"}
+        onValueChange={(value) => filters.set("tab", value)}
+      >
         <TabsList>
           <TabsTrigger value="requests">Request Logs</TabsTrigger>
           <TabsTrigger value="errors">Error Logs</TabsTrigger>

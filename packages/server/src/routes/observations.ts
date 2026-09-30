@@ -72,6 +72,7 @@ app.get("/api/public/observations", authMiddleware, responseCache(2_000), async 
     userId: query.userId ?? undefined,
     level: query.level ?? undefined,
     name: query.name ?? undefined,
+    model: query.model ?? undefined,
     type: query.type ?? undefined,
     environment: query.environment ?? undefined,
     parentObservationId: query.parentObservationId ?? undefined,

@@ -20,6 +20,9 @@ const ErrorQuery = z.object({
   type: z.string().trim().max(50).optional(),
   model: z.string().trim().max(200).optional(),
   environment: z.string().trim().max(200).optional(),
+  traceId: z.string().trim().max(200).optional(),
+  userId: z.string().trim().max(200).optional(),
+  sessionId: z.string().trim().max(200).optional(),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -60,7 +63,7 @@ app.get("/api/public/errors", authMiddleware, responseCache(3_000), async (c) =>
   if (cursor === null) return c.json({ message: "Invalid cursor" }, 400);
 
   const projectId = c.get("auth").scope.projectId;
-  const { search, type, model, environment, limit } = parsed.data;
+  const { search, type, model, environment, traceId, userId, sessionId, limit } = parsed.data;
   const params: Record<string, unknown> = {
     projectId,
     rowLimit: limit + 1,
@@ -95,6 +98,22 @@ app.get("/api/public/errors", authMiddleware, responseCache(3_000), async (c) =>
   if (environment) {
     where.push("o.environment = @environment");
     params.environment = environment;
+  }
+  if (traceId) {
+    where.push("o.trace_id = @traceId");
+    params.traceId = traceId;
+  }
+  if (userId || sessionId) {
+    const traceWhere = ["t.id = o.trace_id", "t.project_id = @projectId", "t.is_deleted = 0"];
+    if (userId) {
+      traceWhere.push("t.user_id = @userId");
+      params.userId = userId;
+    }
+    if (sessionId) {
+      traceWhere.push("t.session_id = @sessionId");
+      params.sessionId = sessionId;
+    }
+    where.push(`EXISTS (SELECT 1 FROM traces t WHERE ${traceWhere.join(" AND ")})`);
   }
   const baseWhere = where.join(" AND ");
   const pageWhere = cursor

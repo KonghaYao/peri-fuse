@@ -1,7 +1,7 @@
 /**
  * Gateway Usage statistics page.
  */
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   type GatewayQueryHandle,
   GatewayQuerySection,
@@ -9,24 +9,20 @@ import {
 import { LoadingRows, PageHeader } from "@/shared/components/state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { Input } from "@/shared/components/ui/input";
-import {
-  useGwUsageByModelQuery,
-  useGwUsageByProviderQuery,
-  useGwUsageDailyQuery,
-  useGwUsageSummaryQuery,
-} from "@/shared/hooks/gateway-queries";
 import type {
   DailySpendRow,
   UsageByModelRow,
   UsageByProviderRow,
   UsageSummary,
 } from "@/shared/lib/gateway-api";
+import { useFilteredUsage } from "./components/gateway-filter-queries";
+import { GatewayFilters, useGatewayFilters } from "./components/gateway-filters";
 
 function defaultRange() {
   const end = new Date();
   const start = new Date();
   start.setDate(start.getDate() - 7);
-  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) };
 }
 
 function SummaryCards({ summary }: { summary: UsageSummary }) {
@@ -61,6 +57,7 @@ function SummaryCards({ summary }: { summary: UsageSummary }) {
 
 /** Inputs for the pure Gateway Usage view, kept separate from query ownership for stable testing. */
 export interface GatewayUsageContentProps {
+  filterControls?: ReactNode;
   range: { start: string; end: string };
   onStartDateChange: (value: string) => void;
   onEndDateChange: (value: string) => void;
@@ -72,6 +69,7 @@ export interface GatewayUsageContentProps {
 
 /** Renders all four Gateway Usage query boundaries without owning network or date state. */
 export function GatewayUsageContent({
+  filterControls,
   range,
   onStartDateChange,
   onEndDateChange,
@@ -82,10 +80,11 @@ export function GatewayUsageContent({
 }: GatewayUsageContentProps) {
   return (
     <div className="space-y-6 p-6">
+      {filterControls}
       {/* Date range picker */}
       <div className="flex items-center gap-3">
         <label htmlFor="gateway-usage-from" className="text-[13px] font-medium text-fg-secondary">
-          From
+          From (UTC)
         </label>
         <Input
           id="gateway-usage-from"
@@ -95,7 +94,7 @@ export function GatewayUsageContent({
           onChange={(e) => onStartDateChange(e.target.value)}
         />
         <label htmlFor="gateway-usage-to" className="text-[13px] font-medium text-fg-secondary">
-          To
+          To (UTC, inclusive)
         </label>
         <Input
           id="gateway-usage-to"
@@ -224,6 +223,10 @@ export function GatewayUsageContent({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Daily Breakdown</CardTitle>
+          <p className="text-xs text-fg-tertiary">
+            Latest 200 matching daily rows only; summary and breakdown totals include all matching
+            rows.
+          </p>
         </CardHeader>
         <CardContent className="p-0">
           <GatewayQuerySection
@@ -281,19 +284,28 @@ export function GatewayUsageContent({
 }
 
 function UsageContent() {
-  const [range, setRange] = useState(defaultRange);
-  const params = { startDate: range.start, endDate: range.end };
-
-  const summaryQuery = useGwUsageSummaryQuery(params);
-  const dailyQuery = useGwUsageDailyQuery(params);
-  const byModelQuery = useGwUsageByModelQuery(params);
-  const byProviderQuery = useGwUsageByProviderQuery(params);
+  const [defaults] = useState(defaultRange);
+  const filters = useGatewayFilters("usage", defaults);
+  const range = { start: filters.values.startDate ?? "", end: filters.values.endDate ?? "" };
+  const { summaryQuery, dailyQuery, byModelQuery, byProviderQuery } = useFilteredUsage(
+    filters.values,
+  );
 
   return (
     <GatewayUsageContent
+      filterControls={
+        <GatewayFilters
+          filters={filters}
+          fields={[
+            { name: "model", label: "Model (exact)" },
+            { name: "provider", label: "Provider (exact)" },
+            { name: "apiKey", label: "API key identifier" },
+          ]}
+        />
+      }
       range={range}
-      onStartDateChange={(start) => setRange((current) => ({ ...current, start }))}
-      onEndDateChange={(end) => setRange((current) => ({ ...current, end }))}
+      onStartDateChange={(start) => filters.set("startDate", start)}
+      onEndDateChange={(end) => filters.set("endDate", end)}
       summaryQuery={summaryQuery}
       dailyQuery={dailyQuery}
       byModelQuery={byModelQuery}

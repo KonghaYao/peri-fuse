@@ -33,7 +33,12 @@ const app = new Hono<LiteServerEnv>();
 app.get("/api/public/traces", authMiddleware, responseCache(2_000), async (c) => {
   const auth = c.get("auth");
 
-  const parsed = GetTracesV1Query.safeParse(c.req.query());
+  const rawQuery = c.req.query();
+  const tags = c.req.queries("tags");
+  const parsed = GetTracesV1Query.safeParse({
+    ...rawQuery,
+    tags: tags && tags.length > 1 ? tags : rawQuery.tags,
+  });
   if (!parsed.success) {
     return c.json({ message: "Invalid request data", error: parsed.error.issues }, 400);
   }

@@ -6,9 +6,16 @@
  * pragmatic — only fields the UI actually renders are modelled precisely.
  */
 
-import type { Observation } from "./observation-types";
+import type {
+  ObservationListParams as BaseObservationListParams,
+  Observation,
+} from "./observation-types";
 
-export type { Observation, ObservationListParams, ObservationType } from "./observation-types";
+export type { Observation, ObservationType } from "./observation-types";
+
+export interface ObservationListParams extends BaseObservationListParams {
+  model?: string;
+}
 
 export type PaginationMeta = {
   page: number;
@@ -56,6 +63,7 @@ export type TraceWithDetails = Trace & {
 };
 
 export type TraceListParams = {
+  tags?: string | string[];
   page?: number;
   limit?: number;
   userId?: string;
@@ -102,6 +110,8 @@ export type Score = {
 };
 
 export type ScoreListParams = {
+  operator?: "<" | ">" | "<=" | ">=" | "!=" | "=";
+  value?: number;
   page?: number;
   limit?: number;
   traceId?: string;
@@ -200,6 +210,9 @@ export type DashboardQueryParams = {
 // ---------------------------------------------------------------------------
 
 export type ErrorQueryParams = {
+  traceId?: string;
+  userId?: string;
+  sessionId?: string;
   from?: string;
   to?: string;
   search?: string;
@@ -294,6 +307,8 @@ export type SessionRow = {
 };
 
 export type SessionListParams = {
+  sessionId?: string;
+  tags?: string;
   page?: number;
   limit?: number;
   userId?: string;

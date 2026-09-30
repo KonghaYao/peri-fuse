@@ -21,6 +21,7 @@ const nameA = `f-trace-alpha-${runId}`;
 const nameB = `f-trace-beta-${runId}`;
 const tagA = `f-tag-x-${runId}`;
 const tagB = `f-tag-y-${runId}`;
+const literalTag = `literal_%"-${runId}`;
 const scoreAlpha = `f-score-alpha-${runId}`;
 const scoreBeta = `f-score-beta-${runId}`;
 
@@ -40,8 +41,10 @@ describe("public API filters", () => {
             name: nameA,
             userId: userA,
             sessionId: sessionA,
-            tags: [tagA],
+            tags: [tagA, literalTag],
             environment: "production",
+            version: "filter-v1",
+            release: "filter-release-a",
           },
         },
         {
@@ -68,6 +71,7 @@ describe("public API filters", () => {
             name: `f-gen-${runId}`,
             startTime: iso,
             model: "gpt-4o",
+            version: "filter-v1",
           },
         },
         {
@@ -78,6 +82,7 @@ describe("public API filters", () => {
             id: `f-span-${runId}`,
             traceId: traceA,
             name: `f-span-${runId}`,
+            parentObservationId: `f-gen-${runId}`,
             startTime: iso,
             input: { prompt: "large detail stays behind the detail endpoint" },
             output: { result: "not needed in the observations table" },
@@ -128,6 +133,48 @@ describe("public API filters", () => {
   });
 
   describe("observations", () => {
+    it("filters by model before pagination and counts only matching rows", async () => {
+      const res = await apiGet(`/api/public/observations?traceId=${traceA}&model=gpt-4o&limit=1`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((row: { id: string }) => row.id)).toEqual([`f-gen-${runId}`]);
+      expect(res.body.meta.totalItems).toBe(1);
+      expect(res.body.meta.totalPages).toBe(1);
+      const next = await apiGet(
+        `/api/public/observations?traceId=${traceA}&model=gpt-4o&limit=1&page=2`,
+      );
+      expect(next.body.data).toEqual([]);
+      expect(next.body.meta.totalItems).toBe(1);
+    });
+
+    it("combines model, user and version filters", async () => {
+      const res = await apiGet(
+        `/api/public/observations?userId=${userA}&model=gpt-4o&version=filter-v1`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((row: { id: string }) => row.id)).toEqual([`f-gen-${runId}`]);
+      const mismatch = await apiGet(
+        `/api/public/observations?userId=${userB}&model=gpt-4o&version=filter-v1`,
+      );
+      expect(mismatch.body.data).toEqual([]);
+      expect(mismatch.body.meta.totalItems).toBe(0);
+    });
+
+    it("matches model exactly and rejects unknown models with an empty result", async () => {
+      const res = await apiGet(`/api/public/observations?traceId=${traceA}&model=gpt`);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+      expect(res.body.meta.totalItems).toBe(0);
+    });
+
+    it("filters by parent observation", async () => {
+      const res = await apiGet(
+        `/api/public/observations?traceId=${traceA}&parentObservationId=f-gen-${runId}`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((row: { id: string }) => row.id)).toEqual([`f-span-${runId}`]);
+      expect(res.body.meta.totalItems).toBe(1);
+    });
+
     it("filters by type", async () => {
       const res = await apiGet(`/api/public/observations?traceId=${traceA}&type=GENERATION`);
       expect(res.status).toBe(200);
@@ -185,6 +232,39 @@ describe("public API filters", () => {
   });
 
   describe("traces", () => {
+    it("requires every tag supplied through repeated query parameters", async () => {
+      const res = await apiGet(
+        `/api/public/traces?tags=${tagA}&tags=${encodeURIComponent(literalTag)}`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((row: { id: string }) => row.id)).toEqual([traceA]);
+      const mismatch = await apiGet(`/api/public/traces?tags=${tagA}&tags=${tagB}`);
+      expect(mismatch.body.data).toEqual([]);
+      expect(mismatch.body.meta.totalItems).toBe(0);
+    });
+
+    it("matches tags with literal wildcard and JSON quote characters", async () => {
+      const res = await apiGet(`/api/public/traces?tags=${encodeURIComponent(literalTag)}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((row: { id: string }) => row.id)).toEqual([traceA]);
+      expect(res.body.meta.totalItems).toBe(1);
+      const partial = await apiGet(
+        `/api/public/traces?tags=${encodeURIComponent(literalTag.slice(0, 9))}`,
+      );
+      expect(partial.body.data).toEqual([]);
+    });
+
+    it("combines session, tag, version and release filters before pagination", async () => {
+      const res = await apiGet(
+        `/api/public/traces?sessionId=${sessionA}&tags=${tagA}&version=filter-v1&release=filter-release-a&limit=1`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((row: { id: string }) => row.id)).toEqual([traceA]);
+      expect(res.body.meta.totalItems).toBe(1);
+      const mismatch = await apiGet(`/api/public/traces?sessionId=${sessionB}&version=filter-v1`);
+      expect(mismatch.body.data).toEqual([]);
+    });
+
     it("filters by userId", async () => {
       const res = await apiGet(`/api/public/traces?userId=${userA}`);
       expect(res.status).toBe(200);
@@ -230,6 +310,17 @@ describe("public API filters", () => {
   });
 
   describe("scores", () => {
+    it("combines numeric threshold and trace-user filters", async () => {
+      const res = await apiGet(`/api/public/scores?userId=${userA}&operator=%3E%3D&value=1`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.map((row: { name: string }) => row.name)).toContain(scoreAlpha);
+      expect(res.body.data.map((row: { name: string }) => row.name)).not.toContain(scoreBeta);
+      const zero = await apiGet(`/api/public/scores?name=${scoreBeta}&operator=%3D&value=0`);
+      expect(zero.status).toBe(200);
+      expect(zero.body.data).toHaveLength(1);
+      expect(zero.body.meta.totalItems).toBe(1);
+    });
+
     it("filters by traceId", async () => {
       const res = await apiGet(`/api/public/scores?traceId=${traceA}`);
       expect(res.status).toBe(200);
