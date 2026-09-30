@@ -22,7 +22,8 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "test": "pnpm -r run test",
+    "test": "pnpm run test:ingestion && pnpm --filter @peri/gateway run build && pnpm --filter @peri-fuse/langfuse-mcp run build && pnpm -r --no-bail run test",
+    "test:ingestion": "node scripts/test-ingestion-isolated.mjs",
     "db:generate": "pnpm --filter @peri-fuse/shared run db:generate",
     "release": "node scripts/release.mjs"
   },

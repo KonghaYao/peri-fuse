@@ -182,7 +182,8 @@ describe("session search API ingestion roundtrip", () => {
         {
           id: randomUUID(),
           type: "trace-create",
-          timestamp: new Date(now).toISOString(),
+          // A later update must not depend on the random event ID tie-breaker.
+          timestamp: new Date(now + 1).toISOString(),
           body: {
             id: traceId,
             timestamp: new Date(now).toISOString(),
@@ -194,6 +195,7 @@ describe("session search API ingestion roundtrip", () => {
       ],
     });
     expect(update.status).toBe(207);
+    expect(update.body.errors).toEqual([]);
     const updated = await search(replacement);
     expect(updated.body.data.length).toBeGreaterThan(0);
     const old = await search("roundtrip needle alpha");

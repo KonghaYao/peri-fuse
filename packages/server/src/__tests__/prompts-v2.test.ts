@@ -15,7 +15,7 @@
 import { randomUUID } from "node:crypto";
 import { BaseError, LangfuseNotFoundError } from "@peri-fuse/shared";
 import { prisma } from "@peri-fuse/shared/src/db";
-import { promptDependencies } from "@peri-fuse/shared/src/db/schema/index.js";
+import { promptDependencies, prompts } from "@peri-fuse/shared/src/db/schema/index.js";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -396,6 +396,20 @@ describe("v2 prompts public API", () => {
       config: { k: 2 },
     });
     await apiPost(V2, { name: b, prompt: "b1", tags: ["red"] });
+    // List metadata selects by updatedAt; rapid API writes can share a millisecond.
+    const updatedAt = Date.now() - 1000;
+    for (const version of [1, 2]) {
+      await prisma
+        .update(prompts)
+        .set({ updatedAt: new Date(updatedAt + version) })
+        .where(
+          and(
+            eq(prompts.projectId, TEST_PROJECT_ID),
+            eq(prompts.name, a),
+            eq(prompts.version, version),
+          ),
+        );
+    }
     clearResponseCache();
 
     const all = await apiGet(`${V2}?limit=100`);

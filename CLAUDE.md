@@ -119,7 +119,8 @@ pnpm run build                # 全量构建（shared → gateway → server →
 pnpm run typecheck            # 全包 TypeScript 类型检查
 pnpm run lint                 # Biome lint + format 检查
 pnpm run lint:fix             # Biome 自动修复
-pnpm run test                 # 全包 Vitest 测试
+pnpm run test                 # 隔离摄入回归 + 全包 Vitest 测试（自动构建后端依赖）
+pnpm run test:ingestion       # 使用临时数据库运行摄入、压缩、统计及搜索回归
 pnpm run db:generate          # Prisma generate（schema → client）
 pnpm run db:push              # Prisma db push（schema → SQLite，开发用）
 
@@ -229,6 +230,7 @@ pnpm run svc:logs             # 查看服务日志
 - 后端测试位于 `packages/server/src/__tests__/`，共享层测试与源码同目录（`*.test.ts`）。
 - Gateway 测试位于 `packages/gateway/test/integration.test.ts`（Vitest，31 个用例）。
 - 测试框架为 Vitest；后端集成测试使用 `packages/server/src/__tests__/global-setup.ts` 初始化临时数据库。
+- 根目录 `pnpm run test` 先运行 `test:ingestion`，再构建 Gateway/MCP 并执行各包测试。隔离测试由 `vitest.ingestion.config.ts` 收集，普通 shared/server 配置排除需要该环境的用例；单独验证这些用例请运行 `pnpm run test:ingestion`，可追加 Vitest 文件过滤参数。Server 测试的认证、遥测及内嵌 Gateway 数据库均位于 `.test/`。
 - Gateway 测试使用 mock LLM server + 临时 SQLite DB，覆盖：鉴权（Bearer/Basic/scope 拒绝）、代理（流式/非流式/Anthropic）、多项目隔离、限流、预算、完整生命周期。
 - 前端当前无测试；如新增，放在 `packages/web/src/__tests__/`。
 - 测试应覆盖摄入往返（ingestion roundtrip）、OTLP 解析、认证和查询过滤等关键路径。

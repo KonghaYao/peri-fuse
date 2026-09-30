@@ -13,6 +13,8 @@ import { apiGet, apiPost, basicAuth, getApp } from "./helpers";
 
 const ExportTraceServiceRequest =
   $root.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
+const ExportTraceServiceResponse =
+  $root.opentelemetry.proto.collector.trace.v1.ExportTraceServiceResponse;
 
 const nowNs = BigInt(Date.now()) * 1_000_000n;
 
@@ -148,8 +150,9 @@ describe("OTEL protobuf ingestion roundtrip", () => {
       body: encoded as unknown as BodyInit,
     });
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.errors ?? []).toEqual([]);
+    expect(res.headers.get("content-type")).toBe("application/x-protobuf");
+    const body = ExportTraceServiceResponse.decode(new Uint8Array(await res.arrayBuffer()));
+    expect(ExportTraceServiceResponse.toObject(body)).toEqual({});
   });
 
   it("decodes protobuf spans and persists them like JSON ones", async () => {
@@ -158,6 +161,21 @@ describe("OTEL protobuf ingestion roundtrip", () => {
 });
 
 describe("OTEL content-type validation", () => {
+  it("acknowledges an empty protobuf batch with an empty protobuf response", async () => {
+    const res = await getApp().request("/api/public/otel/v1/traces", {
+      method: "POST",
+      headers: {
+        Authorization: basicAuth(),
+        "Content-Type": "application/x-protobuf",
+      },
+      body: new Uint8Array(),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/x-protobuf");
+    const body = ExportTraceServiceResponse.decode(new Uint8Array(await res.arrayBuffer()));
+    expect(ExportTraceServiceResponse.toObject(body)).toEqual({});
+  });
+
   it("rejects unsupported content types with 400", async () => {
     const res = await apiPost("/api/public/otel/v1/traces", "<xml/>", {
       "Content-Type": "text/xml",

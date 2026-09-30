@@ -252,7 +252,8 @@ describe("session search SQLite query", () => {
   });
 
   it("keeps wide-range FTS results isolated by project", async () => {
-    const eventTime = new Date(Date.now() - 10_000).toISOString();
+    // Keep the fixture inside the absolute range regardless of the current date.
+    const eventTime = "2026-09-14T06:16:00.000Z";
     addTrace("wide-p1", "wide-s1", "cross project wide phrase", eventTime, project);
     addTrace("wide-p2", "wide-s2", "cross project wide phrase", eventTime, "other-project");
     const result = await searchSessions(project, {

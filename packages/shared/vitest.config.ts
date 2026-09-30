@@ -1,10 +1,19 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
+  envDir: false,
   test: {
+    env: { LANGFUSE_MODE: "lite" },
     silent: "passed-only",
     dir: "./src",
     include: ["**/*.test.ts"],
+    // The root test command runs these with fresh databases via test:ingestion.
+    exclude: [
+      ...configDefaults.exclude,
+      "**/*-isolated.test.ts",
+      "**/adapters/io-compression.test.ts",
+      "**/ingestion/lite-reliability.test.ts",
+    ],
     pool: "forks",
     server: {
       deps: {

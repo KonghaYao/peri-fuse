@@ -15,6 +15,8 @@ export const TEST_DB_DIR = path.resolve(here, "..", "..", ".test");
 export const TEST_AUTH_DB = path.join(TEST_DB_DIR, "langfuse-test.db");
 /** Telemetry database used by the tests. */
 export const TEST_TELEMETRY_DB = path.join(TEST_DB_DIR, "telemetry-test.db");
+/** Embedded gateway database used by authenticated /v1 routes. */
+export const TEST_GATEWAY_DB = path.join(TEST_DB_DIR, "gateway-test.db");
 
 export const TEST_SALT = "lite-server-test-salt";
 

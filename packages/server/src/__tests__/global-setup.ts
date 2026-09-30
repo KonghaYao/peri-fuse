@@ -12,6 +12,7 @@ import * as fs from "node:fs";
 import {
   TEST_AUTH_DB,
   TEST_DB_DIR,
+  TEST_GATEWAY_DB,
   TEST_ORG_ID,
   TEST_PROJECT_ID,
   TEST_PUBLIC_KEY,
@@ -23,12 +24,20 @@ import {
 export default async function setup(): Promise<void> {
   // Point the shared package at the throwaway databases BEFORE importing it.
   process.env.LANGFUSE_MODE = "lite";
+  process.env.PERIFUSE_HOME = TEST_DB_DIR;
   process.env.DATABASE_URL = `file:${TEST_AUTH_DB}`;
   process.env.LANGFUSE_SQLITE_DB_PATH = TEST_TELEMETRY_DB;
+  process.env.GATEWAY_DB_URL = `file:${TEST_GATEWAY_DB}`;
   process.env.SALT = TEST_SALT;
 
   fs.rmSync(TEST_DB_DIR, { recursive: true, force: true });
   fs.mkdirSync(TEST_DB_DIR, { recursive: true });
+
+  // /v1 authentication also reads gateway configuration, even for unknown routes.
+  // Initialize its schema in the test directory instead of using a developer DB.
+  const gateway = await import("@peri/gateway/db");
+  gateway.ensureSchema();
+  gateway.closeDb();
 
   // Create all metadata tables in the fresh auth database (Drizzle migration
   // SQL; replaces the previous `prisma db push`).
@@ -37,11 +46,9 @@ export default async function setup(): Promise<void> {
 
   // Seed auth data through the Drizzle client (schema is applied at this point).
   const { prisma } = await import("@peri-fuse/shared/src/db");
-  const {
-    organizations,
-    projects,
-    apiKeys,
-  } = await import("@peri-fuse/shared/src/db/schema/index.js");
+  const { organizations, projects, apiKeys } = await import(
+    "@peri-fuse/shared/src/db/schema/index.js"
+  );
   const { hashSecretKey, createShaHash } = await import("@peri-fuse/shared/src/server");
 
   await prisma.insert(organizations).values({
