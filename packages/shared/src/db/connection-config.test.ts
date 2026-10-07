@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveDatabaseConfig, validateDatabaseConfig } from "./connection-config";
-import { createLocalDatabase } from "./local";
+import {
+  isRemoteDatabaseUrl,
+  resolveDatabaseConfig,
+  validateDatabaseConfig,
+} from "./connection-config";
 
 describe("database connection configuration", () => {
   it("treats unset Compose values as absent and lets blank role settings inherit global values", () => {
@@ -53,18 +56,23 @@ describe("database connection configuration", () => {
     });
     expect(resolveDatabaseConfig("gateway", "unused", environment)).toEqual({ url: "gateway.db" });
   });
-  it("fails closed without a token and never interprets remote URLs as file paths", () => {
-    expect(() =>
+  it("passes remote settings through without requiring a token", () => {
+    expect(
       resolveDatabaseConfig("metadata", "local.db", {
         TURSO_DATABASE_URL: "libsql://cloud.turso.io",
       }),
-    ).toThrow("auth token is required");
-    expect(() => createLocalDatabase("https://cloud.turso.io")).toThrow("auth token is required");
+    ).toEqual({ url: "libsql://cloud.turso.io" });
+    expect(
+      validateDatabaseConfig({ url: "http://database:8080/path?region=eu", authToken: " " }),
+    ).toEqual({ url: "http://database:8080/path?region=eu" });
   });
   it.each([
     "libsql://cloud.turso.io/tenant/database?region=eu&tag=a%2Fb&tag=c",
     "https://cloud.turso.io/tenant/database/?region=eu&prefix=/",
     "http://127.0.0.1:8080/tenant/database?region=local",
+    "http://db.example.com:8080/tenant/database?region=eu&tag=a%2Fb&tag=c",
+    "http://192.168.1.10:8080/tenant/database/?prefix=/",
+    "http://[fd00::1]:8080/tenant/database?region=local",
   ])("preserves remote paths and query parameters in URL %s", (url) => {
     expect(validateDatabaseConfig({ url: ` ${url} `, authToken: " token " })).toEqual({
       url,
@@ -77,14 +85,40 @@ describe("database connection configuration", () => {
           TURSO_AUTH_TOKEN: "token",
         }),
       ).toEqual({ url, authToken: "token" });
+      expect(
+        resolveDatabaseConfig(role, "local.db", {
+          TURSO_DATABASE_URL: "https://cloud.turso.io",
+          TURSO_AUTH_TOKEN: "token",
+          [`TURSO_${role.toUpperCase()}_DATABASE_URL`]: url,
+        }),
+      ).toEqual({ url, authToken: "token" });
     }
   });
   it.each([
-    "http://cloud.turso.io",
+    "http://user:secret@db.example.com/path",
+    "http://db.example.com/path?region=eu#fragment",
     "https://user:secret@cloud.turso.io",
     "https://cloud.turso.io/path?region=eu#fragment",
     "wss://cloud.turso.io",
-  ])("rejects unsafe or unsupported URL %s", (url) => {
-    expect(() => validateDatabaseConfig({ url, authToken: "token" })).toThrow();
+    "ws://database:8080/path",
+    "turso://database/path?region=eu",
+    "custom+db://database/path?region=eu",
+    "http://",
+  ])("leaves URI validation to the database driver for %s", (url) => {
+    expect(validateDatabaseConfig({ url, authToken: "token" })).toEqual({
+      url,
+      authToken: "token",
+    });
+    expect(isRemoteDatabaseUrl(url)).toBe(true);
+  });
+  it.each(["local.db", "file:local.db", "file:///tmp/local.db", ":memory:"])(
+    "keeps local storage routing for %s",
+    (url) => {
+      expect(isRemoteDatabaseUrl(url)).toBe(false);
+      expect(validateDatabaseConfig({ url, authToken: "ignored" })).toEqual({ url });
+    },
+  );
+  it("leaves empty direct URLs for the database driver to validate", () => {
+    expect(validateDatabaseConfig({ url: " " })).toEqual({ url: "" });
   });
 });

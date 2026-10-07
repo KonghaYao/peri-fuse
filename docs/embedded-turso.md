@@ -33,13 +33,20 @@ configuration is also forwarded by the included Docker Compose file. Empty
 optional environment variables are treated as unset. Remote
 connections use the pinned `@tursodatabase/serverless@1.4.1` HTTP SDK through a
 database compatibility layer; embedded mode retains the native driver.
-`libsql://` and `https://` URLs are supported, including base paths and query
+`libsql://`, `http://` and `https://` URLs are supported, including base paths and query
 parameters for reverse proxies, for example
 `https://db.example.com/tenant/database?region=eu`. Protocol endpoints are appended
 to the base path before the query string; parameters are preserved for reads,
-transactions and worker requests. URL credentials and fragments remain rejected.
-Use the dedicated token environment variable rather than putting tokens in URLs.
-Plain HTTP is restricted to loopback development/test endpoints.
+transactions and worker requests. Configuration only trims surrounding whitespace
+and selects the local or remote driver; URI validity, protocol support and
+authentication are handled by the database SDK/server. Paths, query parameters,
+URL credentials and fragments are not rejected by the configuration layer, but
+passing configuration validation does not guarantee driver/server support.
+Prefer the dedicated token environment variable rather than putting tokens in URLs.
+Plain HTTP also supports remote hosts, including LAN and Docker service addresses.
+For example, `http://database:8080/tenant/database?region=eu` is accepted. HTTP does
+not encrypt database traffic or the authentication token; use it only on trusted
+networks and use HTTPS for connections across untrusted networks.
 
 The pinned HTTP SDK has a pnpm patch for endpoint URL construction. Both Docker
 dependency stages copy `patches/` before installing dependencies, and the CLI
@@ -57,11 +64,12 @@ For independent databases, configure any of these pairs:
 
 URL priority is domain override → global URL → legacy path variable → local
 default. Token priority is domain override → global token. A domain URL may also
-be a local path for hybrid deployments. A remote URL without a token fails
-immediately; connection/auth errors do not create or fall back to local databases.
+be a local path for hybrid deployments. Tokens are optional in configuration;
+the server determines whether authentication is required. Connection/auth errors
+do not create or fall back to local databases.
 Existing local data is not copied to the remote database. Use a fresh remote
 database: nonempty, unrecognized legacy databases are rejected as in local mode.
-Startup creates and migrates tables and therefore requires a writable token.
+Startup creates and migrates tables and therefore requires write access.
 
 Read and search workers receive the same remote configuration. Remote reads use
 streaming HTTP cursors and retain row/byte/time limits; index writes and migrations

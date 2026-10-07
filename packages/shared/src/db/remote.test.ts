@@ -185,7 +185,11 @@ describe("remote Turso HTTP storage", () => {
     }
   }, 30000);
 
-  it("reports authentication failures without silently falling back to a local database", async () => {
-    await expect(openLocalDatabase(server.url, false, "wrong-token")).rejects.toThrow("401");
-  });
+  it.each([undefined, "wrong-token"])(
+    "reports server authentication failures for token %s without local fallback",
+    async (authToken) => {
+      await expect(openLocalDatabase(server.url, false, authToken)).rejects.toThrow("401");
+      expect(server.requestCount()).toBeGreaterThan(0);
+    },
+  );
 });

@@ -2,26 +2,14 @@ export type DatabaseRole = "metadata" | "telemetry" | "gateway";
 export type DatabaseConnectionConfig = { url: string; authToken?: string };
 
 export function isRemoteDatabaseUrl(url: string): boolean {
-  return /^(libsql|https?|wss?):\/\//i.test(url);
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(url) && !/^file:/i.test(url);
 }
 
 export function validateDatabaseConfig(config: DatabaseConnectionConfig): DatabaseConnectionConfig {
   const url = config.url.trim();
-  if (!url) throw new Error("Database URL must not be empty");
   if (!isRemoteDatabaseUrl(url)) return { url };
-  const parsed = new URL(url);
-  if (parsed.username || parsed.password || parsed.hash)
-    throw new Error("Database URL must not contain credentials or fragments");
-  if (!parsed.hostname) throw new Error("Remote database URL must specify a database host");
-  if (["ws:", "wss:"].includes(parsed.protocol))
-    throw new Error("Use a libsql:// or HTTPS Turso URL for the HTTP database client");
-  if (parsed.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname))
-    throw new Error(
-      "Remote database connections require TLS; HTTP is only allowed for loopback development",
-    );
   const authToken = config.authToken?.trim();
-  if (!authToken) throw new Error("Turso auth token is required for a remote database");
-  return { url, authToken };
+  return authToken ? { url, authToken } : { url };
 }
 
 export function resolveDatabaseConfig(
