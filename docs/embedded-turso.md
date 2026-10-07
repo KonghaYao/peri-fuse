@@ -33,8 +33,18 @@ configuration is also forwarded by the included Docker Compose file. Empty
 optional environment variables are treated as unset. Remote
 connections use the pinned `@tursodatabase/serverless@1.4.1` HTTP SDK through a
 database compatibility layer; embedded mode retains the native driver.
-`libsql://` and `https://` URLs are supported. Tokens are never placed in URLs.
+`libsql://` and `https://` URLs are supported, including base paths and query
+parameters for reverse proxies, for example
+`https://db.example.com/tenant/database?region=eu`. Protocol endpoints are appended
+to the base path before the query string; parameters are preserved for reads,
+transactions and worker requests. URL credentials and fragments remain rejected.
+Use the dedicated token environment variable rather than putting tokens in URLs.
 Plain HTTP is restricted to loopback development/test endpoints.
+
+The pinned HTTP SDK has a pnpm patch for endpoint URL construction. Both Docker
+dependency stages copy `patches/` before installing dependencies, and the CLI
+bundles the patched SDK. Keep the patch when upgrading until upstream preserves
+paths and query parameters correctly.
 
 A single URL stores metadata, telemetry and Gateway tables in one database.
 For independent databases, configure any of these pairs:

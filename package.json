@@ -31,7 +31,10 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "protobufjs"
-    ]
+    ],
+    "patchedDependencies": {
+      "@tursodatabase/serverless@1.4.1": "patches/@tursodatabase__serverless@1.4.1.patch"
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.0",

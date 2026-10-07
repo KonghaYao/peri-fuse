@@ -22,6 +22,27 @@ afterEach(async () => {
 });
 
 describe("remote Turso HTTP storage", () => {
+  it.each(["/tenant/database", "/tenant/database/"])(
+    "preserves base path %s and query parameters in reads, transactions and streaming",
+    async (basePath) => {
+      await server.close();
+      server = await startRemoteTestServer(basePath, "?region=eu&tag=a%2Fb&tag=c&prefix=/");
+      const client = await openLocalDatabase(server.url, false, server.authToken);
+      try {
+        await client.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)");
+        await client.transactionAsync(async (tx) => {
+          await tx.run("INSERT INTO items VALUES(?)", 1);
+        })();
+        expect(await client.get("SELECT id FROM items")).toEqual({ id: 1 });
+        const rows = [];
+        for await (const row of client.iterate("SELECT id FROM items")) rows.push(row);
+        expect(rows).toEqual([{ id: 1 }]);
+      } finally {
+        await client.close();
+      }
+    },
+  );
+
   it("supports bindings, JSON, blobs, Drizzle savepoints and transaction foreign keys", async () => {
     const client = await openLocalDatabase(server.url, false, server.authToken);
     const items = sqliteTable("items", {
@@ -99,6 +120,8 @@ describe("remote Turso HTTP storage", () => {
   });
 
   it("uses authenticated remote worker reads with row limits and project-scoped search", async () => {
+    await server.close();
+    server = await startRemoteTestServer("/tenant/database/", "?region=eu&tag=a%2Fb&tag=c");
     vi.stubEnv("TURSO_DATABASE_URL", server.url);
     vi.stubEnv("TURSO_AUTH_TOKEN", server.authToken);
     const adapter = new SQLiteTelemetryAdapter();

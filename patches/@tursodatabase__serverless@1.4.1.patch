@@ -1,0 +1,78 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index f3298ad825bdb47228fdd4b6e81abfd18ac496bb..3aae901b1f7f80db940bc5f035d009304d4f0eb9 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -145,10 +145,15 @@ function wrapAbortError(error) {
+   }
+   throw error;
+ }
++function endpointUrl(baseUrl, endpoint) {
++  const url = new URL(baseUrl);
++  url.pathname = `${url.pathname.replace(/\/+$/, "")}${endpoint}`;
++  return url.toString();
++}
+ async function executeCursor(ctx, request, signal) {
+   let response;
+   try {
+-    response = await fetch(`${ctx.url}/v3/cursor`, buildFetchOptions(ctx, JSON.stringify(request), signal));
++    response = await fetch(endpointUrl(ctx.url, "/v3/cursor"), buildFetchOptions(ctx, JSON.stringify(request), signal));
+   } catch (error) {
+     wrapAbortError(error);
+   }
+@@ -233,7 +238,7 @@ async function executeCursor(ctx, request, signal) {
+ async function executePipeline(ctx, request, signal) {
+   let response;
+   try {
+-    response = await fetch(`${ctx.url}/v3/pipeline`, buildFetchOptions(ctx, JSON.stringify(request), signal));
++    response = await fetch(endpointUrl(ctx.url, "/v3/pipeline"), buildFetchOptions(ctx, JSON.stringify(request), signal));
+   } catch (error) {
+     wrapAbortError(error);
+   }
+@@ -360,7 +365,7 @@ function batchInputError(index, message) {
+   return error;
+ }
+ function normalizeUrl(url) {
+-  return url.replace(/^(libsql|turso):\/\//, "https://").replace(/\/+$/, "");
++  return url.replace(/^(libsql|turso):\/\//, "https://");
+ }
+ function isValidIdentifier(str) {
+   return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
+diff --git a/dist/index.js b/dist/index.js
+index 94efd1987358587ad7b0eeefc1907c25ef5a618d..cb19c3c3ff301e6f81feb36cf1759897070efc25 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -143,10 +143,15 @@ function wrapAbortError(error) {
+   }
+   throw error;
+ }
++function endpointUrl(baseUrl, endpoint) {
++  const url = new URL(baseUrl);
++  url.pathname = `${url.pathname.replace(/\/+$/, "")}${endpoint}`;
++  return url.toString();
++}
+ async function executeCursor(ctx, request, signal) {
+   let response;
+   try {
+-    response = await fetch(`${ctx.url}/v3/cursor`, buildFetchOptions(ctx, JSON.stringify(request), signal));
++    response = await fetch(endpointUrl(ctx.url, "/v3/cursor"), buildFetchOptions(ctx, JSON.stringify(request), signal));
+   } catch (error) {
+     wrapAbortError(error);
+   }
+@@ -231,7 +236,7 @@ async function executeCursor(ctx, request, signal) {
+ async function executePipeline(ctx, request, signal) {
+   let response;
+   try {
+-    response = await fetch(`${ctx.url}/v3/pipeline`, buildFetchOptions(ctx, JSON.stringify(request), signal));
++    response = await fetch(endpointUrl(ctx.url, "/v3/pipeline"), buildFetchOptions(ctx, JSON.stringify(request), signal));
+   } catch (error) {
+     wrapAbortError(error);
+   }
+@@ -358,7 +363,7 @@ function batchInputError(index, message) {
+   return error;
+ }
+ function normalizeUrl(url) {
+-  return url.replace(/^(libsql|turso):\/\//, "https://").replace(/\/+$/, "");
++  return url.replace(/^(libsql|turso):\/\//, "https://");
+ }
+ function isValidIdentifier(str) {
+   return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);

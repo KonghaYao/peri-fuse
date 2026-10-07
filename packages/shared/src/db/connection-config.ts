@@ -10,10 +10,9 @@ export function validateDatabaseConfig(config: DatabaseConnectionConfig): Databa
   if (!url) throw new Error("Database URL must not be empty");
   if (!isRemoteDatabaseUrl(url)) return { url };
   const parsed = new URL(url);
-  if (parsed.username || parsed.password || parsed.search || parsed.hash)
-    throw new Error("Database URL must not contain credentials, query parameters or fragments");
-  if (!parsed.hostname || (parsed.pathname !== "" && parsed.pathname !== "/"))
-    throw new Error("Remote database URL must specify a database host without a path");
+  if (parsed.username || parsed.password || parsed.hash)
+    throw new Error("Database URL must not contain credentials or fragments");
+  if (!parsed.hostname) throw new Error("Remote database URL must specify a database host");
   if (["ws:", "wss:"].includes(parsed.protocol))
     throw new Error("Use a libsql:// or HTTPS Turso URL for the HTTP database client");
   if (parsed.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname))

@@ -20,7 +20,7 @@ type Payload = {
 };
 type Stream = { db: LocalDatabase; autocommit: boolean };
 
-export async function startRemoteTestServer() {
+export async function startRemoteTestServer(basePath = "", search = "") {
   const directory = mkdtempSync(join(tmpdir(), "perifuse-remote-"));
   const filename = join(directory, "cloud.turso.db");
   const streams = new Map<string, Stream>();
@@ -29,6 +29,17 @@ export async function startRemoteTestServer() {
   let requests = 0;
   const server = createServer(async (request, response) => {
     requests++;
+    const requestUrl = new URL(request.url ?? "/", "http://localhost");
+    const endpoint = requestUrl.pathname.slice(basePath.replace(/\/+$/, "").length);
+    if (
+      requestUrl.search !== search ||
+      !["/v3/pipeline", "/v3/cursor"].some(
+        (path) => requestUrl.pathname === `${basePath.replace(/\/+$/, "")}${path}`,
+      )
+    ) {
+      response.writeHead(404).end();
+      return;
+    }
     if (request.headers.authorization !== `Bearer ${token}`) {
       response.writeHead(401).end(JSON.stringify({ message: "Unauthorized" }));
       return;
@@ -50,7 +61,7 @@ export async function startRemoteTestServer() {
         if (/^BEGIN\b/i.test(sql.trim())) stream.autocommit = false;
         if (/^(COMMIT|ROLLBACK)\s*;?$/i.test(sql.trim())) stream.autocommit = true;
       };
-      if (request.url === "/v3/pipeline") {
+      if (endpoint === "/v3/pipeline") {
         const results: unknown[] = [];
         let closed = false;
         for (const entry of payload.requests ?? []) {
@@ -95,7 +106,7 @@ export async function startRemoteTestServer() {
         }
         response.setHeader("content-type", "application/json");
         response.end(JSON.stringify({ baton: closed ? null : baton, results }));
-      } else if (request.url === "/v3/cursor") {
+      } else if (endpoint === "/v3/cursor") {
         response.setHeader("content-type", "application/x-ndjson");
         const write = (value: unknown) => response.write(`${JSON.stringify(value)}\n`);
         write({ baton });
@@ -157,7 +168,7 @@ export async function startRemoteTestServer() {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Test server did not listen");
   return {
-    url: `http://127.0.0.1:${address.port}`,
+    url: `http://127.0.0.1:${address.port}${basePath}${search}`,
     authToken: token,
     directory,
     requestCount: () => requests,

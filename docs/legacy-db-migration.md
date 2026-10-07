@@ -1,6 +1,6 @@
 # 旧 SQLite 数据迁移到 embedded Turso
 
-入口：`scripts/migrate-legacy-db.sh`。它通过 Node 内置 SQLite **只读**访问旧库，使用当前 Turso 驱动写入新库，不重新安装 better-sqlite3。源码运行需要 Node.js **22.12.0 或更高版本**、Bash，以及已执行 `pnpm install` 的仓库；包含迁移工具的新 Docker 镜像已提供这些运行依赖，无需在宿主机安装 Node 或 pnpm。脚本为旧版 Node 开启内置 SQLite 所需的实验标志，并兼容没有流式迭代接口的 Node 22.12。
+入口：`scripts/migrate-legacy-db.sh`。它通过 `node:sqlite` **只读**访问旧库，使用当前 Turso 驱动写入新库，不重新安装 better-sqlite3。源码运行需要 Node.js **22.12.0 或更高版本**、Bash，以及已执行 `pnpm install` 的仓库；Docker 镜像使用 Bun 的兼容接口，并通过 `NODE_BINARY=bun` 运行迁移工具，无需在宿主机安装 Node 或 pnpm。脚本为旧版 Node 开启内置 SQLite 所需的实验标志，并兼容没有流式迭代接口的 Node 22.12。
 
 ## 执行步骤
 

@@ -142,7 +142,7 @@ describe("container port configuration", () => {
     const commandJson = healthcheck?.match(/\sCMD\s+(\[.*\])$/)?.[1];
     expect(commandJson).toBeDefined();
     const command = JSON.parse(commandJson ?? "[]") as string[];
-    expect(command.slice(0, 2)).toEqual(["node", "-e"]);
+    expect(command.slice(0, 2)).toEqual(["bun", "-e"]);
 
     const script = command[2] ?? "";
     expect(script).toMatch(/require\('\.\/packages\/server\/dist\/port\.js'\)/);

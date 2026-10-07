@@ -14,6 +14,7 @@ WORKDIR /app
 # Full dependency install (dev included) so every workspace package can build.
 FROM base AS deps
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY patches ./patches
 COPY packages/cli/package.json packages/cli/
 COPY packages/gateway/package.json packages/gateway/
 COPY packages/langfuse-mcp/package.json packages/langfuse-mcp/
@@ -28,20 +29,12 @@ FROM deps AS build
 COPY packages ./packages
 RUN pnpm run build
 
-# ---------- runtime ----------
-FROM base AS runtime
-ENV NODE_ENV=production \
-    LITE_SERVER_PORT=23332 \
-    PERIFUSE_HOME=/app/data \
-    PNPM_HOME="/pnpm" \
-    PATH="/pnpm:$PATH" \
-    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable
-
-WORKDIR /app
+# ---------- production deps ----------
+FROM base AS production-deps
 # Production deps only: @peri-fuse/server plus its workspace dependency chain
 # (shared, gateway), including the platform-specific prebuilt Turso native module.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY patches ./patches
 COPY packages/cli/package.json packages/cli/
 COPY packages/gateway/package.json packages/gateway/
 COPY packages/langfuse-mcp/package.json packages/langfuse-mcp/
@@ -50,6 +43,15 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/web/package.json packages/web/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --prod --frozen-lockfile --filter @peri-fuse/server...
+
+# ---------- runtime ----------
+FROM oven/bun:1.4.2-debian AS runtime
+ENV NODE_ENV=production \
+    LITE_SERVER_PORT=23332 \
+    PERIFUSE_HOME=/app/data \
+    NODE_BINARY=bun
+WORKDIR /app
+COPY --from=production-deps /app /app
 
 # Compiled artifacts. web/dist is placed at packages/server/dist/web so the
 # server serves the SPA via its bundled-context lookup path (dist/web).
@@ -69,6 +71,6 @@ EXPOSE 23332
 VOLUME ["/app/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["node", "-e", "const { resolveLiteServerPort } = require('./packages/server/dist/port.js'); const port = resolveLiteServerPort(process.env.LITE_SERVER_PORT); fetch('http://127.0.0.1:' + port + '/api/public/health').then(r => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1));"]
+    CMD ["bun", "-e", "const { resolveLiteServerPort } = require('./packages/server/dist/port.js'); const port = resolveLiteServerPort(process.env.LITE_SERVER_PORT); fetch('http://127.0.0.1:' + port + '/api/public/health').then(r => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1));"]
 
-CMD ["node", "packages/server/dist/index.js"]
+CMD ["bun", "packages/server/dist/index.js"]

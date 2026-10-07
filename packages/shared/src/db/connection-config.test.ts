@@ -62,10 +62,27 @@ describe("database connection configuration", () => {
     expect(() => createLocalDatabase("https://cloud.turso.io")).toThrow("auth token is required");
   });
   it.each([
+    "libsql://cloud.turso.io/tenant/database?region=eu&tag=a%2Fb&tag=c",
+    "https://cloud.turso.io/tenant/database/?region=eu&prefix=/",
+    "http://127.0.0.1:8080/tenant/database?region=local",
+  ])("preserves remote paths and query parameters in URL %s", (url) => {
+    expect(validateDatabaseConfig({ url: ` ${url} `, authToken: " token " })).toEqual({
+      url,
+      authToken: "token",
+    });
+    for (const role of ["metadata", "telemetry", "gateway"] as const) {
+      expect(
+        resolveDatabaseConfig(role, "local.db", {
+          TURSO_DATABASE_URL: url,
+          TURSO_AUTH_TOKEN: "token",
+        }),
+      ).toEqual({ url, authToken: "token" });
+    }
+  });
+  it.each([
     "http://cloud.turso.io",
     "https://user:secret@cloud.turso.io",
-    "https://cloud.turso.io?token=secret",
-    "https://cloud.turso.io/path",
+    "https://cloud.turso.io/path?region=eu#fragment",
     "wss://cloud.turso.io",
   ])("rejects unsafe or unsupported URL %s", (url) => {
     expect(() => validateDatabaseConfig({ url, authToken: "token" })).toThrow();
