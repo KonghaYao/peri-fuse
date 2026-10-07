@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { prisma } from "../../db";
 import { models } from "../../db/schema/index.js";
@@ -41,9 +42,11 @@ export const createModelCache = (projectId: string) => {
     }
 
     const model = await prisma.query.models.findFirst({
-      where: and(
-        eq(models.id, internalModelId),
-        or(eq(models.projectId, projectId), isNull(models.projectId)),
+      where: relationalFilter(
+        and(
+          eq(models.id, internalModelId),
+          or(eq(models.projectId, projectId), isNull(models.projectId)),
+        ),
       ),
       with: { prices: true },
     });

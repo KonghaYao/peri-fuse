@@ -46,6 +46,8 @@
       "!**/pnpm-lock.yaml",
       "!**/otel-proto",
       "!**/drizzle/meta",
+      "!**/drizzle/**/snapshot.json",
+      "!**/telemetry-drizzle/**/snapshot.json",
       "!packages/shared/src/db/schema/schema.ts",
       "!packages/shared/src/db/schema/relations.ts",
       "!**/*.css",

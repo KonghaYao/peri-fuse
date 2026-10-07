@@ -20,6 +20,7 @@ import {
   UpdateEvalConfigSchema,
 } from "@peri-fuse/shared";
 import { prisma } from "@peri-fuse/shared/src/db";
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 import { evalTemplates, jobConfigurations } from "@peri-fuse/shared/src/db/schema/index.js";
 import { and, count, eq, isNull, or } from "drizzle-orm";
 import { type Context, Hono } from "hono";
@@ -51,9 +52,11 @@ async function parseJsonBody(c: Context<LiteServerEnv>): Promise<unknown> {
 /** Validate that a referenced eval template exists and belongs to the project (or is global). */
 async function findVisibleTemplate(projectId: string, templateId: string) {
   return prisma.query.evalTemplates.findFirst({
-    where: and(
-      eq(evalTemplates.id, templateId),
-      or(eq(evalTemplates.projectId, projectId), isNull(evalTemplates.projectId)),
+    where: relationalFilter(
+      and(
+        eq(evalTemplates.id, templateId),
+        or(eq(evalTemplates.projectId, projectId), isNull(evalTemplates.projectId)),
+      ),
     ),
   });
 }

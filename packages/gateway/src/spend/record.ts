@@ -17,16 +17,17 @@ function boundedBody(value: string | undefined, limit: number): string | undefin
  * A single-row transaction has a constant SQL parameter budget and no retry
  * queue. Logs, aggregates and budget counters either all commit or all roll back.
  */
-export function recordSpend(
+export async function recordSpend(
   db: Db,
   event: SpendEvent,
   options: { logRequests: boolean; logMaxBodySize: number },
-): void {
+): Promise<void> {
   const startTime = event.startTime.toISOString();
   const endTime = event.endTime.toISOString();
-  db.transaction((tx) => {
+  await db.transaction(async (tx) => {
     if (options.logRequests) {
-      tx.insert(spendLog)
+      await tx
+        .insert(spendLog)
         .values({
           id: generateId(),
           projectId: event.projectId,
@@ -60,7 +61,8 @@ export function recordSpend(
     }
 
     const success = event.status === "success" ? 1 : 0;
-    tx.insert(dailySpend)
+    await tx
+      .insert(dailySpend)
       .values({
         id: generateId(),
         projectId: event.projectId,
@@ -96,7 +98,8 @@ export function recordSpend(
       .run();
 
     if (event.apiKey) {
-      tx.update(apiKey)
+      await tx
+        .update(apiKey)
         .set({ spend: sql`${apiKey.spend} + ${event.spend}`, lastActive: endTime })
         .where(and(eq(apiKey.projectId, event.projectId), eq(apiKey.publicKey, event.apiKey)))
         .run();

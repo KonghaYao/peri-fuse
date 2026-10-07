@@ -1,32 +1,31 @@
-import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { initializeIoSchema, installIoReader } from "../adapters/io-compression";
+import { openLocalDatabase as createLocalDatabase } from "../../db/local";
+import { initializeIoSchema } from "../adapters/io-compression";
 import { initializeTelemetrySchema } from "../adapters/sqlite-telemetry-schema";
 import type { TelemetryQueryOpts } from "../adapters/types";
 import { liteGetTracesTable, liteGetTracesTableCount } from "./lite-trace-queries";
 
-const db = new Database(":memory:");
+const db = await createLocalDatabase(":memory:");
 vi.mock("../adapters", () => ({
   getTelemetryDB: () => ({
-    query: async ({ query, params }: TelemetryQueryOpts) => db.prepare(query).all(params ?? {}),
+    query: async ({ query, params }: TelemetryQueryOpts) => await db.all(query, params ?? {}),
   }),
 }));
 
-beforeAll(() => {
-  initializeTelemetrySchema(db);
-  initializeIoSchema(db);
-  installIoReader(db);
-  const insert = db.prepare(`INSERT INTO traces
+beforeAll(async () => {
+  await initializeTelemetrySchema(db);
+  await initializeIoSchema(db);
+  const insert = await db.prepare(`INSERT INTO traces
     (project_id,id,name,timestamp,is_deleted) VALUES (?,?,?,?,?)`);
   for (const projectId of ["project-a", "project-b"]) {
     for (let i = 1; i <= 4; i++) {
-      insert.run(projectId, `trace-${i}`, `match-${i}`, `2026-01-0${i} 00:00:00.000`, 0);
+      await insert.run(projectId, `trace-${i}`, `match-${i}`, `2026-01-0${i} 00:00:00.000`, 0);
     }
-    insert.run(projectId, "deleted", "match-deleted", "2026-01-05 00:00:00.000", 1);
-    insert.run(projectId, "outside", "different", "2026-01-06 00:00:00.000", 0);
+    await insert.run(projectId, "deleted", "match-deleted", "2026-01-05 00:00:00.000", 1);
+    await insert.run(projectId, "outside", "different", "2026-01-06 00:00:00.000", 0);
   }
 });
-afterAll(() => db.close());
+afterAll(async () => await db.close());
 
 // The Lite table uses SQLite pagination; the upstream ClickHouse deletion-cursor
 // service was never shipped in this repository.

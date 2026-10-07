@@ -1,6 +1,6 @@
-import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { initializeIoSchema, installIoReader } from "../adapters/io-compression";
+import { openLocalDatabase as createLocalDatabase } from "../../db/local";
+import { initializeIoSchema } from "../adapters/io-compression";
 import { initializeTelemetrySchema } from "../adapters/sqlite-telemetry-schema";
 import type { TelemetryQueryOpts } from "../adapters/types";
 import { FilterList, StringFilter } from "../queries/clickhouse-sql/clickhouse-filter";
@@ -12,7 +12,7 @@ const { query } = vi.hoisted(() => {
 });
 vi.mock("../adapters", () => ({ getTelemetryDB: () => ({ query }) }));
 
-const db = new Database(":memory:");
+const db = await createLocalDatabase(":memory:");
 const plans: string[][] = [];
 const filter = new FilterList(
   [
@@ -24,17 +24,16 @@ const filter = new FilterList(
   ),
 );
 
-beforeAll(() => {
-  initializeTelemetrySchema(db);
-  initializeIoSchema(db);
-  installIoReader(db);
-  const insert = db.prepare(`
+beforeAll(async () => {
+  await initializeTelemetrySchema(db);
+  await initializeIoSchema(db);
+  await db.transactionAsync(async (tx) => {
+    const insert = await tx.prepare(`
     INSERT INTO observations
       (project_id, id, type, level, start_time, is_deleted, input)
     VALUES (@projectId, @id, @type, @level, @startTime, @deleted, @input)
   `);
-  const input = JSON.stringify({ prompt: "x".repeat(4096) });
-  db.transaction(() => {
+    const input = JSON.stringify({ prompt: "x".repeat(4096) });
     for (let i = 0; i < 10_000; i++) {
       const row = {
         projectId: "pagination-project",
@@ -45,27 +44,26 @@ beforeAll(() => {
         deleted: 0,
         input,
       };
-      insert.run(row);
+      await insert.run(row);
       if (i % 100 === 0) {
-        insert.run({ ...row, projectId: "other-project" });
-        insert.run({ ...row, id: `deleted-${i}`, deleted: 1 });
+        await insert.run({ ...row, projectId: "other-project" });
+        await insert.run({ ...row, id: `deleted-${i}`, deleted: 1 });
       }
     }
   })();
-  db.exec("ANALYZE");
+  await db.exec("ANALYZE");
   query.mockImplementation(async ({ query: sql, params }: TelemetryQueryOpts) => {
     const bindings = params ?? {};
     plans.push(
-      db
-        .prepare(`EXPLAIN QUERY PLAN ${sql}`)
-        .all(bindings)
-        .map((row) => (row as { detail: string }).detail),
+      (await db.all(`EXPLAIN QUERY PLAN ${sql}`, bindings)).map(
+        (row) => (row as { detail: string }).detail,
+      ),
     );
-    return db.prepare(sql).all(bindings);
+    return await db.all(sql, bindings);
   });
 });
 
-afterAll(() => db.close());
+afterAll(async () => await db.close());
 
 describe("filtered observations pagination", () => {
   it("counts type + level matches without visiting observation payloads", async () => {
@@ -94,10 +92,10 @@ describe("filtered observations pagination", () => {
   });
 
   it("adds the index to an existing database idempotently without changing observations", async () => {
-    db.exec("DROP INDEX idx_obs_type_level_start");
-    initializeTelemetrySchema(db);
-    initializeTelemetrySchema(db);
-    db.exec("ANALYZE");
+    await db.exec("DROP INDEX idx_obs_type_level_start");
+    await initializeTelemetrySchema(db);
+    await initializeTelemetrySchema(db);
+    await db.exec("ANALYZE");
     expect(await liteGetObservationsTableCount("pagination-project", filter)).toBe(100);
     expect(plans.at(-1)!.join("\n")).toContain("USING COVERING INDEX");
     expect(await liteGetObservationsTableCount("other-project", filter)).toBe(100);

@@ -10,6 +10,7 @@
  */
 import type { EvalConfig } from "@peri-fuse/shared";
 import { prisma } from "@peri-fuse/shared/src/db";
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 import { type evalTemplates, jobConfigurations } from "@peri-fuse/shared/src/db/schema/index.js";
 import { and, count, desc, eq, lt } from "drizzle-orm";
 
@@ -108,10 +109,12 @@ export async function getEvalConfigById(
   configId: string,
 ): Promise<{ row: EvalConfigRow; template: EvalTemplateRow | null } | null> {
   const row = await prisma.query.jobConfigurations.findFirst({
-    where: and(
-      eq(jobConfigurations.id, configId),
-      eq(jobConfigurations.projectId, projectId),
-      eq(jobConfigurations.jobType, "EVAL"),
+    where: relationalFilter(
+      and(
+        eq(jobConfigurations.id, configId),
+        eq(jobConfigurations.projectId, projectId),
+        eq(jobConfigurations.jobType, "EVAL"),
+      ),
     ),
     with: { evalTemplate: true },
   });
@@ -133,8 +136,8 @@ export async function listEvalConfigsForPublicApi(params: {
 
   const [rows, total] = await Promise.all([
     prisma.query.jobConfigurations.findMany({
-      where,
-      orderBy: [desc(jobConfigurations.createdAt)],
+      where: relationalFilter(where),
+      orderBy: (table) => [desc(table.createdAt)],
       limit,
       offset: (page - 1) * limit,
       with: { evalTemplate: true },

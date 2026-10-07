@@ -1,12 +1,17 @@
 export const SESSION_SEARCH_WORKER_SOURCE = `
 const { parentPort, workerData } = require("node:worker_threads");
-const Database = require(workerData.betterSqlitePath);
+(async () => {
+const { createLocalDatabase, initializeLocalDatabase } = require(workerData.connectionPath);
 const { processDirty } = require(workerData.indexerPath);
 const { enqueueBackfill } = require(workerData.backfillPath);
-const db = new Database(workerData.dbPath);
-db.pragma("journal_mode = WAL"); db.pragma("busy_timeout = 5000");
+const db = createLocalDatabase(workerData.dbPath, false, workerData.authToken);
+await initializeLocalDatabase(db);
 let stopped = false;
-function tick() { if (!stopped) { try { enqueueBackfill(db); processDirty(db, 100); parentPort.postMessage({ type: "tick-ok" }); } catch (error) { parentPort.postMessage({ type: "error", error: String(error) }); } } }
-parentPort.on("message", (message) => { if (message === "stop") { stopped = true; db.close(); parentPort.postMessage({ type: "stopped" }); process.exit(0); } });
-parentPort.postMessage({ type: "ready" }); tick(); setInterval(tick, 250);
+let busy = false;
+let running = Promise.resolve();
+async function tick() { if (!stopped && !busy) { busy = true; try { await enqueueBackfill(db); await processDirty(db, 100); parentPort.postMessage({ type: "tick-ok" }); } catch (error) { parentPort.postMessage({ type: "error", error: error instanceof Error ? error.name : "Indexing failed" }); } finally { busy = false; } } }
+const timer = setInterval(() => { if (!stopped && !busy) running = tick(); }, 250);
+parentPort.on("message", async (message) => { if (message === "stop") { stopped = true; clearInterval(timer); await running; await db.close(); parentPort.postMessage({ type: "stopped" }); process.exit(0); } });
+parentPort.postMessage({ type: "ready" }); running = tick();
+})().catch(error => { throw error; });
 `;

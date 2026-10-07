@@ -15,16 +15,18 @@ import { gatewayEnv } from "./env.js";
 import { startGatewayServices, stopGatewayServices } from "./services.js";
 
 const app = createApp();
+let server: ReturnType<typeof serve>;
+let shuttingDown = false;
 
 async function main() {
   // Ensure database connection and create tables on first boot (WAL + busy_timeout
   // pragmas are applied when the connection opens in db.ts).
-  ensureSchema();
+  await ensureSchema();
 
   // Start background services
   startGatewayServices();
 
-  serve({ fetch: app.fetch, port: gatewayEnv.port }, (info) => {
+  server = serve({ fetch: app.fetch, port: gatewayEnv.port }, (info) => {
     console.log(`[peri-gateway] Listening on http://localhost:${info.port}`);
     console.log(`[peri-gateway] Database: ${gatewayEnv.dbUrl}`);
     console.log(`[peri-gateway] Auth: project-scoped API keys (via shared server DB)`);
@@ -33,7 +35,13 @@ async function main() {
 
 // Graceful shutdown
 async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log("[peri-gateway] Shutting down...");
+  if (server)
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
 
   // Stop background services and flush remaining spend data
   try {
@@ -43,7 +51,7 @@ async function shutdown() {
     console.error("[peri-gateway] Flush error on shutdown:", err);
   }
 
-  closeDb();
+  await closeDb();
   process.exit(0);
 }
 

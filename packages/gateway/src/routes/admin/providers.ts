@@ -1,3 +1,5 @@
+import { isDatabaseConstraint } from "@peri-fuse/shared/src/db/errors";
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * Admin API — Provider CRUD (project-scoped).
  */
@@ -37,11 +39,13 @@ providers.get("/", async (c) => {
   if (raw.isEnabled !== undefined)
     conditions.push(eq(provider.isEnabled, raw.isEnabled === "true"));
   const items = await db.query.provider.findMany({
-    where: and(...conditions),
-    orderBy: [desc(provider.createdAt)],
+    where: relationalFilter(and(...conditions)),
+    orderBy: (table) => [desc(table.createdAt)],
     with: {
       deployments: {
-        where: and(eq(modelDeployment.projectId, projectId), eq(modelDeployment.isEnabled, true)),
+        where: relationalFilter(
+          and(eq(modelDeployment.projectId, projectId), eq(modelDeployment.isEnabled, true)),
+        ),
       },
     },
   });
@@ -61,8 +65,10 @@ providers.get("/:id", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
   const found = await db.query.provider.findFirst({
-    where: and(eq(provider.id, c.req.param("id")), eq(provider.projectId, projectId)),
-    with: { deployments: { where: eq(modelDeployment.projectId, projectId) } },
+    where: relationalFilter(
+      and(eq(provider.id, c.req.param("id")), eq(provider.projectId, projectId)),
+    ),
+    with: { deployments: { where: relationalFilter(eq(modelDeployment.projectId, projectId)) } },
   });
 
   if (!found) {
@@ -80,7 +86,9 @@ providers.post("/", async (c) => {
 
   if (body.credentialId != null) {
     const targetCredential = await db.query.credential.findFirst({
-      where: and(eq(credential.id, body.credentialId), eq(credential.projectId, projectId)),
+      where: relationalFilter(
+        and(eq(credential.id, body.credentialId), eq(credential.projectId, projectId)),
+      ),
     });
     if (!targetCredential) {
       return c.json({ error: { message: "Credential not found" } }, 404);
@@ -141,7 +149,7 @@ providers.put("/:id", async (c) => {
   const body = await c.req.json();
 
   const existing = await db.query.provider.findFirst({
-    where: and(eq(provider.id, id), eq(provider.projectId, projectId)),
+    where: relationalFilter(and(eq(provider.id, id), eq(provider.projectId, projectId))),
   });
   if (!existing) {
     return c.json({ error: { message: "Provider not found" } }, 404);
@@ -149,7 +157,9 @@ providers.put("/:id", async (c) => {
 
   if (body.credentialId !== undefined && body.credentialId !== null) {
     const targetCredential = await db.query.credential.findFirst({
-      where: and(eq(credential.id, body.credentialId), eq(credential.projectId, projectId)),
+      where: relationalFilter(
+        and(eq(credential.id, body.credentialId), eq(credential.projectId, projectId)),
+      ),
     });
     if (!targetCredential) {
       return c.json({ error: { message: "Credential not found" } }, 404);
@@ -211,21 +221,24 @@ providers.delete("/:id", async (c) => {
   const id = c.req.param("id");
 
   const existing = await db.query.provider.findFirst({
-    where: and(eq(provider.id, id), eq(provider.projectId, projectId)),
+    where: relationalFilter(and(eq(provider.id, id), eq(provider.projectId, projectId))),
   });
   if (!existing) {
     return c.json({ error: { message: "Provider not found" } }, 404);
   }
 
   try {
-    db.transaction((tx) => {
-      tx.delete(modelDeployment)
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(modelDeployment)
         .where(and(eq(modelDeployment.providerId, id), eq(modelDeployment.projectId, projectId)))
         .run();
-      tx.delete(provider)
+      await tx
+        .delete(provider)
         .where(and(eq(provider.id, id), eq(provider.projectId, projectId)))
         .run();
-      tx.insert(auditLog)
+      await tx
+        .insert(auditLog)
         .values({
           id: generateId(),
           projectId,
@@ -238,11 +251,7 @@ providers.delete("/:id", async (c) => {
         .run();
     });
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "SQLITE_CONSTRAINT_FOREIGNKEY"
-    ) {
+    if (isDatabaseConstraint(error, "foreign-key")) {
       console.error(
         `[peri-gateway] Refused provider deletion for project ${projectId}, provider ${id}:`,
         error,

@@ -1,5 +1,9 @@
 import { configDefaults, defineConfig } from "vitest/config";
 
+for (const name of Object.keys(process.env)) {
+  if (name.startsWith("TURSO_")) delete process.env[name];
+}
+
 export default defineConfig({
   envDir: false,
   test: {

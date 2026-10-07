@@ -6,6 +6,7 @@
  * (LangfuseNotFoundError) — mapped to HTTP codes by the app-level onError.
  */
 import { randomUUID } from "node:crypto";
+import { relationalFilter, relationalOrder } from "@peri-fuse/shared/src/db/relational-filter";
 import { and, count, desc, eq, ne } from "drizzle-orm";
 import { type Dataset, prisma, toKnownRequestError } from "../../db";
 import { datasets } from "../../db/schema/index.js";
@@ -37,7 +38,7 @@ export function parseJsonField(value: string | null | undefined): JsonNested | n
 
 export async function getDatasetById(projectId: string, datasetId: string): Promise<Dataset> {
   const row = await prisma.query.datasets.findFirst({
-    where: and(eq(datasets.id, datasetId), eq(datasets.projectId, projectId)),
+    where: relationalFilter(and(eq(datasets.id, datasetId), eq(datasets.projectId, projectId))),
   });
   if (!row) {
     throw new LangfuseNotFoundError(`Dataset with id '${datasetId}' not found`);
@@ -51,7 +52,7 @@ export async function getDatasetById(projectId: string, datasetId: string): Prom
  */
 export async function getDatasetByName(projectId: string, name: string): Promise<Dataset | null> {
   const row = await prisma.query.datasets.findFirst({
-    where: and(eq(datasets.projectId, projectId), eq(datasets.name, name)),
+    where: relationalFilter(and(eq(datasets.projectId, projectId), eq(datasets.name, name))),
   });
   return row ?? null;
 }
@@ -67,8 +68,8 @@ export async function listDatasets(
   );
 
   const items = await prisma.query.datasets.findMany({
-    where,
-    orderBy: desc(datasets.createdAt),
+    where: relationalFilter(where),
+    orderBy: relationalOrder(desc(datasets.createdAt)),
     limit: opts.limit,
     offset: (opts.page - 1) * opts.limit,
   });

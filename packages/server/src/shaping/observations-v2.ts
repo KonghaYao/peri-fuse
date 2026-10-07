@@ -232,8 +232,9 @@ export function buildObservationsV2Select(fields: ReadonlySet<ObservationV2Field
   if (fields.has("time")) {
     columns.push("o.completion_start_time", "o.created_at", "o.updated_at");
   }
-  if (fields.has("io")) columns.push("o.input");
-  if (fields.has("io") || fields.has("output")) columns.push("o.output");
+  if (fields.has("io")) columns.push("o.input", "o.input_codec", "o.input_raw_size");
+  if (fields.has("io") || fields.has("output"))
+    columns.push("o.output", "o.output_codec", "o.output_raw_size");
   if (fields.has("metadata")) columns.push("o.metadata");
   if (fields.has("model")) columns.push("o.model", "o.model_parameters");
   if (fields.has("usage")) {
@@ -249,7 +250,7 @@ export function buildObservationsV2Select(fields: ReadonlySet<ObservationV2Field
   if (fields.has("trace_context")) {
     columns.push(traceColumn("tags"), traceColumn("release"), traceColumn("name", "trace_name"));
   }
-  return `SELECT\n    ${columns.join(",\n    ")}\n  FROM perifuse_read_observations o`;
+  return `SELECT\n    ${columns.join(",\n    ")}\n  FROM observations o`;
 }
 
 function mapObservationRow(row: Record<string, unknown>): EventsObservationRecordReadType {

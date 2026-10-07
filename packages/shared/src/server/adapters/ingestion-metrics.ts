@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { LocalExecutor } from "../../db/local";
 import {
   TRACE_METRICS_CACHE_CREATION_TOKENS_SQL,
   TRACE_METRICS_CACHED_TOKENS_SQL,
@@ -6,16 +6,18 @@ import {
 } from "./trace-metrics-sql";
 
 /** 在实体写事务内调用；先删除保证最后一个 observation 移走后不残留汇总。 */
-export function refreshIngestionMetrics(
-  db: Database.Database,
+export async function refreshIngestionMetrics(
+  db: LocalExecutor,
   projectId: string,
   traceId: string,
-): void {
+): Promise<void> {
   const params = { projectId, traceId };
-  db.prepare("DELETE FROM trace_metrics WHERE project_id=@projectId AND trace_id=@traceId").run(
+  await db.run(
+    "DELETE FROM trace_metrics WHERE project_id=@projectId AND trace_id=@traceId",
     params,
   );
-  db.prepare(`
+  await db.run(
+    `
     INSERT INTO trace_metrics (project_id, trace_id, user_id, session_id, obs_count,
       total_cost, input_cost, output_cost, input_tokens, output_tokens, total_tokens,
       cached_tokens, cache_creation_tokens, gross_input_tokens, timestamp)
@@ -35,5 +37,7 @@ export function refreshIngestionMetrics(
     LEFT JOIN traces t ON t.project_id=o.project_id AND t.id=o.trace_id
     WHERE o.project_id=@projectId AND o.trace_id=@traceId AND o.is_deleted=0
     GROUP BY o.project_id, o.trace_id
-  `).run(params);
+  `,
+    params,
+  );
 }

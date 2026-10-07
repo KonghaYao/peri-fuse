@@ -70,10 +70,10 @@ async function req<T = any>(
   return { status: res.status, body: await res.json().catch(() => null) };
 }
 
-const apiGet = (p: string, a?: string) => req("GET", p, undefined, a);
-const apiPost = (p: string, b: unknown, a?: string) => req("POST", p, b, a);
-const apiPatch = (p: string, b: unknown) => req("PATCH", p, b);
-const apiDelete = (p: string, a?: string) => req("DELETE", p, undefined, a);
+const apiGet = async (p: string, a?: string) => await req("GET", p, undefined, a);
+const apiPost = async (p: string, b: unknown, a?: string) => await req("POST", p, b, a);
+const apiPatch = async (p: string, b: unknown) => await req("PATCH", p, b);
+const apiDelete = async (p: string, a?: string) => await req("DELETE", p, undefined, a);
 
 const pname = (prefix: string) => `${prefix}-${randomUUID()}`;
 const V2 = "/api/public/v2/prompts";

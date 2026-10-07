@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * GET /api/public/traces and GET /api/public/traces/:traceId
  *
@@ -120,9 +121,9 @@ app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), asyn
   const includeIo = fieldsParam === undefined || fields.has("io");
   const includeIoPreview = !includeIo && fields.has("io_preview");
   const traceProjection = includeIo
-    ? "id, input, output, metadata"
+    ? "id, input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata"
     : includeIoPreview
-      ? "id, substr(input, 1, 500) AS input, substr(output, 1, 500) AS output, substr(metadata, 1, 500) AS metadata"
+      ? "id, input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata"
       : "id";
 
   const db = getTelemetryDB();
@@ -137,7 +138,7 @@ app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), asyn
       db.query<Record<string, unknown>>({
         query: `
           SELECT ${traceProjection}
-          FROM perifuse_read_traces
+          FROM traces
           WHERE project_id = @projectId AND id IN (${placeholders}) AND is_deleted = 0
         `,
         params,
@@ -156,9 +157,21 @@ app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), asyn
     const ioByTrace = new Map<string, { input: unknown; output: unknown; metadata: unknown }>();
     for (const row of traceRows) {
       ioByTrace.set(String(row.id), {
-        input: parseJsonValue(row.input),
-        output: parseJsonValue(row.output),
-        metadata: parseJsonValue(row.metadata),
+        input: parseJsonValue(
+          includeIoPreview && typeof row.input === "string"
+            ? Array.from(row.input).slice(0, 500).join("")
+            : row.input,
+        ),
+        output: parseJsonValue(
+          includeIoPreview && typeof row.output === "string"
+            ? Array.from(row.output).slice(0, 500).join("")
+            : row.output,
+        ),
+        metadata: parseJsonValue(
+          includeIoPreview && typeof row.metadata === "string"
+            ? Array.from(row.metadata).slice(0, 500).join("")
+            : row.metadata,
+        ),
       });
     }
 
@@ -243,9 +256,11 @@ app.get("/api/public/traces/:traceId", authMiddleware, responseCache(2_000), asy
   const models =
     uniqueModels.length > 0
       ? await prisma.query.models.findMany({
-          where: and(
-            inArray(modelsTable.id, uniqueModels),
-            or(eq(modelsTable.projectId, auth.scope.projectId), isNull(modelsTable.projectId)),
+          where: relationalFilter(
+            and(
+              inArray(modelsTable.id, uniqueModels),
+              or(eq(modelsTable.projectId, auth.scope.projectId), isNull(modelsTable.projectId)),
+            ),
           ),
           with: {
             prices: true,

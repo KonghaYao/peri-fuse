@@ -114,7 +114,7 @@ messages.post("/v1/messages", async (c) => {
   // Pre-call hooks
   try {
     requestSignal.throwIfAborted();
-    spendFlusher.assertWritable();
+    await spendFlusher.assertWritable();
     await hookRegistry.runPreCall(hookCtx);
   } catch (err: any) {
     const status = err.statusCode ?? 429;
@@ -195,7 +195,7 @@ messages.post("/v1/messages", async (c) => {
             result.usage.completionTokens,
             result.deployment.modelInfo,
           );
-          spendFlusher.enqueue({
+          await spendFlusher.enqueue({
             projectId,
             callType: "messages",
             apiKey: hookCtx.apiKey.publicKey,
@@ -272,7 +272,7 @@ messages.post("/v1/messages", async (c) => {
       },
     };
 
-    spendFlusher.enqueue({
+    await spendFlusher.enqueue({
       projectId,
       callType: "messages",
       apiKey: hookCtx.apiKey.publicKey,

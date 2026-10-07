@@ -58,12 +58,12 @@ if (process.env.DATABASE_URL?.startsWith("file:")) {
     process.env.DATABASE_URL = `file:${path.resolve(process.cwd(), rawPath)}`;
   }
 } else if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = `file:${path.join(ensureDataDir(), "langfuse.db")}`;
+  process.env.DATABASE_URL = `file:${path.join(ensureDataDir(), "langfuse.turso.db")}`;
 }
 
 // Telemetry storage defaults to the local SQLite file in the global data dir.
 if (!process.env.LANGFUSE_SQLITE_DB_PATH) {
-  process.env.LANGFUSE_SQLITE_DB_PATH = path.join(ensureDataDir(), "telemetry.db");
+  process.env.LANGFUSE_SQLITE_DB_PATH = path.join(ensureDataDir(), "telemetry.turso.db");
 }
 
 // SALT for API key hashing. Auto-generate a stable one if not provided.

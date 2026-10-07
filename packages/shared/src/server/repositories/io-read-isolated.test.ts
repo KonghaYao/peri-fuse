@@ -32,6 +32,7 @@ it.each(["0", "1"])("真实 SQLite repository 解码、批量与预算 workers=%
   vi.stubEnv("PERIFUSE_IO_COMPRESSION_WRITE", "on");
   const file = join(dirname(base), `read-path-${workers}.db`);
   db = new SQLiteTelemetryAdapter(file);
+  await db.initialize();
   const input = JSON.stringify({
     messages: [{ role: "user", content: "无损 Unicode 中文𝄞 ".repeat(2000) }],
   });
@@ -54,17 +55,17 @@ it.each(["0", "1"])("真实 SQLite repository 解码、批量与预算 workers=%
       ],
     });
   }
-  const physical = db
+  const physical = (await db
     .getDatabase()
-    .prepare(
+    .get(
       "SELECT length(input) AS n, input_raw_size AS raw, input_codec AS codec FROM traces WHERE project_id='p'",
-    )
-    .get() as { n: number; raw: number; codec: number };
+    )) as { n: number; raw: number; codec: number };
   expect(physical.codec).toBe(1);
   expect(physical.n).toBeLessThan(physical.raw / 10);
   await db.close();
   vi.stubEnv("PERIFUSE_IO_COMPRESSION_WRITE", "off");
   db = new SQLiteTelemetryAdapter(file);
+  await db.initialize();
   await db.insert({
     table: "traces",
     records: [
@@ -87,13 +88,13 @@ it.each(["0", "1"])("真实 SQLite repository 解码、批量与预算 workers=%
   spy.mockRestore();
   await expect(
     db.query({
-      query: "SELECT input FROM perifuse_read_traces WHERE project_id='p' AND id='t'",
+      query: "SELECT input,input_codec,input_raw_size FROM traces WHERE project_id='p' AND id='t'",
       maxResultBytes: 4096,
     }),
   ).rejects.toThrow("limit");
   expect(applyInputOutputRendering("", { truncated: false, shouldJsonParse: true })).toBe("");
   for (const table of ["traces", "observations"]) {
-    db.getDatabase().prepare(`UPDATE ${table} SET input_codec=99 WHERE project_id='p'`).run();
+    await db.getDatabase().run(`UPDATE ${table} SET input_codec=99 WHERE project_id='p'`);
   }
   expect((await liteGetTraceById("p", "t", true, true))?.input).toBeNull();
   expect(await liteGetTracesTable({ projectId: "p", includeIO: false })).toHaveLength(2);
@@ -111,6 +112,7 @@ it("search 按原正文体积标记 limited，损坏标记 failed，不静默成
   if (!base?.includes("peri-ingestion-test-")) throw new Error("必须通过隔离入口运行");
   vi.stubEnv("PERIFUSE_IO_COMPRESSION_WRITE", "on");
   db = new SQLiteTelemetryAdapter(join(dirname(base), "search-compressed.db"));
+  await db.initialize();
   const sql = db.getDatabase();
   for (const [id, input] of [
     [
@@ -124,25 +126,28 @@ it("search 按原正文体积标记 limited，损坏标记 failed，不静默成
       table: "traces",
       records: [{ id, project_id: "p", timestamp: "2026-01-01 00:00:00", input }],
     });
-    new SessionSearchStorage(sql).markDirty({ projectId: "p", kind: "trace", id, revision: 1 });
+    await new SessionSearchStorage(sql).markDirty({
+      projectId: "p",
+      kind: "trace",
+      id,
+      revision: 1,
+    });
   }
-  sql.prepare("UPDATE traces SET input_codec=99 WHERE id='bad'").run();
-  processDirty(sql);
+  await sql.run("UPDATE traces SET input_codec=99 WHERE id='bad'");
+  await processDirty(sql);
   expect(
     (
-      sql.prepare("SELECT COUNT(*) AS n FROM search_occurrences WHERE source_id='ok'").get() as {
+      (await sql.get("SELECT COUNT(*) AS n FROM search_occurrences WHERE source_id='ok'")) as {
         n: number;
       }
     ).n,
   ).toBeGreaterThan(0);
   expect(
-    sql.prepare("SELECT COUNT(*) AS n FROM search_occurrences WHERE source_id='large'").get(),
+    await sql.get("SELECT COUNT(*) AS n FROM search_occurrences WHERE source_id='large'"),
   ).toMatchObject({ n: 0 });
-  const anchor = sql
-    .prepare(
-      "SELECT occurrence_id, source_version FROM search_occurrences WHERE project_id='p' AND source_id='ok' LIMIT 1",
-    )
-    .get() as { occurrence_id: string; source_version: number };
+  const anchor = (await sql.get(
+    "SELECT occurrence_id, source_version FROM search_occurrences WHERE project_id='p' AND source_id='ok' LIMIT 1",
+  )) as { occurrence_id: string; source_version: number };
   const context = await getSessionContext("p", {
     occurrenceId: anchor.occurrence_id,
     sourceVersion: anchor.source_version,
@@ -158,9 +163,9 @@ it("search 按原正文体积标记 limited，损坏标记 failed，不静默成
       after: 0,
     }),
   ).rejects.toThrow("CONTEXT_UNAVAILABLE");
-  const state = sql.prepare("SELECT * FROM search_index_state WHERE project_id='p'").get();
+  const state = await sql.get("SELECT * FROM search_index_state WHERE project_id='p'");
   expect(state).toMatchObject({ coverage: "limited" });
   expect(
-    sql.prepare("SELECT COUNT(*) AS n FROM search_dirty WHERE source_id='bad'").get(),
+    await sql.get("SELECT COUNT(*) AS n FROM search_dirty WHERE source_id='bad'"),
   ).toMatchObject({ n: 1 });
 });

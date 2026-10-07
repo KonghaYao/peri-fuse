@@ -1,276 +1,25 @@
-/**
- * PeriGateway integration tests — unified project-scoped auth.
- *
- * Covers user flows:
- *  1. Auth: Bearer / Basic / missing / invalid / org-scope rejection
- *  2. Admin CRUD via project API key (provider → model → key config)
- *  3. Proxy: non-streaming, streaming, anthropic messages
- *  4. Multi-project isolation (project A cannot see project B resources)
- *  5. Rate limiting & budget enforcement
- *  6. Usage & logs visibility
- */
-
-import { createHash } from "node:crypto";
-import { existsSync, unlinkSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
-import { type ServerType, serve } from "@hono/node-server";
+import { openLocalDatabase as createLocalDatabase } from "@peri-fuse/shared/src/db/local";
 import bcrypt from "bcryptjs";
-import { Hono } from "hono";
-import { streamSSE } from "hono/streaming";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-
-const TEST_DB = "/tmp/peri-gateway-test.db";
-const SHARED_DB = "/tmp/peri-gateway-shared-test.db";
-const MOCK_PORT = 19876;
-const TEST_SALT = "test-salt-value";
-
-// Project A credentials
-const PROJ_A = "proj-alpha";
-const ORG_A = "org-alpha";
-const PK_A = "pk-alpha-001";
-const SK_A = "sk-alpha-secret-001";
-
-// Project B credentials
-const PROJ_B = "proj-beta";
-const ORG_B = "org-beta";
-const PK_B = "pk-beta-001";
-const SK_B = "sk-beta-secret-001";
-
-// Org-scoped key (should be rejected)
-const PK_ORG = "pk-org-001";
-const SK_ORG = "sk-org-secret-001";
-
-// ─── Mock LLM Server ───────────────────────────────────────────────
-function createMockLLM(): Hono {
-  const app = new Hono();
-
-  app.post("/chat/completions", async (c) => {
-    const body = await c.req.json();
-
-    if (body.stream) {
-      return streamSSE(c, async (stream) => {
-        const words = ["Hello", " world"];
-        for (const word of words) {
-          await stream.writeSSE({
-            data: JSON.stringify({
-              id: "chatcmpl-test",
-              object: "chat.completion.chunk",
-              created: Math.floor(Date.now() / 1000),
-              model: body.model,
-              choices: [{ index: 0, delta: { content: word }, finish_reason: null }],
-            }),
-          });
-        }
-        await stream.writeSSE({
-          data: JSON.stringify({
-            id: "chatcmpl-test",
-            object: "chat.completion.chunk",
-            created: Math.floor(Date.now() / 1000),
-            model: body.model,
-            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-            usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
-          }),
-        });
-        await stream.writeSSE({ data: "[DONE]" });
-      });
-    }
-
-    return c.json({
-      id: "chatcmpl-test",
-      object: "chat.completion",
-      created: Math.floor(Date.now() / 1000),
-      model: body.model,
-      choices: [
-        {
-          index: 0,
-          message: { role: "assistant", content: "Hello world" },
-          finish_reason: "stop",
-        },
-      ],
-      usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
-    });
-  });
-
-  return app;
-}
-
-// ─── Helpers ───────────────────────────────────────────────────────
-let mockServer: ServerType;
-let app: Hono<any>;
-let providerIdA: string;
-
-function bearer(sk: string): string {
-  return `Bearer ${sk}`;
-}
-
-function basic(pk: string, sk: string): string {
-  return `Basic ${Buffer.from(`${pk}:${sk}`).toString("base64")}`;
-}
-
-/** Admin request using project A Bearer token */
-async function adminPostA(path: string, body: unknown) {
-  const res = await app.request(path, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: bearer(SK_A),
-    },
-    body: JSON.stringify(body),
-  });
-  return { status: res.status, body: (await res.json()) as any };
-}
-
-async function adminGetA(path: string) {
-  const res = await app.request(path, {
-    headers: { Authorization: bearer(SK_A) },
-  });
-  return { status: res.status, body: (await res.json()) as any };
-}
-
-/** Admin request using project B Bearer token */
-async function adminPostB(path: string, body: unknown) {
-  const res = await app.request(path, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: bearer(SK_B),
-    },
-    body: JSON.stringify(body),
-  });
-  return { status: res.status, body: (await res.json()) as any };
-}
-
-async function adminGetB(path: string) {
-  const res = await app.request(path, {
-    headers: { Authorization: bearer(SK_B) },
-  });
-  return { status: res.status, body: (await res.json()) as any };
-}
-
-async function proxyPost(path: string, body: unknown, secretKey = SK_A) {
-  const res = await app.request(path, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: bearer(secretKey),
-    },
-    body: JSON.stringify(body),
-  });
-  return res;
-}
-
-// ─── Setup ─────────────────────────────────────────────────────────
-beforeAll(async () => {
-  // Clean test databases
-  for (const dbPath of [TEST_DB, SHARED_DB]) {
-    if (existsSync(dbPath)) unlinkSync(dbPath);
-    for (const suffix of ["-wal", "-shm"]) {
-      const f = `${dbPath}${suffix}`;
-      if (existsSync(f)) unlinkSync(f);
-    }
-  }
-
-  // Set env before importing app
-  process.env.GATEWAY_DB_URL = `file:${TEST_DB}`;
-  process.env.DATABASE_URL = `file:${SHARED_DB}`;
-  process.env.SALT = TEST_SALT;
-
-  // Create gateway schema
-  const { ensureSchema } = await import("../src/db.js");
-  ensureSchema();
-
-  // Create shared DB with api_keys table (includes organization_id + scope)
-
-  const sharedSqlite = new DatabaseSync(SHARED_DB);
-  sharedSqlite.exec(`
-    CREATE TABLE IF NOT EXISTS api_keys (
-      id TEXT PRIMARY KEY,
-      public_key TEXT NOT NULL UNIQUE,
-      hashed_secret_key TEXT NOT NULL,
-      fast_hashed_secret_key TEXT,
-      project_id TEXT,
-      organization_id TEXT,
-      scope TEXT DEFAULT 'PROJECT',
-      expires_at TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-  `);
-
-  function makeFastHash(sk: string): string {
-    return createHash("sha256")
-      .update(sk)
-      .update(createHash("sha256").update(TEST_SALT, "utf8").digest("hex"))
-      .digest("hex");
-  }
-
-  // Seed Project A key
-  sharedSqlite.exec(`
-    INSERT INTO api_keys (id, public_key, hashed_secret_key, fast_hashed_secret_key, project_id, organization_id, scope)
-    VALUES ('key-a', '${PK_A}', '${bcrypt.hashSync(SK_A, 10)}', '${makeFastHash(SK_A)}', '${PROJ_A}', '${ORG_A}', 'PROJECT');
-  `);
-
-  // Seed Project B key
-  sharedSqlite.exec(`
-    INSERT INTO api_keys (id, public_key, hashed_secret_key, fast_hashed_secret_key, project_id, organization_id, scope)
-    VALUES ('key-b', '${PK_B}', '${bcrypt.hashSync(SK_B, 10)}', '${makeFastHash(SK_B)}', '${PROJ_B}', '${ORG_B}', 'PROJECT');
-  `);
-
-  // Seed Org-scoped key (should be rejected by gateway)
-  sharedSqlite.exec(`
-    INSERT INTO api_keys (id, public_key, hashed_secret_key, fast_hashed_secret_key, project_id, organization_id, scope)
-    VALUES ('key-org', '${PK_ORG}', '${bcrypt.hashSync(SK_ORG, 10)}', '${makeFastHash(SK_ORG)}', NULL, '${ORG_A}', 'ORGANIZATION');
-  `);
-
-  sharedSqlite.close();
-
-  // Start mock LLM server
-  const mockApp = createMockLLM();
-  await new Promise<void>((resolve) => {
-    mockServer = serve({ fetch: mockApp.fetch, port: MOCK_PORT }, () => resolve());
-  });
-
-  // Import and create gateway app
-  const { createApp } = await import("../src/app.js");
-  const { spendFlusher } = await import("../src/spend/flusher.js");
-
-  app = createApp();
-  spendFlusher.start();
-
-  // Seed Project A: provider → deployment → key config
-  const provRes = await adminPostA("/admin/providers", {
-    name: "provider-alpha",
-    type: "openai",
-    baseUrl: `http://localhost:${MOCK_PORT}`,
-    apiKey: "mock-key-a",
-  });
-  expect(provRes.status).toBe(201);
-  providerIdA = provRes.body.id;
-
-  const depRes = await adminPostA("/admin/models", {
-    modelName: "gpt-test",
-    providerId: providerIdA,
-    providerModel: "gpt-test-real",
-    modelInfo: { inputPrice: 0.001, outputPrice: 0.002 },
-  });
-  expect(depRes.status).toBe(201);
-
-  const keyRes = await adminPostA("/admin/keys", {
-    publicKey: PK_A,
-    keyName: "alpha-main",
-    rpmLimit: 100,
-    maxBudget: 10.0,
-  });
-  expect(keyRes.status).toBe(201);
-});
-
-afterAll(async () => {
-  const { spendFlusher } = await import("../src/spend/flusher.js");
-  const { closeDb } = await import("../src/db.js");
-  spendFlusher.stop();
-  await spendFlusher.flushAll();
-  closeDb();
-  mockServer?.close();
-});
+import { describe, expect, it } from "vitest";
+import {
+  adminGetA,
+  adminGetB,
+  adminPostA,
+  adminPostB,
+  app,
+  basic,
+  bearer,
+  MOCK_PORT,
+  ORG_A,
+  PK_A,
+  PROJ_A,
+  providerIdA,
+  proxyPost,
+  SHARED_DB,
+  SK_A,
+  SK_B,
+  SK_ORG,
+} from "./integration-fixture";
 
 // ─── Tests ─────────────────────────────────────────────────────────
 
@@ -562,13 +311,13 @@ describe("admin: audit log", () => {
 describe("rate limiting", () => {
   it("enforces RPM limit", async () => {
     // Seed a rate-limited key in shared DB (project A)
-    const sharedSqlite = new DatabaseSync(SHARED_DB);
+    const sharedSqlite = await createLocalDatabase(SHARED_DB);
     const hashed = bcrypt.hashSync("sk-ratelimit", 10);
-    sharedSqlite.exec(`
+    await sharedSqlite.exec(`
       INSERT OR IGNORE INTO api_keys (id, public_key, hashed_secret_key, project_id, organization_id, scope)
       VALUES ('key-rl', 'pk-ratelimit', '${hashed}', '${PROJ_A}', '${ORG_A}', 'PROJECT');
     `);
-    sharedSqlite.close();
+    await sharedSqlite.close();
 
     // Create gateway config with low RPM
     await adminPostA("/admin/keys", {
@@ -616,13 +365,13 @@ describe("rate limiting", () => {
 describe("budget limiting", () => {
   it("rejects when budget exceeded", async () => {
     // Seed a budget-limited key in shared DB (project A)
-    const sharedSqlite = new DatabaseSync(SHARED_DB);
+    const sharedSqlite = await createLocalDatabase(SHARED_DB);
     const hashed = bcrypt.hashSync("sk-budget", 10);
-    sharedSqlite.exec(`
+    await sharedSqlite.exec(`
       INSERT OR IGNORE INTO api_keys (id, public_key, hashed_secret_key, project_id, organization_id, scope)
       VALUES ('key-bud', 'pk-budget', '${hashed}', '${PROJ_A}', '${ORG_A}', 'PROJECT');
     `);
-    sharedSqlite.close();
+    await sharedSqlite.close();
 
     // Create gateway config with tiny budget
     await adminPostA("/admin/keys", {

@@ -76,8 +76,8 @@ export async function liteGetTracesTable(opts: LiteTracesTableOpts): Promise<Lit
   const query = `
     SELECT id, project_id, timestamp, name, user_id, release, version,
            public, bookmarked, tags, session_id, environment
-           ${opts.includeIO ? ", input, output, metadata" : ""}
-    FROM perifuse_read_traces
+           ${opts.includeIO ? ", input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata" : ""}
+    FROM traces
     ${whereClause}
     ${orderClause}
     LIMIT @limit OFFSET @offset
@@ -159,9 +159,9 @@ export async function liteGetTraceById(
     const rows = await db.query<Record<string, unknown>>({
       query: `SELECT id, project_id, name, timestamp, environment, tags, bookmarked,
         release, version, user_id, session_id, public, created_at, updated_at,
-        ${excludeInputOutput ? "NULL AS input, NULL AS output" : "input, output"},
+        ${excludeInputOutput ? "NULL AS input, NULL AS output" : "input, input_codec, input_raw_size, output, output_codec, output_raw_size"},
         ${excludeMetadata ? "NULL AS metadata" : "metadata"}
-        FROM perifuse_read_traces WHERE project_id = @projectId AND id = @traceId AND is_deleted = 0 LIMIT 1`,
+        FROM traces WHERE project_id = @projectId AND id = @traceId AND is_deleted = 0 LIMIT 1`,
       params: { projectId, traceId },
     });
 

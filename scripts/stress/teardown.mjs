@@ -14,10 +14,8 @@
  */
 
 import * as fs from "node:fs";
-import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 import { CREDS_FILE, envStr } from "./lib/client.mjs";
 
 const baseUrl = envStr("BASE", "http://localhost:23432");
@@ -51,27 +49,26 @@ try {
 
 // 2. Delete telemetry rows directly from SQLite, scoped to the project id.
 const home = process.env.PERIFUSE_HOME || path.join(os.homedir(), ".peri-fuse");
-const dbPath = process.env.LANGFUSE_SQLITE_DB_PATH || path.join(home, "telemetry.db");
+const dbPath = process.env.LANGFUSE_SQLITE_DB_PATH || path.join(home, "telemetry.turso.db");
 
-// better-sqlite3 lives in the shared package's node_modules.
-const sharedPkg = fileURLToPath(new URL("../../packages/shared/package.json", import.meta.url));
-const requireShared = createRequire(sharedPkg);
-const Database = requireShared("better-sqlite3");
-
-const db = new Database(dbPath);
-try {
-  const pid = creds.projectId;
-  const del = (table) => db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(pid).changes;
-  const observations = del("observations");
-  const scores = del("scores");
-  const metrics = del("trace_metrics");
-  const traces = del("traces");
-  console.log(
-    `Telemetry deleted: traces=${traces} observations=${observations} ` +
-      `scores=${scores} trace_metrics=${metrics}`,
+if (fs.existsSync(dbPath)) {
+  process.env.LANGFUSE_MODE = "lite";
+  const { SQLiteTelemetryAdapter } = await import(
+    "../../packages/shared/dist/src/server/adapters/sqlite-telemetry-adapter.js"
   );
-} finally {
-  db.close();
+  const adapter = new SQLiteTelemetryAdapter(dbPath);
+  try {
+    await adapter.initialize();
+    for (const table of ["observations", "scores", "traces", "trace_metrics"]) {
+      const result = await adapter.command({
+        query: `DELETE FROM ${table} WHERE project_id = @projectId`,
+        params: { projectId: creds.projectId },
+      });
+      console.log(`${table}: ${result.changes} row(s) deleted`);
+    }
+  } finally {
+    await adapter.close();
+  }
 }
 
 // 3. Remove the cached credentials.

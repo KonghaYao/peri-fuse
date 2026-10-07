@@ -24,12 +24,20 @@ services:
 
     volumes:
       # 数据落到项目相对目录 ./data（首次启动自动创建）：
-      # langfuse.db / telemetry.db / gateway.db / .salt / 加密密钥
+      # langfuse.turso.db / telemetry.turso.db / gateway.turso.db / .salt / 加密密钥
       - ./data:/app/data
 
     environment:
       LANGFUSE_MODE: lite
       LITE_SERVER_PORT: "${LITE_SERVER_PORT:-23332}"
+      TURSO_DATABASE_URL: "${TURSO_DATABASE_URL:-}"
+      TURSO_AUTH_TOKEN: "${TURSO_AUTH_TOKEN:-}"
+      TURSO_METADATA_DATABASE_URL: "${TURSO_METADATA_DATABASE_URL:-}"
+      TURSO_METADATA_AUTH_TOKEN: "${TURSO_METADATA_AUTH_TOKEN:-}"
+      TURSO_TELEMETRY_DATABASE_URL: "${TURSO_TELEMETRY_DATABASE_URL:-}"
+      TURSO_TELEMETRY_AUTH_TOKEN: "${TURSO_TELEMETRY_AUTH_TOKEN:-}"
+      TURSO_GATEWAY_DATABASE_URL: "${TURSO_GATEWAY_DATABASE_URL:-}"
+      TURSO_GATEWAY_AUTH_TOKEN: "${TURSO_GATEWAY_AUTH_TOKEN:-}"
       # API key 哈希盐。留空则自动生成并持久化到卷内 .salt 文件；
       # 生产环境建议显式设置随机字符串（如 `openssl rand -hex 32`）。
       # 注意：首次启动后更改此值会使已有 API key 全部失效。

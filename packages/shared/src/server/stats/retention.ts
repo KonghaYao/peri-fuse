@@ -105,8 +105,8 @@ export async function runRetentionOnce(signal?: AbortSignal): Promise<void> {
 }
 
 /** Start the retention job (immediate pass + periodic re-check). */
-export function startRetentionJob(intervalMs = RETENTION_CHECK_INTERVAL_MS): () => void {
-  if (resolveRetentionDays() <= 0) return () => {};
+export function startRetentionJob(intervalMs = RETENTION_CHECK_INTERVAL_MS): () => Promise<void> {
+  if (resolveRetentionDays() <= 0) return async () => {};
   logger.info(
     `[retention] Enabled with PERIFUSE_TELEMETRY_RETENTION_DAYS=${resolveRetentionDays()}`,
   );

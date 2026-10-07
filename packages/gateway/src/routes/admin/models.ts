@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * Admin API — Model Deployment CRUD (project-scoped).
  */
@@ -109,7 +110,9 @@ models.post("/", async (c) => {
 
   // Verify provider exists within the same project
   const prov = await db.query.provider.findFirst({
-    where: and(eq(provider.id, body.providerId), eq(provider.projectId, projectId)),
+    where: relationalFilter(
+      and(eq(provider.id, body.providerId), eq(provider.projectId, projectId)),
+    ),
   });
   if (!prov) {
     return c.json({ error: { message: "Provider not found" } }, 404);
@@ -153,7 +156,9 @@ models.put("/:id", async (c) => {
   const body = await c.req.json();
 
   const existing = await db.query.modelDeployment.findFirst({
-    where: and(eq(modelDeployment.id, id), eq(modelDeployment.projectId, projectId)),
+    where: relationalFilter(
+      and(eq(modelDeployment.id, id), eq(modelDeployment.projectId, projectId)),
+    ),
   });
   if (!existing) {
     return c.json({ error: { message: "Deployment not found" } }, 404);
@@ -161,7 +166,9 @@ models.put("/:id", async (c) => {
 
   if (body.providerId !== undefined) {
     const targetProvider = await db.query.provider.findFirst({
-      where: and(eq(provider.id, body.providerId), eq(provider.projectId, projectId)),
+      where: relationalFilter(
+        and(eq(provider.id, body.providerId), eq(provider.projectId, projectId)),
+      ),
     });
     if (!targetProvider) {
       return c.json({ error: { message: "Provider not found" } }, 404);
@@ -207,7 +214,9 @@ models.delete("/:id", async (c) => {
   const id = c.req.param("id");
 
   const existing = await db.query.modelDeployment.findFirst({
-    where: and(eq(modelDeployment.id, id), eq(modelDeployment.projectId, projectId)),
+    where: relationalFilter(
+      and(eq(modelDeployment.id, id), eq(modelDeployment.projectId, projectId)),
+    ),
   });
   if (!existing) {
     return c.json({ error: { message: "Deployment not found" } }, 404);

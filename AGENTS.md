@@ -6,13 +6,13 @@ For detailed architecture, conventions, and environment setup, see [CLAUDE.md](.
 ## Project Identity
 
 Langfuse Lite (`peri-fuse`) — self-contained LLM observability + proxy gateway.
-Pure SQLite backend, zero external infrastructure. Node.js >= 22, pnpm monorepo.
+Embedded Turso + Drizzle backend by default, with optional remote Turso URL/token configuration. No external infrastructure is required. Node.js >= 22.12.0, pnpm monorepo.
 
 ## Packages
 
 | Package | Name | Role |
 |---------|------|------|
-| `packages/shared` | `@peri-fuse/shared` | Domain logic, Prisma DB, ingestion, OTLP |
+| `packages/shared` | `@peri-fuse/shared` | Domain logic, Drizzle + embedded Turso DB, ingestion, OTLP |
 | `packages/server` | `@peri-fuse/server` | Hono HTTP server (production port 23332; dev port 23432) |
 | `packages/gateway` | `@peri/gateway` | LLM proxy gateway (port 4100) |
 | `packages/web` | `@peri-fuse/web` | React SPA dashboard |

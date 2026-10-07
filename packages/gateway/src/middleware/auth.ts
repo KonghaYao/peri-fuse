@@ -10,6 +10,7 @@
  * into the Hono context for downstream resource isolation.
  */
 import { createHash } from "node:crypto";
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 import { compare } from "bcryptjs";
 import { and, eq } from "drizzle-orm";
 import type { Context, Next } from "hono";
@@ -83,22 +84,22 @@ function extractBasicCredentials(header: string): { publicKey: string; secretKey
 }
 
 async function findLegacyApiKeyBySecret(
-  db: ReturnType<typeof getSharedApiKeyDb>,
+  db: Awaited<ReturnType<typeof getSharedApiKeyDb>>,
   secretKey: string,
 ): Promise<LegacyApiKeyRow | null> {
   let cursor = "";
 
   while (true) {
-    const rows = db
-      .prepare(
-        `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key,
+    const rows = (await db.all(
+      `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key,
                 project_id, organization_id, scope, expires_at
          FROM api_keys
          WHERE fast_hashed_secret_key IS NULL AND id > ?
          ORDER BY id
          LIMIT ?`,
-      )
-      .all(cursor, LEGACY_KEY_BATCH_SIZE) as LegacyApiKeyRow[];
+      cursor,
+      LEGACY_KEY_BATCH_SIZE,
+    )) as LegacyApiKeyRow[];
 
     for (const row of rows) {
       if (await compare(secretKey, row.hashed_secret_key)) return row;
@@ -179,7 +180,7 @@ export async function unifiedAuth(
   }
 
   // Verify against shared DB
-  const db = getSharedApiKeyDb();
+  const db = await getSharedApiKeyDb();
   const salt = process.env.SALT;
 
   let apiKeyRow: any = null;
@@ -188,21 +189,19 @@ export async function unifiedAuth(
   if (salt) {
     const fastHash = createShaHash(secretKey, salt);
     apiKeyRow =
-      (db
-        .prepare(
-          `SELECT id, public_key, project_id, organization_id, scope, expires_at FROM api_keys WHERE fast_hashed_secret_key = ? LIMIT 1`,
-        )
-        .get(fastHash) as any) ?? null;
+      ((await db.get(
+        `SELECT id, public_key, project_id, organization_id, scope, expires_at FROM api_keys WHERE fast_hashed_secret_key = ? LIMIT 1`,
+        fastHash,
+      )) as any) ?? null;
   }
 
   // If Basic auth provided a public key hint, try direct lookup
   if (!apiKeyRow && hintPublicKey) {
     apiKeyRow =
-      (db
-        .prepare(
-          `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key, project_id, organization_id, scope, expires_at FROM api_keys WHERE public_key = ? LIMIT 1`,
-        )
-        .get(hintPublicKey) as any) ?? null;
+      ((await db.get(
+        `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key, project_id, organization_id, scope, expires_at FROM api_keys WHERE public_key = ? LIMIT 1`,
+        hintPublicKey,
+      )) as any) ?? null;
 
     if (!apiKeyRow) {
       return c.json({ error: { message: "Invalid API key", type: "authentication_error" } }, 401);
@@ -219,7 +218,8 @@ export async function unifiedAuth(
     if (salt && !apiKeyRow.fast_hashed_secret_key) {
       const shaHash = createShaHash(secretKey, salt);
       try {
-        db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(
+        await db.run(
+          `UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`,
           shaHash,
           apiKeyRow.id,
         );
@@ -253,7 +253,8 @@ export async function unifiedAuth(
         if (salt) {
           const shaHash = createShaHash(secretKey, salt);
           try {
-            db.prepare(`UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`).run(
+            await db.run(
+              `UPDATE api_keys SET fast_hashed_secret_key = ? WHERE id = ?`,
               shaHash,
               legacyRow.id,
             );
@@ -333,7 +334,7 @@ export async function unifiedAuth(
 async function getGatewayConfig(publicKey: string, projectId: string) {
   const db = getDb();
   const config = await db.query.apiKey.findFirst({
-    where: and(eq(apiKey.publicKey, publicKey), eq(apiKey.projectId, projectId)),
+    where: relationalFilter(and(eq(apiKey.publicKey, publicKey), eq(apiKey.projectId, projectId))),
   });
 
   if (!config) {

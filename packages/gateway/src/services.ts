@@ -3,6 +3,7 @@
  * server process. The standalone gateway entrypoint (index.ts) also uses these.
  */
 
+import { closeSharedApiKeyDb } from "./auth/shared-api-key-store.js";
 import { startCooldownRecovery, stopCooldownRecovery } from "./router/cooldown.js";
 import { slowLogWriter } from "./slow-log/writer.js";
 import { startBudgetReset, stopBudgetReset } from "./spend/budget-reset.js";
@@ -24,11 +25,12 @@ export function startGatewayServices(): void {
  */
 export async function stopGatewayServices(): Promise<void> {
   spendFlusher.stop();
-  stopBudgetReset();
+  await stopBudgetReset();
   stopCooldownRecovery();
   try {
     await spendFlusher.flushAll();
   } finally {
     await slowLogWriter.close();
+    await closeSharedApiKeyDb();
   }
 }

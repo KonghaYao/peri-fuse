@@ -67,7 +67,7 @@ chat.post("/v1/chat/completions", async (c) => {
   // Run pre-call hooks (rate limiting, budget checks)
   try {
     requestSignal.throwIfAborted();
-    spendFlusher.assertWritable();
+    await spendFlusher.assertWritable();
     await hookRegistry.runPreCall(hookCtx);
   } catch (err: any) {
     const status = err.statusCode ?? 429;
@@ -124,7 +124,7 @@ chat.post("/v1/chat/completions", async (c) => {
             result.deployment.modelInfo,
           );
 
-          spendFlusher.enqueue({
+          await spendFlusher.enqueue({
             projectId,
             callType: "chat",
             apiKey: hookCtx.apiKey.publicKey,
@@ -195,7 +195,7 @@ chat.post("/v1/chat/completions", async (c) => {
     };
 
     // Track spend
-    spendFlusher.enqueue({
+    await spendFlusher.enqueue({
       projectId,
       callType: "chat",
       apiKey: hookCtx.apiKey.publicKey,

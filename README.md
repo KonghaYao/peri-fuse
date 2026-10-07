@@ -2,7 +2,10 @@
 
 A lightweight, self-contained LLM observability server — the open-source platform for tracing, evaluating, and debugging AI applications.
 
-Peri-Fuse runs entirely on **SQLite** with no external dependencies (no ClickHouse, Redis, S3, or BullMQ). It's designed for local development, small teams, and edge deployments.
+Peri-Fuse uses **embedded Turso + Drizzle** by default, with no external infrastructure (no ClickHouse, Redis, S3, or BullMQ). You can optionally replace local databases with remote Turso using a URL and auth token. It's designed for local development, small teams, and edge deployments.
+
+This release initializes fresh `.turso.db` databases; existing SQLite files are not converted or deleted. See [embedded Turso storage](docs/embedded-turso.md) for pinned versions, migrations, concurrency and maintenance.
+Requires Node.js 22.12.0 or newer.
 
 ## Features
 
@@ -37,7 +40,7 @@ bind-mounted `./data` directory intact.
 
 ### Source development
 
-Source development requires Node.js 22 or newer and pnpm 10:
+Source development requires Node.js 22.12.0 or newer and pnpm 10:
 
 ```bash
 pnpm install
@@ -89,11 +92,29 @@ See [`.env.example`](.env.example) for a ready-to-copy set of common options. Ke
 |----------|---------|-------------|
 | `LITE_SERVER_PORT` | `23332` | API and dashboard port. The root `pnpm dev` script explicitly uses `23432`. |
 | `PERIFUSE_HOME` | `~/.peri-fuse` | Persistent data directory. The Docker image uses `/app/data`, bound to `./data` by Compose. |
-| `DATABASE_URL` | `file:<PERIFUSE_HOME>/langfuse.db` | Auth and metadata SQLite database. |
-| `LANGFUSE_SQLITE_DB_PATH` | `<PERIFUSE_HOME>/telemetry.db` | Trace, observation, and score SQLite database. |
+| `DATABASE_URL` | `file:<PERIFUSE_HOME>/langfuse.turso.db` | Auth and metadata SQLite database. |
+| `TURSO_DATABASE_URL` | unset | Optional remote Turso URL for all three database domains. |
+| `TURSO_AUTH_TOKEN` | unset | Required auth token when a remote URL is configured. |
+| `LANGFUSE_SQLITE_DB_PATH` | `<PERIFUSE_HOME>/telemetry.turso.db` | Trace, observation, and score SQLite database. |
 | `SALT` | generated and persisted | API-key hash salt stored at `<PERIFUSE_HOME>/.salt` when unset. |
 | `LITE_LARGE_RESPONSE_THRESHOLD_BYTES` | `1048576` | Response-size warning threshold in bytes. |
 | `PERIFUSE_TELEMETRY_RETENTION_DAYS` | disabled | Optional retention period; unset or `0` disables automatic purging. |
+
+To use remote Turso, add these settings to `.env` (or export them before starting the service):
+
+```dotenv
+TURSO_DATABASE_URL=libsql://your-database-your-org.turso.io
+TURSO_AUTH_TOKEN=your-database-token
+```
+
+Metadata, telemetry, and Gateway then share that remote database, including search workers.
+For separate databases or mixed local/remote storage, use `TURSO_METADATA_DATABASE_URL`,
+`TURSO_TELEMETRY_DATABASE_URL`, or `TURSO_GATEWAY_DATABASE_URL`, with the corresponding
+`TURSO_<ROLE>_AUTH_TOKEN` if needed. Role settings override global settings, which override
+legacy local paths. Startup applies migrations to a fresh database; existing local data is
+not uploaded. Connection/auth failures never silently fall back to local storage. Keep
+`SALT` and `GATEWAY_ENCRYPTION_KEY` stable across hosts, or preserve `PERIFUSE_HOME`.
+See [storage configuration](docs/embedded-turso.md) for details.
 
 The checked-in [`.env.example`](.env.example) explicitly selects port `23432` for source
 development. Copying it unchanged also overrides the CLI and Compose defaults, so adjust or

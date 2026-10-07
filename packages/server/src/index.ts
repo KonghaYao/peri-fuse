@@ -18,41 +18,38 @@ import { createApp } from "./app";
 import { ensureBootstrap } from "./bootstrap";
 import { ensurePrismaSchema } from "./db-init";
 import { liteEnv } from "./env";
-import { ensureGatewaySchema, migrateOrphanedGatewayData } from "./gateway-init";
-
-// Auto-create metadata tables on first boot (no manual migration needed)
-ensurePrismaSchema();
-
-// Auto-create gateway tables on first boot (no manual migration needed)
-ensureGatewaySchema();
-
-// Start gateway background services (spend flusher, budget reset, cooldown recovery)
-startGatewayServices();
+import { ensureGatewaySchema } from "./gateway-init";
 
 // Dashboard rollup maintenance (backfill missing days + refresh recent days)
-const stopStatsMaintenance = startDailyStatsMaintenance();
+let stopStatsMaintenance = async () => {};
 // Optional retention purge (PERIFUSE_TELEMETRY_RETENTION_DAYS; off by default)
-const stopRetentionJob = startRetentionJob();
+let stopRetentionJob = async () => {};
 const telemetryAdapter = getTelemetryDB();
 const sessionSearch =
   telemetryAdapter instanceof SQLiteTelemetryAdapter
     ? new SessionSearchLifecycle(telemetryAdapter.getDatabase())
     : undefined;
-sessionSearch?.start();
 
 const app = createApp();
 
-const server = serve({ fetch: app.fetch, port: liteEnv.port }, (info) => {
-  logger.info(
-    `[lite-server] Peri-Fuse server listening on http://localhost:${info.port} (mode=${process.env.LANGFUSE_MODE})`,
-  );
-});
+let server: ReturnType<typeof serve> | undefined;
+let shuttingDown = false;
 
 async function main() {
+  await ensurePrismaSchema();
+  await ensureGatewaySchema();
+  if (telemetryAdapter instanceof SQLiteTelemetryAdapter) await telemetryAdapter.initialize();
   // Create default org/project/API key if database is empty
   await ensureBootstrap();
-  // Assign pre-project-scoping gateway rows (empty projectId) to the oldest project
-  await migrateOrphanedGatewayData();
+  startGatewayServices();
+  stopStatsMaintenance = startDailyStatsMaintenance();
+  stopRetentionJob = startRetentionJob();
+  sessionSearch?.start();
+  server = serve({ fetch: app.fetch, port: liteEnv.port }, (info) => {
+    logger.info(
+      `[lite-server] Peri-Fuse server listening on http://localhost:${info.port} (mode=${process.env.LANGFUSE_MODE})`,
+    );
+  });
 }
 
 main().catch((err) => {
@@ -62,10 +59,14 @@ main().catch((err) => {
 
 // Graceful shutdown — close HTTP server and SQLite connections so tsx watch can restart cleanly
 async function shutdown() {
-  server.close();
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await new Promise<void>((resolve, reject) => {
+    if (!server) return resolve();
+    server.close((error?: Error) => (error ? reject(error) : resolve()));
+  });
   await app.close();
-  stopStatsMaintenance();
-  stopRetentionJob();
+  await Promise.all([stopStatsMaintenance(), stopRetentionJob()]);
   await sessionSearch?.stop();
   await stopSessionSearchReadPool(telemetryAdapter);
   try {
@@ -75,16 +76,17 @@ async function shutdown() {
   }
   try {
     const { closeDb } = await import("@peri-fuse/shared/src/db");
-    closeDb();
+    await closeDb();
   } catch {
     /* ignore */
   }
   try {
     const { closeDb } = await import("@peri/gateway/db");
-    closeDb();
+    await closeDb();
   } catch {
     /* ignore */
   }
+  await telemetryAdapter.close();
   process.exit(0);
 }
 process.on("SIGTERM", shutdown);

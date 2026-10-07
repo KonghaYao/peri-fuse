@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 import { and, eq, inArray } from "drizzle-orm";
 import { v4 } from "uuid";
 import { prisma, toKnownRequestError } from "../../../db";
@@ -221,9 +222,11 @@ export class TableViewService {
     projectId: string,
   ): Promise<TableViewPresetsNamesCreatorList> {
     const rows = await prisma.query.tableViewPresets.findMany({
-      where: and(
-        inArray(preset.tableName, getReadCompatibleTableNames(tableName)),
-        eq(preset.projectId, projectId),
+      where: relationalFilter(
+        and(
+          inArray(preset.tableName, getReadCompatibleTableNames(tableName)),
+          eq(preset.projectId, projectId),
+        ),
       ),
       with: {
         user_createdBy: true,

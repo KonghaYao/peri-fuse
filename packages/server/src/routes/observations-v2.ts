@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * GET /api/public/v2/observations
  *
@@ -129,9 +130,11 @@ app.get("/api/public/v2/observations", authMiddleware, responseCache(2_000), asy
   const models =
     uniqueModels.length > 0
       ? await prisma.query.models.findMany({
-          where: and(
-            inArray(modelsTable.id, uniqueModels),
-            or(eq(modelsTable.projectId, auth.scope.projectId), isNull(modelsTable.projectId)),
+          where: relationalFilter(
+            and(
+              inArray(modelsTable.id, uniqueModels),
+              or(eq(modelsTable.projectId, auth.scope.projectId), isNull(modelsTable.projectId)),
+            ),
           ),
           with: {
             prices: true,

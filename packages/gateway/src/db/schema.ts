@@ -1,11 +1,11 @@
 /**
- * Drizzle schema for the PeriGateway database (gateway.db).
+ * Drizzle schema for the PeriGateway database (gateway.turso.db).
  *
  * Migrated from prisma/schema.prisma. Table and column names are preserved
  * exactly (PascalCase tables, camelCase columns) so existing data and raw SQL
  * keep working. Timestamps are stored as ISO-8601 text (Prisma-compatible).
  */
-import { relations } from "drizzle-orm";
+import { defineRelations } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // ISO-8601 timestamp helpers (Prisma stores DateTime as ISO text in SQLite).
@@ -16,7 +16,7 @@ const nowIso = () => new Date().toISOString();
 // ═══════════════════════════════════════════
 
 export const credential = sqliteTable(
-  "Credential",
+  "credential",
   {
     id: text("id").primaryKey(),
     projectId: text("projectId").notNull(),
@@ -33,7 +33,7 @@ export const credential = sqliteTable(
 );
 
 export const provider = sqliteTable(
-  "Provider",
+  "provider",
   {
     id: text("id").primaryKey(),
     projectId: text("projectId").notNull(),
@@ -59,7 +59,7 @@ export const provider = sqliteTable(
 );
 
 export const modelDeployment = sqliteTable(
-  "ModelDeployment",
+  "modeldeployment",
   {
     id: text("id").primaryKey(),
     projectId: text("projectId").notNull(),
@@ -85,7 +85,7 @@ export const modelDeployment = sqliteTable(
 // ═══════════════════════════════════════════
 
 export const budget = sqliteTable(
-  "Budget",
+  "budget",
   {
     id: text("id").primaryKey(),
     projectId: text("projectId").notNull(),
@@ -108,7 +108,7 @@ export const budget = sqliteTable(
 // ═══════════════════════════════════════════
 
 export const apiKey = sqliteTable(
-  "ApiKey",
+  "apikey",
   {
     id: text("id").primaryKey(),
     projectId: text("projectId").notNull(),
@@ -138,7 +138,7 @@ export const apiKey = sqliteTable(
 // ═══════════════════════════════════════════
 
 export const spendLog = sqliteTable(
-  "SpendLog",
+  "spendlog",
   {
     id: text("id").primaryKey(),
     projectId: text("projectId").notNull().default(""),
@@ -178,7 +178,7 @@ export const spendLog = sqliteTable(
 );
 
 export const errorLog = sqliteTable(
-  "ErrorLog",
+  "errorlog",
   {
     id: text("id").primaryKey(),
     projectId: text("projectId").notNull().default(""),
@@ -204,7 +204,7 @@ export const errorLog = sqliteTable(
 // ═══════════════════════════════════════════
 
 export const dailySpend = sqliteTable(
-  "DailySpend",
+  "dailyspend",
   {
     id: text("id").primaryKey(),
     projectId: text("projectId").notNull().default(""),
@@ -242,7 +242,7 @@ export const dailySpend = sqliteTable(
 // ═══════════════════════════════════════════
 
 export const auditLog = sqliteTable(
-  "AuditLog",
+  "auditlog",
   {
     id: text("id").primaryKey(),
     projectId: text("projectId").notNull().default(""),
@@ -265,24 +265,36 @@ export const auditLog = sqliteTable(
 // Relations (支持 query API 的 include 式加载)
 // ═══════════════════════════════════════════
 
-export const providerRelations = relations(provider, ({ many }) => ({
-  deployments: many(modelDeployment),
-}));
-
-export const modelDeploymentRelations = relations(modelDeployment, ({ one }) => ({
-  provider: one(provider, {
-    fields: [modelDeployment.providerId],
-    references: [provider.id],
+export const databaseRelations = defineRelations(
+  {
+    provider,
+    modelDeployment,
+    budget,
+    apiKey,
+    credential,
+    spendLog,
+    errorLog,
+    dailySpend,
+    auditLog,
+  },
+  (relations) => ({
+    provider: {
+      deployments: relations.many.modelDeployment({
+        from: relations.provider.id,
+        to: relations.modelDeployment.providerId,
+      }),
+    },
+    modelDeployment: {
+      provider: relations.one.provider({
+        from: relations.modelDeployment.providerId,
+        to: relations.provider.id,
+      }),
+    },
+    budget: {
+      keys: relations.many.apiKey({ from: relations.budget.id, to: relations.apiKey.budgetId }),
+    },
+    apiKey: {
+      budget: relations.one.budget({ from: relations.apiKey.budgetId, to: relations.budget.id }),
+    },
   }),
-}));
-
-export const budgetRelations = relations(budget, ({ many }) => ({
-  keys: many(apiKey),
-}));
-
-export const apiKeyRelations = relations(apiKey, ({ one }) => ({
-  budget: one(budget, {
-    fields: [apiKey.budgetId],
-    references: [budget.id],
-  }),
-}));
+);

@@ -1,31 +1,32 @@
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { Worker } from "node:worker_threads";
-import type Database from "better-sqlite3";
+import {
+  getRemoteDatabaseConfig,
+  type LocalDatabase,
+  resolveDatabaseWorkerModule,
+} from "../../db/local";
 import { SESSION_SEARCH_WORKER_SOURCE } from "./worker-source";
 export class SessionSearchLifecycle {
   private worker: Worker | undefined;
-  constructor(private readonly db: Database.Database) {}
-  private handleWorkerMessage(message: unknown): void {
+  constructor(private readonly db: LocalDatabase) {}
+  private async handleWorkerMessage(message: unknown): Promise<void> {
     if (!message || typeof message !== "object") return;
     const event = message as { type?: string; error?: unknown };
     if (event.type === "error") {
       try {
-        this.db
-          .prepare(
-            "INSERT INTO search_index_state(project_id,coverage,last_error,updated_at) VALUES('__global__','error',?,datetime('now')) ON CONFLICT(project_id) DO UPDATE SET coverage='error',last_error=excluded.last_error,updated_at=excluded.updated_at",
-          )
-          .run(String(event.error));
+        await this.db.run(
+          "INSERT INTO search_index_state(project_id,coverage,last_error,updated_at) VALUES('__global__','error',?,datetime('now')) ON CONFLICT(project_id) DO UPDATE SET coverage='error',last_error=excluded.last_error,updated_at=excluded.updated_at",
+          String(event.error),
+        );
       } catch {
         /* database may already be closed */
       }
     } else if (event.type === "tick-ok" || event.type === "ready") {
       try {
-        this.db
-          .prepare(
-            "UPDATE search_index_state SET last_error=NULL,coverage='ready',updated_at=datetime('now') WHERE project_id='__global__'",
-          )
-          .run();
+        await this.db.run(
+          "UPDATE search_index_state SET last_error=NULL,coverage='ready',updated_at=datetime('now') WHERE project_id='__global__'",
+        );
       } catch {
         /* database may already be closed */
       }
@@ -47,12 +48,15 @@ export class SessionSearchLifecycle {
           : existsSync(path.join(__dirname, "src/server/session-search/backfill.js"))
             ? path.join(__dirname, "src/server/session-search/backfill.js")
             : path.join(process.cwd(), "dist/src/server/session-search/backfill.js"),
-        betterSqlitePath: require.resolve("better-sqlite3"),
+        connectionPath: resolveDatabaseWorkerModule(__dirname),
+        authToken: getRemoteDatabaseConfig(this.db)?.authToken,
       },
     });
-    this.worker.on("message", (message) => this.handleWorkerMessage(message));
+    this.worker.on("message", (message) => {
+      void this.handleWorkerMessage(message);
+    });
     this.worker.on("error", (error) => {
-      this.handleWorkerMessage({ type: "error", error });
+      void this.handleWorkerMessage({ type: "error", error });
       this.worker = undefined;
     });
   }
@@ -78,7 +82,7 @@ export class SessionSearchLifecycle {
   }
 }
 
-export function startSessionSearch(db: Database.Database): SessionSearchLifecycle {
+export function startSessionSearch(db: LocalDatabase): SessionSearchLifecycle {
   const lifecycle = new SessionSearchLifecycle(db);
   lifecycle.start();
   return lifecycle;

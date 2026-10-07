@@ -1,715 +1,321 @@
-import { relations } from "drizzle-orm/relations";
-import { users, account, session, organizations, projects, dashboards, apiKeys, inAppAgentConversations, inAppAgentRuns, inAppAgentEvents, inAppAgentPendingToolApprovals, llmApiKeys, organizationMemberships, projectMemberships, membershipInvitations, traceSessions, scoreConfigs, annotationQueues, annotationQueueItems, annotationQueueAssignments, datasets, datasetItems, datasetRuns, comments, commentReactions, notificationPreferences, prompts, promptDependencies, promptProtectedLabels, models, pricingTiers, prices, evalTemplates, jobConfigurations, jobExecutions, defaultLlmModels, verifiedDomains, posthogIntegrations, mixpanelIntegrations, blobStorageIntegrations, webCalloutEndpoints, batchExports, batchActions, media, llmSchemas, llmTools, dashboardWidgets, tableViewPresets, defaultViews, actions, triggers, automations, automationExecutions, monitors, slackIntegrations, pendingDeletions, surveys, cloudSpendAlerts } from "./schema.js";
+import { defineRelations } from "drizzle-orm";
+import * as schema from "./schema.js";
 
-export const accountRelations = relations(account, ({one}) => ({
-	user: one(users, {
-		fields: [account.userId],
-		references: [users.id]
-	}),
-}));
-
-export const usersRelations = relations(users, ({many}) => ({
-	accounts: many(account),
-	sessions: many(session),
-	apiKeys: many(apiKeys),
-	inAppAgentConversations: many(inAppAgentConversations),
-	inAppAgentRuns: many(inAppAgentRuns),
-	organizationMemberships: many(organizationMemberships),
-	projectMemberships: many(projectMemberships),
-	membershipInvitations: many(membershipInvitations),
-	annotationQueueItems_annotatorUserId: many(annotationQueueItems, {
-		relationName: "annotationQueueItems_annotatorUserId_users_id"
-	}),
-	annotationQueueItems_lockedByUserId: many(annotationQueueItems, {
-		relationName: "annotationQueueItems_lockedByUserId_users_id"
-	}),
-	annotationQueueAssignments: many(annotationQueueAssignments),
-	commentReactions: many(commentReactions),
-	notificationPreferences: many(notificationPreferences),
-	dashboards_updatedBy: many(dashboards, {
-		relationName: "dashboards_updatedBy_users_id"
-	}),
-	dashboards_createdBy: many(dashboards, {
-		relationName: "dashboards_createdBy_users_id"
-	}),
-	dashboardWidgets_updatedBy: many(dashboardWidgets, {
-		relationName: "dashboardWidgets_updatedBy_users_id"
-	}),
-	dashboardWidgets_createdBy: many(dashboardWidgets, {
-		relationName: "dashboardWidgets_createdBy_users_id"
-	}),
-	tableViewPresets_updatedBy: many(tableViewPresets, {
-		relationName: "tableViewPresets_updatedBy_users_id"
-	}),
-	tableViewPresets_createdBy: many(tableViewPresets, {
-		relationName: "tableViewPresets_createdBy_users_id"
-	}),
-	defaultViews: many(defaultViews),
-	monitors_updatedBy: many(monitors, {
-		relationName: "monitors_updatedBy_users_id"
-	}),
-	monitors_createdBy: many(monitors, {
-		relationName: "monitors_createdBy_users_id"
-	}),
-	surveys: many(surveys),
-}));
-
-export const sessionRelations = relations(session, ({one}) => ({
-	user: one(users, {
-		fields: [session.userId],
-		references: [users.id]
-	}),
-}));
-
-export const projectsRelations = relations(projects, ({one, many}) => ({
-	organization: one(organizations, {
-		fields: [projects.orgId],
-		references: [organizations.id]
-	}),
-	dashboard: one(dashboards, {
-		fields: [projects.homeDashboardId],
-		references: [dashboards.id],
-		relationName: "projects_homeDashboardId_dashboards_id"
-	}),
-	apiKeys: many(apiKeys),
-	inAppAgentConversations: many(inAppAgentConversations),
-	inAppAgentEvents: many(inAppAgentEvents),
-	inAppAgentRuns: many(inAppAgentRuns),
-	inAppAgentPendingToolApprovals: many(inAppAgentPendingToolApprovals),
-	llmApiKeys: many(llmApiKeys),
-	projectMemberships: many(projectMemberships),
-	membershipInvitations: many(membershipInvitations),
-	traceSessions: many(traceSessions),
-	scoreConfigs: many(scoreConfigs),
-	annotationQueues: many(annotationQueues),
-	annotationQueueItems: many(annotationQueueItems),
-	annotationQueueAssignments: many(annotationQueueAssignments),
-	datasets: many(datasets),
-	comments: many(comments),
-	commentReactions: many(commentReactions),
-	notificationPreferences: many(notificationPreferences),
-	prompts: many(prompts),
-	promptDependencies: many(promptDependencies),
-	promptProtectedLabels: many(promptProtectedLabels),
-	models: many(models),
-	prices: many(prices),
-	evalTemplates: many(evalTemplates),
-	jobConfigurations: many(jobConfigurations),
-	jobExecutions: many(jobExecutions),
-	defaultLlmModels: many(defaultLlmModels),
-	posthogIntegrations: many(posthogIntegrations),
-	mixpanelIntegrations: many(mixpanelIntegrations),
-	blobStorageIntegrations: many(blobStorageIntegrations),
-	webCalloutEndpoints: many(webCalloutEndpoints),
-	batchExports: many(batchExports),
-	batchActions: many(batchActions),
-	media: many(media),
-	llmSchemas: many(llmSchemas),
-	llmTools: many(llmTools),
-	dashboards: many(dashboards, {
-		relationName: "dashboards_projectId_projects_id"
-	}),
-	dashboardWidgets: many(dashboardWidgets),
-	tableViewPresets: many(tableViewPresets),
-	defaultViews: many(defaultViews),
-	actions: many(actions),
-	triggers: many(triggers),
-	automations: many(automations),
-	automationExecutions: many(automationExecutions),
-	monitors: many(monitors),
-	slackIntegrations: many(slackIntegrations),
-	pendingDeletions: many(pendingDeletions),
-}));
-
-export const organizationsRelations = relations(organizations, ({many}) => ({
-	projects: many(projects),
-	apiKeys: many(apiKeys),
-	organizationMemberships: many(organizationMemberships),
-	membershipInvitations: many(membershipInvitations),
-	verifiedDomains: many(verifiedDomains),
-	surveys: many(surveys),
-	cloudSpendAlerts: many(cloudSpendAlerts),
-}));
-
-export const dashboardsRelations = relations(dashboards, ({one, many}) => ({
-	projects: many(projects, {
-		relationName: "projects_homeDashboardId_dashboards_id"
-	}),
-	project: one(projects, {
-		fields: [dashboards.projectId],
-		references: [projects.id],
-		relationName: "dashboards_projectId_projects_id"
-	}),
-	user_updatedBy: one(users, {
-		fields: [dashboards.updatedBy],
-		references: [users.id],
-		relationName: "dashboards_updatedBy_users_id"
-	}),
-	user_createdBy: one(users, {
-		fields: [dashboards.createdBy],
-		references: [users.id],
-		relationName: "dashboards_createdBy_users_id"
-	}),
-}));
-
-export const apiKeysRelations = relations(apiKeys, ({one, many}) => ({
-	apiKey: one(apiKeys, {
-		fields: [apiKeys.createdByApiKeyId],
-		references: [apiKeys.id],
-		relationName: "apiKeys_createdByApiKeyId_apiKeys_id"
-	}),
-	apiKeys: many(apiKeys, {
-		relationName: "apiKeys_createdByApiKeyId_apiKeys_id"
-	}),
-	user: one(users, {
-		fields: [apiKeys.createdByUserId],
-		references: [users.id]
-	}),
-	organization: one(organizations, {
-		fields: [apiKeys.organizationId],
-		references: [organizations.id]
-	}),
-	project: one(projects, {
-		fields: [apiKeys.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const inAppAgentConversationsRelations = relations(inAppAgentConversations, ({one, many}) => ({
-	user: one(users, {
-		fields: [inAppAgentConversations.createdByUserId],
-		references: [users.id]
-	}),
-	project: one(projects, {
-		fields: [inAppAgentConversations.projectId],
-		references: [projects.id]
-	}),
-	inAppAgentEvents: many(inAppAgentEvents),
-	inAppAgentRuns: many(inAppAgentRuns),
-	inAppAgentPendingToolApprovals: many(inAppAgentPendingToolApprovals),
-}));
-
-export const inAppAgentEventsRelations = relations(inAppAgentEvents, ({one}) => ({
-	inAppAgentRun: one(inAppAgentRuns, {
-		fields: [inAppAgentEvents.runId],
-		references: [inAppAgentRuns.id]
-	}),
-	inAppAgentConversation: one(inAppAgentConversations, {
-		fields: [inAppAgentEvents.conversationId],
-		references: [inAppAgentConversations.id]
-	}),
-	project: one(projects, {
-		fields: [inAppAgentEvents.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const inAppAgentRunsRelations = relations(inAppAgentRuns, ({one, many}) => ({
-	inAppAgentEvents: many(inAppAgentEvents),
-	user: one(users, {
-		fields: [inAppAgentRuns.triggeredByUserId],
-		references: [users.id]
-	}),
-	inAppAgentConversation: one(inAppAgentConversations, {
-		fields: [inAppAgentRuns.conversationId],
-		references: [inAppAgentConversations.id]
-	}),
-	project: one(projects, {
-		fields: [inAppAgentRuns.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const inAppAgentPendingToolApprovalsRelations = relations(inAppAgentPendingToolApprovals, ({one}) => ({
-	inAppAgentConversation: one(inAppAgentConversations, {
-		fields: [inAppAgentPendingToolApprovals.conversationId],
-		references: [inAppAgentConversations.id]
-	}),
-	project: one(projects, {
-		fields: [inAppAgentPendingToolApprovals.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const llmApiKeysRelations = relations(llmApiKeys, ({one, many}) => ({
-	project: one(projects, {
-		fields: [llmApiKeys.projectId],
-		references: [projects.id]
-	}),
-	defaultLlmModels: many(defaultLlmModels),
-}));
-
-export const organizationMembershipsRelations = relations(organizationMemberships, ({one, many}) => ({
-	user: one(users, {
-		fields: [organizationMemberships.userId],
-		references: [users.id]
-	}),
-	organization: one(organizations, {
-		fields: [organizationMemberships.orgId],
-		references: [organizations.id]
-	}),
-	projectMemberships: many(projectMemberships),
-}));
-
-export const projectMembershipsRelations = relations(projectMemberships, ({one}) => ({
-	user: one(users, {
-		fields: [projectMemberships.userId],
-		references: [users.id]
-	}),
-	project: one(projects, {
-		fields: [projectMemberships.projectId],
-		references: [projects.id]
-	}),
-	organizationMembership: one(organizationMemberships, {
-		fields: [projectMemberships.orgMembershipId],
-		references: [organizationMemberships.id]
-	}),
-}));
-
-export const membershipInvitationsRelations = relations(membershipInvitations, ({one}) => ({
-	user: one(users, {
-		fields: [membershipInvitations.invitedByUserId],
-		references: [users.id]
-	}),
-	project: one(projects, {
-		fields: [membershipInvitations.projectId],
-		references: [projects.id]
-	}),
-	organization: one(organizations, {
-		fields: [membershipInvitations.orgId],
-		references: [organizations.id]
-	}),
-}));
-
-export const traceSessionsRelations = relations(traceSessions, ({one}) => ({
-	project: one(projects, {
-		fields: [traceSessions.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const scoreConfigsRelations = relations(scoreConfigs, ({one}) => ({
-	project: one(projects, {
-		fields: [scoreConfigs.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const annotationQueuesRelations = relations(annotationQueues, ({one, many}) => ({
-	project: one(projects, {
-		fields: [annotationQueues.projectId],
-		references: [projects.id]
-	}),
-	annotationQueueItems: many(annotationQueueItems),
-	annotationQueueAssignments: many(annotationQueueAssignments),
-}));
-
-export const annotationQueueItemsRelations = relations(annotationQueueItems, ({one}) => ({
-	project: one(projects, {
-		fields: [annotationQueueItems.projectId],
-		references: [projects.id]
-	}),
-	user_annotatorUserId: one(users, {
-		fields: [annotationQueueItems.annotatorUserId],
-		references: [users.id],
-		relationName: "annotationQueueItems_annotatorUserId_users_id"
-	}),
-	user_lockedByUserId: one(users, {
-		fields: [annotationQueueItems.lockedByUserId],
-		references: [users.id],
-		relationName: "annotationQueueItems_lockedByUserId_users_id"
-	}),
-	annotationQueue: one(annotationQueues, {
-		fields: [annotationQueueItems.queueId],
-		references: [annotationQueues.id]
-	}),
-}));
-
-export const annotationQueueAssignmentsRelations = relations(annotationQueueAssignments, ({one}) => ({
-	annotationQueue: one(annotationQueues, {
-		fields: [annotationQueueAssignments.queueId],
-		references: [annotationQueues.id]
-	}),
-	user: one(users, {
-		fields: [annotationQueueAssignments.userId],
-		references: [users.id]
-	}),
-	project: one(projects, {
-		fields: [annotationQueueAssignments.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const datasetsRelations = relations(datasets, ({one, many}) => ({
-	project: one(projects, {
-		fields: [datasets.projectId],
-		references: [projects.id]
-	}),
-	datasetItems: many(datasetItems),
-	datasetRuns: many(datasetRuns),
-}));
-
-export const datasetItemsRelations = relations(datasetItems, ({one}) => ({
-	dataset: one(datasets, {
-		fields: [datasetItems.datasetId],
-		references: [datasets.id]
-	}),
-}));
-
-export const datasetRunsRelations = relations(datasetRuns, ({one}) => ({
-	dataset: one(datasets, {
-		fields: [datasetRuns.datasetId],
-		references: [datasets.id]
-	}),
-}));
-
-export const commentsRelations = relations(comments, ({one, many}) => ({
-	project: one(projects, {
-		fields: [comments.projectId],
-		references: [projects.id]
-	}),
-	commentReactions: many(commentReactions),
-}));
-
-export const commentReactionsRelations = relations(commentReactions, ({one}) => ({
-	user: one(users, {
-		fields: [commentReactions.userId],
-		references: [users.id]
-	}),
-	comment: one(comments, {
-		fields: [commentReactions.commentId],
-		references: [comments.id]
-	}),
-	project: one(projects, {
-		fields: [commentReactions.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const notificationPreferencesRelations = relations(notificationPreferences, ({one}) => ({
-	project: one(projects, {
-		fields: [notificationPreferences.projectId],
-		references: [projects.id]
-	}),
-	user: one(users, {
-		fields: [notificationPreferences.userId],
-		references: [users.id]
-	}),
-}));
-
-export const promptsRelations = relations(prompts, ({one, many}) => ({
-	project: one(projects, {
-		fields: [prompts.projectId],
-		references: [projects.id]
-	}),
-	promptDependencies: many(promptDependencies),
-}));
-
-export const promptDependenciesRelations = relations(promptDependencies, ({one}) => ({
-	prompt: one(prompts, {
-		fields: [promptDependencies.parentId],
-		references: [prompts.id]
-	}),
-	project: one(projects, {
-		fields: [promptDependencies.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const promptProtectedLabelsRelations = relations(promptProtectedLabels, ({one}) => ({
-	project: one(projects, {
-		fields: [promptProtectedLabels.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const modelsRelations = relations(models, ({one, many}) => ({
-	project: one(projects, {
-		fields: [models.projectId],
-		references: [projects.id]
-	}),
-	prices: many(prices),
-	pricingTiers: many(pricingTiers),
-}));
-
-export const pricesRelations = relations(prices, ({one}) => ({
-	pricingTier: one(pricingTiers, {
-		fields: [prices.pricingTierId],
-		references: [pricingTiers.id]
-	}),
-	project: one(projects, {
-		fields: [prices.projectId],
-		references: [projects.id]
-	}),
-	model: one(models, {
-		fields: [prices.modelId],
-		references: [models.id]
-	}),
-}));
-
-export const pricingTiersRelations = relations(pricingTiers, ({one, many}) => ({
-	prices: many(prices),
-	model: one(models, {
-		fields: [pricingTiers.modelId],
-		references: [models.id]
-	}),
-}));
-
-export const evalTemplatesRelations = relations(evalTemplates, ({one, many}) => ({
-	project: one(projects, {
-		fields: [evalTemplates.projectId],
-		references: [projects.id]
-	}),
-	jobConfigurations: many(jobConfigurations),
-}));
-
-export const jobConfigurationsRelations = relations(jobConfigurations, ({one, many}) => ({
-	evalTemplate: one(evalTemplates, {
-		fields: [jobConfigurations.evalTemplateId],
-		references: [evalTemplates.id]
-	}),
-	project: one(projects, {
-		fields: [jobConfigurations.projectId],
-		references: [projects.id]
-	}),
-	jobExecutions: many(jobExecutions),
-}));
-
-export const jobExecutionsRelations = relations(jobExecutions, ({one}) => ({
-	jobConfiguration: one(jobConfigurations, {
-		fields: [jobExecutions.jobConfigurationId],
-		references: [jobConfigurations.id]
-	}),
-	project: one(projects, {
-		fields: [jobExecutions.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const defaultLlmModelsRelations = relations(defaultLlmModels, ({one}) => ({
-	llmApiKey: one(llmApiKeys, {
-		fields: [defaultLlmModels.llmApiKeyId],
-		references: [llmApiKeys.id]
-	}),
-	project: one(projects, {
-		fields: [defaultLlmModels.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const verifiedDomainsRelations = relations(verifiedDomains, ({one}) => ({
-	organization: one(organizations, {
-		fields: [verifiedDomains.organizationId],
-		references: [organizations.id]
-	}),
-}));
-
-export const posthogIntegrationsRelations = relations(posthogIntegrations, ({one}) => ({
-	project: one(projects, {
-		fields: [posthogIntegrations.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const mixpanelIntegrationsRelations = relations(mixpanelIntegrations, ({one}) => ({
-	project: one(projects, {
-		fields: [mixpanelIntegrations.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const blobStorageIntegrationsRelations = relations(blobStorageIntegrations, ({one}) => ({
-	project: one(projects, {
-		fields: [blobStorageIntegrations.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const webCalloutEndpointsRelations = relations(webCalloutEndpoints, ({one}) => ({
-	project: one(projects, {
-		fields: [webCalloutEndpoints.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const batchExportsRelations = relations(batchExports, ({one}) => ({
-	project: one(projects, {
-		fields: [batchExports.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const batchActionsRelations = relations(batchActions, ({one}) => ({
-	project: one(projects, {
-		fields: [batchActions.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const mediaRelations = relations(media, ({one}) => ({
-	project: one(projects, {
-		fields: [media.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const llmSchemasRelations = relations(llmSchemas, ({one}) => ({
-	project: one(projects, {
-		fields: [llmSchemas.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const llmToolsRelations = relations(llmTools, ({one}) => ({
-	project: one(projects, {
-		fields: [llmTools.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const dashboardWidgetsRelations = relations(dashboardWidgets, ({one}) => ({
-	project: one(projects, {
-		fields: [dashboardWidgets.projectId],
-		references: [projects.id]
-	}),
-	user_updatedBy: one(users, {
-		fields: [dashboardWidgets.updatedBy],
-		references: [users.id],
-		relationName: "dashboardWidgets_updatedBy_users_id"
-	}),
-	user_createdBy: one(users, {
-		fields: [dashboardWidgets.createdBy],
-		references: [users.id],
-		relationName: "dashboardWidgets_createdBy_users_id"
-	}),
-}));
-
-export const tableViewPresetsRelations = relations(tableViewPresets, ({one}) => ({
-	user_updatedBy: one(users, {
-		fields: [tableViewPresets.updatedBy],
-		references: [users.id],
-		relationName: "tableViewPresets_updatedBy_users_id"
-	}),
-	user_createdBy: one(users, {
-		fields: [tableViewPresets.createdBy],
-		references: [users.id],
-		relationName: "tableViewPresets_createdBy_users_id"
-	}),
-	project: one(projects, {
-		fields: [tableViewPresets.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const defaultViewsRelations = relations(defaultViews, ({one}) => ({
-	user: one(users, {
-		fields: [defaultViews.userId],
-		references: [users.id]
-	}),
-	project: one(projects, {
-		fields: [defaultViews.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const actionsRelations = relations(actions, ({one, many}) => ({
-	project: one(projects, {
-		fields: [actions.projectId],
-		references: [projects.id]
-	}),
-	automations: many(automations),
-	automationExecutions: many(automationExecutions),
-}));
-
-export const triggersRelations = relations(triggers, ({one, many}) => ({
-	project: one(projects, {
-		fields: [triggers.projectId],
-		references: [projects.id]
-	}),
-	automations: many(automations),
-	automationExecutions: many(automationExecutions),
-}));
-
-export const automationsRelations = relations(automations, ({one, many}) => ({
-	project: one(projects, {
-		fields: [automations.projectId],
-		references: [projects.id]
-	}),
-	action: one(actions, {
-		fields: [automations.actionId],
-		references: [actions.id]
-	}),
-	trigger: one(triggers, {
-		fields: [automations.triggerId],
-		references: [triggers.id]
-	}),
-	automationExecutions: many(automationExecutions),
-}));
-
-export const automationExecutionsRelations = relations(automationExecutions, ({one}) => ({
-	project: one(projects, {
-		fields: [automationExecutions.projectId],
-		references: [projects.id]
-	}),
-	action: one(actions, {
-		fields: [automationExecutions.actionId],
-		references: [actions.id]
-	}),
-	trigger: one(triggers, {
-		fields: [automationExecutions.triggerId],
-		references: [triggers.id]
-	}),
-	automation: one(automations, {
-		fields: [automationExecutions.automationId],
-		references: [automations.id]
-	}),
-}));
-
-export const monitorsRelations = relations(monitors, ({one}) => ({
-	project: one(projects, {
-		fields: [monitors.projectId],
-		references: [projects.id]
-	}),
-	user_updatedBy: one(users, {
-		fields: [monitors.updatedBy],
-		references: [users.id],
-		relationName: "monitors_updatedBy_users_id"
-	}),
-	user_createdBy: one(users, {
-		fields: [monitors.createdBy],
-		references: [users.id],
-		relationName: "monitors_createdBy_users_id"
-	}),
-}));
-
-export const slackIntegrationsRelations = relations(slackIntegrations, ({one}) => ({
-	project: one(projects, {
-		fields: [slackIntegrations.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const pendingDeletionsRelations = relations(pendingDeletions, ({one}) => ({
-	project: one(projects, {
-		fields: [pendingDeletions.projectId],
-		references: [projects.id]
-	}),
-}));
-
-export const surveysRelations = relations(surveys, ({one}) => ({
-	user: one(users, {
-		fields: [surveys.userId],
-		references: [users.id]
-	}),
-	organization: one(organizations, {
-		fields: [surveys.orgId],
-		references: [organizations.id]
-	}),
-}));
-
-export const cloudSpendAlertsRelations = relations(cloudSpendAlerts, ({one}) => ({
-	organization: one(organizations, {
-		fields: [cloudSpendAlerts.orgId],
-		references: [organizations.id]
-	}),
+export const databaseRelations = defineRelations(schema, (relations) => ({
+  account: {
+    user: relations.one.users({ from: [relations.account.userId], to: [relations.users.id] }),
+  },
+  users: {
+    accounts: relations.many.account({ from: [relations.users.id], to: [relations.account.userId] }),
+    sessions: relations.many.session({ from: [relations.users.id], to: [relations.session.userId] }),
+    apiKeys: relations.many.apiKeys({ from: [relations.users.id], to: [relations.apiKeys.createdByUserId] }),
+    inAppAgentConversations: relations.many.inAppAgentConversations({ from: [relations.users.id], to: [relations.inAppAgentConversations.createdByUserId] }),
+    inAppAgentRuns: relations.many.inAppAgentRuns({ from: [relations.users.id], to: [relations.inAppAgentRuns.triggeredByUserId] }),
+    organizationMemberships: relations.many.organizationMemberships({ from: [relations.users.id], to: [relations.organizationMemberships.userId] }),
+    projectMemberships: relations.many.projectMemberships({ from: [relations.users.id], to: [relations.projectMemberships.userId] }),
+    membershipInvitations: relations.many.membershipInvitations({ from: [relations.users.id], to: [relations.membershipInvitations.invitedByUserId] }),
+    annotationQueueItems_annotatorUserId: relations.many.annotationQueueItems({ from: [relations.users.id], to: [relations.annotationQueueItems.annotatorUserId], alias: "annotationQueueItems_annotatorUserId_users_id" }),
+    annotationQueueItems_lockedByUserId: relations.many.annotationQueueItems({ from: [relations.users.id], to: [relations.annotationQueueItems.lockedByUserId], alias: "annotationQueueItems_lockedByUserId_users_id" }),
+    annotationQueueAssignments: relations.many.annotationQueueAssignments({ from: [relations.users.id], to: [relations.annotationQueueAssignments.userId] }),
+    commentReactions: relations.many.commentReactions({ from: [relations.users.id], to: [relations.commentReactions.userId] }),
+    notificationPreferences: relations.many.notificationPreferences({ from: [relations.users.id], to: [relations.notificationPreferences.userId] }),
+    dashboards_updatedBy: relations.many.dashboards({ from: [relations.users.id], to: [relations.dashboards.updatedBy], alias: "dashboards_updatedBy_users_id" }),
+    dashboards_createdBy: relations.many.dashboards({ from: [relations.users.id], to: [relations.dashboards.createdBy], alias: "dashboards_createdBy_users_id" }),
+    dashboardWidgets_updatedBy: relations.many.dashboardWidgets({ from: [relations.users.id], to: [relations.dashboardWidgets.updatedBy], alias: "dashboardWidgets_updatedBy_users_id" }),
+    dashboardWidgets_createdBy: relations.many.dashboardWidgets({ from: [relations.users.id], to: [relations.dashboardWidgets.createdBy], alias: "dashboardWidgets_createdBy_users_id" }),
+    tableViewPresets_updatedBy: relations.many.tableViewPresets({ from: [relations.users.id], to: [relations.tableViewPresets.updatedBy], alias: "tableViewPresets_updatedBy_users_id" }),
+    tableViewPresets_createdBy: relations.many.tableViewPresets({ from: [relations.users.id], to: [relations.tableViewPresets.createdBy], alias: "tableViewPresets_createdBy_users_id" }),
+    defaultViews: relations.many.defaultViews({ from: [relations.users.id], to: [relations.defaultViews.userId] }),
+    monitors_updatedBy: relations.many.monitors({ from: [relations.users.id], to: [relations.monitors.updatedBy], alias: "monitors_updatedBy_users_id" }),
+    monitors_createdBy: relations.many.monitors({ from: [relations.users.id], to: [relations.monitors.createdBy], alias: "monitors_createdBy_users_id" }),
+    surveys: relations.many.surveys({ from: [relations.users.id], to: [relations.surveys.userId] }),
+  },
+  session: {
+    user: relations.one.users({ from: [relations.session.userId], to: [relations.users.id] }),
+  },
+  projects: {
+    organization: relations.one.organizations({ from: [relations.projects.orgId], to: [relations.organizations.id] }),
+    dashboard: relations.one.dashboards({ from: [relations.projects.homeDashboardId], to: [relations.dashboards.id], alias: "projects_homeDashboardId_dashboards_id" }),
+    apiKeys: relations.many.apiKeys({ from: [relations.projects.id], to: [relations.apiKeys.projectId] }),
+    inAppAgentConversations: relations.many.inAppAgentConversations({ from: [relations.projects.id], to: [relations.inAppAgentConversations.projectId] }),
+    inAppAgentEvents: relations.many.inAppAgentEvents({ from: [relations.projects.id], to: [relations.inAppAgentEvents.projectId] }),
+    inAppAgentRuns: relations.many.inAppAgentRuns({ from: [relations.projects.id], to: [relations.inAppAgentRuns.projectId] }),
+    inAppAgentPendingToolApprovals: relations.many.inAppAgentPendingToolApprovals({ from: [relations.projects.id], to: [relations.inAppAgentPendingToolApprovals.projectId] }),
+    llmApiKeys: relations.many.llmApiKeys({ from: [relations.projects.id], to: [relations.llmApiKeys.projectId] }),
+    projectMemberships: relations.many.projectMemberships({ from: [relations.projects.id], to: [relations.projectMemberships.projectId] }),
+    membershipInvitations: relations.many.membershipInvitations({ from: [relations.projects.id], to: [relations.membershipInvitations.projectId] }),
+    traceSessions: relations.many.traceSessions({ from: [relations.projects.id], to: [relations.traceSessions.projectId] }),
+    scoreConfigs: relations.many.scoreConfigs({ from: [relations.projects.id], to: [relations.scoreConfigs.projectId] }),
+    annotationQueues: relations.many.annotationQueues({ from: [relations.projects.id], to: [relations.annotationQueues.projectId] }),
+    annotationQueueItems: relations.many.annotationQueueItems({ from: [relations.projects.id], to: [relations.annotationQueueItems.projectId] }),
+    annotationQueueAssignments: relations.many.annotationQueueAssignments({ from: [relations.projects.id], to: [relations.annotationQueueAssignments.projectId] }),
+    datasets: relations.many.datasets({ from: [relations.projects.id], to: [relations.datasets.projectId] }),
+    comments: relations.many.comments({ from: [relations.projects.id], to: [relations.comments.projectId] }),
+    commentReactions: relations.many.commentReactions({ from: [relations.projects.id], to: [relations.commentReactions.projectId] }),
+    notificationPreferences: relations.many.notificationPreferences({ from: [relations.projects.id], to: [relations.notificationPreferences.projectId] }),
+    prompts: relations.many.prompts({ from: [relations.projects.id], to: [relations.prompts.projectId] }),
+    promptDependencies: relations.many.promptDependencies({ from: [relations.projects.id], to: [relations.promptDependencies.projectId] }),
+    promptProtectedLabels: relations.many.promptProtectedLabels({ from: [relations.projects.id], to: [relations.promptProtectedLabels.projectId] }),
+    models: relations.many.models({ from: [relations.projects.id], to: [relations.models.projectId] }),
+    prices: relations.many.prices({ from: [relations.projects.id], to: [relations.prices.projectId] }),
+    evalTemplates: relations.many.evalTemplates({ from: [relations.projects.id], to: [relations.evalTemplates.projectId] }),
+    jobConfigurations: relations.many.jobConfigurations({ from: [relations.projects.id], to: [relations.jobConfigurations.projectId] }),
+    jobExecutions: relations.many.jobExecutions({ from: [relations.projects.id], to: [relations.jobExecutions.projectId] }),
+    defaultLlmModels: relations.many.defaultLlmModels({ from: [relations.projects.id], to: [relations.defaultLlmModels.projectId] }),
+    posthogIntegrations: relations.many.posthogIntegrations({ from: [relations.projects.id], to: [relations.posthogIntegrations.projectId] }),
+    mixpanelIntegrations: relations.many.mixpanelIntegrations({ from: [relations.projects.id], to: [relations.mixpanelIntegrations.projectId] }),
+    blobStorageIntegrations: relations.many.blobStorageIntegrations({ from: [relations.projects.id], to: [relations.blobStorageIntegrations.projectId] }),
+    webCalloutEndpoints: relations.many.webCalloutEndpoints({ from: [relations.projects.id], to: [relations.webCalloutEndpoints.projectId] }),
+    batchExports: relations.many.batchExports({ from: [relations.projects.id], to: [relations.batchExports.projectId] }),
+    batchActions: relations.many.batchActions({ from: [relations.projects.id], to: [relations.batchActions.projectId] }),
+    media: relations.many.media({ from: [relations.projects.id], to: [relations.media.projectId] }),
+    llmSchemas: relations.many.llmSchemas({ from: [relations.projects.id], to: [relations.llmSchemas.projectId] }),
+    llmTools: relations.many.llmTools({ from: [relations.projects.id], to: [relations.llmTools.projectId] }),
+    dashboards: relations.many.dashboards({ from: [relations.projects.id], to: [relations.dashboards.projectId], alias: "dashboards_projectId_projects_id" }),
+    dashboardWidgets: relations.many.dashboardWidgets({ from: [relations.projects.id], to: [relations.dashboardWidgets.projectId] }),
+    tableViewPresets: relations.many.tableViewPresets({ from: [relations.projects.id], to: [relations.tableViewPresets.projectId] }),
+    defaultViews: relations.many.defaultViews({ from: [relations.projects.id], to: [relations.defaultViews.projectId] }),
+    actions: relations.many.actions({ from: [relations.projects.id], to: [relations.actions.projectId] }),
+    triggers: relations.many.triggers({ from: [relations.projects.id], to: [relations.triggers.projectId] }),
+    automations: relations.many.automations({ from: [relations.projects.id], to: [relations.automations.projectId] }),
+    automationExecutions: relations.many.automationExecutions({ from: [relations.projects.id], to: [relations.automationExecutions.projectId] }),
+    monitors: relations.many.monitors({ from: [relations.projects.id], to: [relations.monitors.projectId] }),
+    slackIntegrations: relations.many.slackIntegrations({ from: [relations.projects.id], to: [relations.slackIntegrations.projectId] }),
+    pendingDeletions: relations.many.pendingDeletions({ from: [relations.projects.id], to: [relations.pendingDeletions.projectId] }),
+  },
+  organizations: {
+    projects: relations.many.projects({ from: [relations.organizations.id], to: [relations.projects.orgId] }),
+    apiKeys: relations.many.apiKeys({ from: [relations.organizations.id], to: [relations.apiKeys.organizationId] }),
+    organizationMemberships: relations.many.organizationMemberships({ from: [relations.organizations.id], to: [relations.organizationMemberships.orgId] }),
+    membershipInvitations: relations.many.membershipInvitations({ from: [relations.organizations.id], to: [relations.membershipInvitations.orgId] }),
+    verifiedDomains: relations.many.verifiedDomains({ from: [relations.organizations.id], to: [relations.verifiedDomains.organizationId] }),
+    surveys: relations.many.surveys({ from: [relations.organizations.id], to: [relations.surveys.orgId] }),
+    cloudSpendAlerts: relations.many.cloudSpendAlerts({ from: [relations.organizations.id], to: [relations.cloudSpendAlerts.orgId] }),
+  },
+  dashboards: {
+    projects: relations.many.projects({ from: [relations.dashboards.id], to: [relations.projects.homeDashboardId], alias: "projects_homeDashboardId_dashboards_id" }),
+    project: relations.one.projects({ from: [relations.dashboards.projectId], to: [relations.projects.id], alias: "dashboards_projectId_projects_id" }),
+    user_updatedBy: relations.one.users({ from: [relations.dashboards.updatedBy], to: [relations.users.id], alias: "dashboards_updatedBy_users_id" }),
+    user_createdBy: relations.one.users({ from: [relations.dashboards.createdBy], to: [relations.users.id], alias: "dashboards_createdBy_users_id" }),
+  },
+  apiKeys: {
+    apiKey: relations.one.apiKeys({ from: [relations.apiKeys.createdByApiKeyId], to: [relations.apiKeys.id], alias: "apiKeys_createdByApiKeyId_apiKeys_id" }),
+    apiKeys: relations.many.apiKeys({ from: [relations.apiKeys.id], to: [relations.apiKeys.createdByApiKeyId], alias: "apiKeys_createdByApiKeyId_apiKeys_id" }),
+    user: relations.one.users({ from: [relations.apiKeys.createdByUserId], to: [relations.users.id] }),
+    organization: relations.one.organizations({ from: [relations.apiKeys.organizationId], to: [relations.organizations.id] }),
+    project: relations.one.projects({ from: [relations.apiKeys.projectId], to: [relations.projects.id] }),
+  },
+  inAppAgentConversations: {
+    user: relations.one.users({ from: [relations.inAppAgentConversations.createdByUserId], to: [relations.users.id] }),
+    project: relations.one.projects({ from: [relations.inAppAgentConversations.projectId], to: [relations.projects.id] }),
+    inAppAgentEvents: relations.many.inAppAgentEvents({ from: [relations.inAppAgentConversations.id], to: [relations.inAppAgentEvents.conversationId] }),
+    inAppAgentRuns: relations.many.inAppAgentRuns({ from: [relations.inAppAgentConversations.id], to: [relations.inAppAgentRuns.conversationId] }),
+    inAppAgentPendingToolApprovals: relations.many.inAppAgentPendingToolApprovals({ from: [relations.inAppAgentConversations.id], to: [relations.inAppAgentPendingToolApprovals.conversationId] }),
+  },
+  inAppAgentEvents: {
+    inAppAgentRun: relations.one.inAppAgentRuns({ from: [relations.inAppAgentEvents.runId], to: [relations.inAppAgentRuns.id] }),
+    inAppAgentConversation: relations.one.inAppAgentConversations({ from: [relations.inAppAgentEvents.conversationId], to: [relations.inAppAgentConversations.id] }),
+    project: relations.one.projects({ from: [relations.inAppAgentEvents.projectId], to: [relations.projects.id] }),
+  },
+  inAppAgentRuns: {
+    inAppAgentEvents: relations.many.inAppAgentEvents({ from: [relations.inAppAgentRuns.id], to: [relations.inAppAgentEvents.runId] }),
+    user: relations.one.users({ from: [relations.inAppAgentRuns.triggeredByUserId], to: [relations.users.id] }),
+    inAppAgentConversation: relations.one.inAppAgentConversations({ from: [relations.inAppAgentRuns.conversationId], to: [relations.inAppAgentConversations.id] }),
+    project: relations.one.projects({ from: [relations.inAppAgentRuns.projectId], to: [relations.projects.id] }),
+  },
+  inAppAgentPendingToolApprovals: {
+    inAppAgentConversation: relations.one.inAppAgentConversations({ from: [relations.inAppAgentPendingToolApprovals.conversationId], to: [relations.inAppAgentConversations.id] }),
+    project: relations.one.projects({ from: [relations.inAppAgentPendingToolApprovals.projectId], to: [relations.projects.id] }),
+  },
+  llmApiKeys: {
+    project: relations.one.projects({ from: [relations.llmApiKeys.projectId], to: [relations.projects.id] }),
+    defaultLlmModels: relations.many.defaultLlmModels({ from: [relations.llmApiKeys.id], to: [relations.defaultLlmModels.llmApiKeyId] }),
+  },
+  organizationMemberships: {
+    user: relations.one.users({ from: [relations.organizationMemberships.userId], to: [relations.users.id] }),
+    organization: relations.one.organizations({ from: [relations.organizationMemberships.orgId], to: [relations.organizations.id] }),
+    projectMemberships: relations.many.projectMemberships({ from: [relations.organizationMemberships.id], to: [relations.projectMemberships.orgMembershipId] }),
+  },
+  projectMemberships: {
+    user: relations.one.users({ from: [relations.projectMemberships.userId], to: [relations.users.id] }),
+    project: relations.one.projects({ from: [relations.projectMemberships.projectId], to: [relations.projects.id] }),
+    organizationMembership: relations.one.organizationMemberships({ from: [relations.projectMemberships.orgMembershipId], to: [relations.organizationMemberships.id] }),
+  },
+  membershipInvitations: {
+    user: relations.one.users({ from: [relations.membershipInvitations.invitedByUserId], to: [relations.users.id] }),
+    project: relations.one.projects({ from: [relations.membershipInvitations.projectId], to: [relations.projects.id] }),
+    organization: relations.one.organizations({ from: [relations.membershipInvitations.orgId], to: [relations.organizations.id] }),
+  },
+  traceSessions: {
+    project: relations.one.projects({ from: [relations.traceSessions.projectId], to: [relations.projects.id] }),
+  },
+  scoreConfigs: {
+    project: relations.one.projects({ from: [relations.scoreConfigs.projectId], to: [relations.projects.id] }),
+  },
+  annotationQueues: {
+    project: relations.one.projects({ from: [relations.annotationQueues.projectId], to: [relations.projects.id] }),
+    annotationQueueItems: relations.many.annotationQueueItems({ from: [relations.annotationQueues.id], to: [relations.annotationQueueItems.queueId] }),
+    annotationQueueAssignments: relations.many.annotationQueueAssignments({ from: [relations.annotationQueues.id], to: [relations.annotationQueueAssignments.queueId] }),
+  },
+  annotationQueueItems: {
+    project: relations.one.projects({ from: [relations.annotationQueueItems.projectId], to: [relations.projects.id] }),
+    user_annotatorUserId: relations.one.users({ from: [relations.annotationQueueItems.annotatorUserId], to: [relations.users.id], alias: "annotationQueueItems_annotatorUserId_users_id" }),
+    user_lockedByUserId: relations.one.users({ from: [relations.annotationQueueItems.lockedByUserId], to: [relations.users.id], alias: "annotationQueueItems_lockedByUserId_users_id" }),
+    annotationQueue: relations.one.annotationQueues({ from: [relations.annotationQueueItems.queueId], to: [relations.annotationQueues.id] }),
+  },
+  annotationQueueAssignments: {
+    annotationQueue: relations.one.annotationQueues({ from: [relations.annotationQueueAssignments.queueId], to: [relations.annotationQueues.id] }),
+    user: relations.one.users({ from: [relations.annotationQueueAssignments.userId], to: [relations.users.id] }),
+    project: relations.one.projects({ from: [relations.annotationQueueAssignments.projectId], to: [relations.projects.id] }),
+  },
+  datasets: {
+    project: relations.one.projects({ from: [relations.datasets.projectId], to: [relations.projects.id] }),
+    datasetItems: relations.many.datasetItems({ from: [relations.datasets.id], to: [relations.datasetItems.datasetId] }),
+    datasetRuns: relations.many.datasetRuns({ from: [relations.datasets.id], to: [relations.datasetRuns.datasetId] }),
+  },
+  datasetItems: {
+    dataset: relations.one.datasets({ from: [relations.datasetItems.datasetId], to: [relations.datasets.id] }),
+  },
+  datasetRuns: {
+    dataset: relations.one.datasets({ from: [relations.datasetRuns.datasetId], to: [relations.datasets.id] }),
+  },
+  comments: {
+    project: relations.one.projects({ from: [relations.comments.projectId], to: [relations.projects.id] }),
+    commentReactions: relations.many.commentReactions({ from: [relations.comments.id], to: [relations.commentReactions.commentId] }),
+  },
+  commentReactions: {
+    user: relations.one.users({ from: [relations.commentReactions.userId], to: [relations.users.id] }),
+    comment: relations.one.comments({ from: [relations.commentReactions.commentId], to: [relations.comments.id] }),
+    project: relations.one.projects({ from: [relations.commentReactions.projectId], to: [relations.projects.id] }),
+  },
+  notificationPreferences: {
+    project: relations.one.projects({ from: [relations.notificationPreferences.projectId], to: [relations.projects.id] }),
+    user: relations.one.users({ from: [relations.notificationPreferences.userId], to: [relations.users.id] }),
+  },
+  prompts: {
+    project: relations.one.projects({ from: [relations.prompts.projectId], to: [relations.projects.id] }),
+    promptDependencies: relations.many.promptDependencies({ from: [relations.prompts.id], to: [relations.promptDependencies.parentId] }),
+  },
+  promptDependencies: {
+    prompt: relations.one.prompts({ from: [relations.promptDependencies.parentId], to: [relations.prompts.id] }),
+    project: relations.one.projects({ from: [relations.promptDependencies.projectId], to: [relations.projects.id] }),
+  },
+  promptProtectedLabels: {
+    project: relations.one.projects({ from: [relations.promptProtectedLabels.projectId], to: [relations.projects.id] }),
+  },
+  models: {
+    project: relations.one.projects({ from: [relations.models.projectId], to: [relations.projects.id] }),
+    prices: relations.many.prices({ from: [relations.models.id], to: [relations.prices.modelId] }),
+    pricingTiers: relations.many.pricingTiers({ from: [relations.models.id], to: [relations.pricingTiers.modelId] }),
+  },
+  prices: {
+    pricingTier: relations.one.pricingTiers({ from: [relations.prices.pricingTierId], to: [relations.pricingTiers.id] }),
+    project: relations.one.projects({ from: [relations.prices.projectId], to: [relations.projects.id] }),
+    model: relations.one.models({ from: [relations.prices.modelId], to: [relations.models.id] }),
+  },
+  pricingTiers: {
+    prices: relations.many.prices({ from: [relations.pricingTiers.id], to: [relations.prices.pricingTierId] }),
+    model: relations.one.models({ from: [relations.pricingTiers.modelId], to: [relations.models.id] }),
+  },
+  evalTemplates: {
+    project: relations.one.projects({ from: [relations.evalTemplates.projectId], to: [relations.projects.id] }),
+    jobConfigurations: relations.many.jobConfigurations({ from: [relations.evalTemplates.id], to: [relations.jobConfigurations.evalTemplateId] }),
+  },
+  jobConfigurations: {
+    evalTemplate: relations.one.evalTemplates({ from: [relations.jobConfigurations.evalTemplateId], to: [relations.evalTemplates.id] }),
+    project: relations.one.projects({ from: [relations.jobConfigurations.projectId], to: [relations.projects.id] }),
+    jobExecutions: relations.many.jobExecutions({ from: [relations.jobConfigurations.id], to: [relations.jobExecutions.jobConfigurationId] }),
+  },
+  jobExecutions: {
+    jobConfiguration: relations.one.jobConfigurations({ from: [relations.jobExecutions.jobConfigurationId], to: [relations.jobConfigurations.id] }),
+    project: relations.one.projects({ from: [relations.jobExecutions.projectId], to: [relations.projects.id] }),
+  },
+  defaultLlmModels: {
+    llmApiKey: relations.one.llmApiKeys({ from: [relations.defaultLlmModels.llmApiKeyId], to: [relations.llmApiKeys.id] }),
+    project: relations.one.projects({ from: [relations.defaultLlmModels.projectId], to: [relations.projects.id] }),
+  },
+  verifiedDomains: {
+    organization: relations.one.organizations({ from: [relations.verifiedDomains.organizationId], to: [relations.organizations.id] }),
+  },
+  posthogIntegrations: {
+    project: relations.one.projects({ from: [relations.posthogIntegrations.projectId], to: [relations.projects.id] }),
+  },
+  mixpanelIntegrations: {
+    project: relations.one.projects({ from: [relations.mixpanelIntegrations.projectId], to: [relations.projects.id] }),
+  },
+  blobStorageIntegrations: {
+    project: relations.one.projects({ from: [relations.blobStorageIntegrations.projectId], to: [relations.projects.id] }),
+  },
+  webCalloutEndpoints: {
+    project: relations.one.projects({ from: [relations.webCalloutEndpoints.projectId], to: [relations.projects.id] }),
+  },
+  batchExports: {
+    project: relations.one.projects({ from: [relations.batchExports.projectId], to: [relations.projects.id] }),
+  },
+  batchActions: {
+    project: relations.one.projects({ from: [relations.batchActions.projectId], to: [relations.projects.id] }),
+  },
+  media: {
+    project: relations.one.projects({ from: [relations.media.projectId], to: [relations.projects.id] }),
+  },
+  llmSchemas: {
+    project: relations.one.projects({ from: [relations.llmSchemas.projectId], to: [relations.projects.id] }),
+  },
+  llmTools: {
+    project: relations.one.projects({ from: [relations.llmTools.projectId], to: [relations.projects.id] }),
+  },
+  dashboardWidgets: {
+    project: relations.one.projects({ from: [relations.dashboardWidgets.projectId], to: [relations.projects.id] }),
+    user_updatedBy: relations.one.users({ from: [relations.dashboardWidgets.updatedBy], to: [relations.users.id], alias: "dashboardWidgets_updatedBy_users_id" }),
+    user_createdBy: relations.one.users({ from: [relations.dashboardWidgets.createdBy], to: [relations.users.id], alias: "dashboardWidgets_createdBy_users_id" }),
+  },
+  tableViewPresets: {
+    user_updatedBy: relations.one.users({ from: [relations.tableViewPresets.updatedBy], to: [relations.users.id], alias: "tableViewPresets_updatedBy_users_id" }),
+    user_createdBy: relations.one.users({ from: [relations.tableViewPresets.createdBy], to: [relations.users.id], alias: "tableViewPresets_createdBy_users_id" }),
+    project: relations.one.projects({ from: [relations.tableViewPresets.projectId], to: [relations.projects.id] }),
+  },
+  defaultViews: {
+    user: relations.one.users({ from: [relations.defaultViews.userId], to: [relations.users.id] }),
+    project: relations.one.projects({ from: [relations.defaultViews.projectId], to: [relations.projects.id] }),
+  },
+  actions: {
+    project: relations.one.projects({ from: [relations.actions.projectId], to: [relations.projects.id] }),
+    automations: relations.many.automations({ from: [relations.actions.id], to: [relations.automations.actionId] }),
+    automationExecutions: relations.many.automationExecutions({ from: [relations.actions.id], to: [relations.automationExecutions.actionId] }),
+  },
+  triggers: {
+    project: relations.one.projects({ from: [relations.triggers.projectId], to: [relations.projects.id] }),
+    automations: relations.many.automations({ from: [relations.triggers.id], to: [relations.automations.triggerId] }),
+    automationExecutions: relations.many.automationExecutions({ from: [relations.triggers.id], to: [relations.automationExecutions.triggerId] }),
+  },
+  automations: {
+    project: relations.one.projects({ from: [relations.automations.projectId], to: [relations.projects.id] }),
+    action: relations.one.actions({ from: [relations.automations.actionId], to: [relations.actions.id] }),
+    trigger: relations.one.triggers({ from: [relations.automations.triggerId], to: [relations.triggers.id] }),
+    automationExecutions: relations.many.automationExecutions({ from: [relations.automations.id], to: [relations.automationExecutions.automationId] }),
+  },
+  automationExecutions: {
+    project: relations.one.projects({ from: [relations.automationExecutions.projectId], to: [relations.projects.id] }),
+    action: relations.one.actions({ from: [relations.automationExecutions.actionId], to: [relations.actions.id] }),
+    trigger: relations.one.triggers({ from: [relations.automationExecutions.triggerId], to: [relations.triggers.id] }),
+    automation: relations.one.automations({ from: [relations.automationExecutions.automationId], to: [relations.automations.id] }),
+  },
+  monitors: {
+    project: relations.one.projects({ from: [relations.monitors.projectId], to: [relations.projects.id] }),
+    user_updatedBy: relations.one.users({ from: [relations.monitors.updatedBy], to: [relations.users.id], alias: "monitors_updatedBy_users_id" }),
+    user_createdBy: relations.one.users({ from: [relations.monitors.createdBy], to: [relations.users.id], alias: "monitors_createdBy_users_id" }),
+  },
+  slackIntegrations: {
+    project: relations.one.projects({ from: [relations.slackIntegrations.projectId], to: [relations.projects.id] }),
+  },
+  pendingDeletions: {
+    project: relations.one.projects({ from: [relations.pendingDeletions.projectId], to: [relations.projects.id] }),
+  },
+  surveys: {
+    user: relations.one.users({ from: [relations.surveys.userId], to: [relations.users.id] }),
+    organization: relations.one.organizations({ from: [relations.surveys.orgId], to: [relations.organizations.id] }),
+  },
+  cloudSpendAlerts: {
+    organization: relations.one.organizations({ from: [relations.cloudSpendAlerts.orgId], to: [relations.organizations.id] }),
+  },
 }));

@@ -36,13 +36,13 @@ export default async function setup(): Promise<void> {
   // /v1 authentication also reads gateway configuration, even for unknown routes.
   // Initialize its schema in the test directory instead of using a developer DB.
   const gateway = await import("@peri/gateway/db");
-  gateway.ensureSchema();
-  gateway.closeDb();
+  await gateway.ensureSchema();
+  await gateway.closeDb();
 
   // Create all metadata tables in the fresh auth database (Drizzle migration
   // SQL; replaces the previous `prisma db push`).
   const { ensureSchema, closeDb } = await import("@peri-fuse/shared/src/db");
-  ensureSchema();
+  await ensureSchema();
 
   // Seed auth data through the Drizzle client (schema is applied at this point).
   const { prisma } = await import("@peri-fuse/shared/src/db");
@@ -71,5 +71,5 @@ export default async function setup(): Promise<void> {
     scope: "PROJECT",
   });
 
-  closeDb();
+  await closeDb();
 }

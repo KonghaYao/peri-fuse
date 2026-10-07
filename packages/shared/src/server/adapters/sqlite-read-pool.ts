@@ -1,7 +1,7 @@
 /** Bounded, cancellable read-only workers. Only one query is sent to each worker. */
-import { createRequire } from "node:module";
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
+import { resolveDatabaseWorkerModule } from "../../db/local";
 import { logger } from "../logger";
 import { decodeOwnedSnapshot, encodeOwnedSnapshot } from "../utils/owned-snapshot";
 import { SQLITE_READ_WORKER_SOURCE } from "./sqlite-read-worker-source";
@@ -61,7 +61,7 @@ export class SqliteReadPool {
   private readonly slots: Slot[];
   private readonly requests = new Map<number, Request>();
   private readonly options: Required<SqliteReadPoolOptions>;
-  private readonly betterSqlitePath = createRequire(__filename).resolve("better-sqlite3");
+  private readonly connectionPath = resolveDatabaseWorkerModule(__dirname);
   private seq = 0;
   private pendingBytes = 0;
   private closed = false;
@@ -71,6 +71,7 @@ export class SqliteReadPool {
     private readonly dbPath: string,
     size: number,
     options: SqliteReadPoolOptions = {},
+    private readonly authToken?: string,
   ) {
     if (!Number.isInteger(size) || size < 1 || size > 8) throw new Error("Invalid read pool size");
     this.options = {
@@ -193,7 +194,11 @@ export class SqliteReadPool {
     try {
       const worker = new Worker(SQLITE_READ_WORKER_SOURCE, {
         eval: true,
-        workerData: { dbPath: this.dbPath, betterSqlitePath: this.betterSqlitePath },
+        workerData: {
+          dbPath: this.dbPath,
+          connectionPath: this.connectionPath,
+          authToken: this.authToken,
+        },
       });
       slot.worker = worker;
       slot.startupTimer = setTimeout(() => {

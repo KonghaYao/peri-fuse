@@ -1,30 +1,42 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
+import { openLocalDatabase } from "../../db/local";
+import { isSessionSearchAvailable } from "../session-search/schema";
 import { SQLiteTelemetryAdapter } from "./sqlite-telemetry-adapter";
 
-vi.hoisted(() => {
-  process.env.CLICKHOUSE_URL ??= "http://localhost";
-  process.env.CLICKHOUSE_USER ??= "x";
-  process.env.CLICKHOUSE_PASSWORD ??= "x";
-  process.env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET ??= "x";
+it("rejects legacy files without changing their contents", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "peri-legacy-db-"));
+  const file = join(directory, "telemetry.db");
+  const legacy = await openLocalDatabase(file);
+  await legacy.exec("CREATE TABLE legacy(value TEXT); INSERT INTO legacy VALUES('preserve')");
+  await legacy.close();
+  const before = readFileSync(file);
+  const adapter = new SQLiteTelemetryAdapter(file);
+  try {
+    await expect(adapter.initialize()).rejects.toThrow("legacy database");
+  } finally {
+    await adapter.close();
+  }
+  expect(readFileSync(file)).toEqual(before);
+  rmSync(directory, { recursive: true, force: true });
 });
 
-it("keeps telemetry ingestion working when the search DDL is unavailable", async () => {
-  const file = join(mkdtempSync(join(tmpdir(), "peri-search-ddl-")), "telemetry.db");
-  const db = new Database(file);
-  db.exec("CREATE TABLE search_fts(rowid INTEGER, normalized_text TEXT, project_scope TEXT)");
-  db.close();
-  const adapter = new SQLiteTelemetryAdapter(file);
-  await adapter.insert({
-    table: "traces",
-    records: [{ id: "t1", project_id: "p1", timestamp: "2026-01-01T00:00:00.000Z", input: "{}" }],
-  });
-  expect(adapter.getDatabase().prepare("SELECT id FROM traces WHERE id='t1'").get()).toBeTruthy();
-  expect(adapter.getDatabase().prepare("SELECT COUNT(*) AS n FROM search_dirty").get()).toEqual({
-    n: 0,
-  });
-  adapter.close();
+it("creates and reopens a complete non-FTS search schema", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "peri-search-schema-"));
+  const file = join(directory, "telemetry.turso.db");
+  for (let iteration = 0; iteration < 2; iteration++) {
+    const adapter = new SQLiteTelemetryAdapter(file);
+    try {
+      await adapter.initialize();
+      expect(await isSessionSearchAvailable(adapter.getDatabase())).toBe(true);
+      expect(
+        await adapter.getDatabase().get("SELECT name FROM sqlite_master WHERE name='search_fts'"),
+      ).toBeUndefined();
+    } finally {
+      await adapter.close();
+    }
+  }
+  rmSync(directory, { recursive: true, force: true });
 });

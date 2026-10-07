@@ -1,3 +1,4 @@
+import { getRemoteDatabaseConfig } from "../../db/local";
 import { SqliteReadPool } from "../adapters/sqlite-read-pool";
 import { TelemetryQueryError } from "../adapters/telemetry-query-context";
 import type { TelemetryDBAdapter } from "../adapters/types";
@@ -29,7 +30,14 @@ export async function querySessionSearchRead<T>(
     });
   let pool = pools.get(adapter);
   if (!pool) {
-    pool = new SqliteReadPool(dbPath, 1, { maxPending: MAX_PENDING, timeoutMs: TIMEOUT_MS });
+    const database = adapter.getDatabase?.();
+    const config = database ? getRemoteDatabaseConfig(database) : undefined;
+    pool = new SqliteReadPool(
+      dbPath,
+      1,
+      { maxPending: MAX_PENDING, timeoutMs: TIMEOUT_MS },
+      config?.authToken,
+    );
     pools.set(adapter, pool);
   }
   return pool.query<T>(sql, params, {

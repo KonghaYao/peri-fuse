@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
+import { openLocalDatabase as createLocalDatabase } from "@peri-fuse/shared/src/db/local";
 import bcrypt from "bcryptjs";
 import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -65,10 +65,10 @@ function fastHash(secretKey: string): string {
     .digest("hex");
 }
 
-function seedSharedApiKeys(): void {
-  const db = new DatabaseSync(SHARED_DB);
-  db.exec(`
-    CREATE TABLE api_keys (
+async function seedSharedApiKeys(): Promise<void> {
+  const db = await createLocalDatabase(SHARED_DB);
+  await db.exec(`
+    CREATE TABLE _perifuse_migrations(name TEXT PRIMARY KEY); CREATE TABLE api_keys (
       id TEXT PRIMARY KEY,
       public_key TEXT NOT NULL UNIQUE,
       hashed_secret_key TEXT NOT NULL UNIQUE,
@@ -79,19 +79,20 @@ function seedSharedApiKeys(): void {
       expires_at TEXT
     )
   `);
-  const insert = db.prepare(`
+  const insert = await db.prepare(`
     INSERT INTO api_keys (
       id, public_key, hashed_secret_key, fast_hashed_secret_key,
       project_id, organization_id, scope, expires_at
     ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
   `);
 
-  db.prepare(`
+  await db.run(
+    `
     INSERT INTO api_keys (
       id, public_key, hashed_secret_key, fast_hashed_secret_key,
       project_id, organization_id, scope, expires_at
     ) VALUES (?, ?, ?, ?, ?, ?, 'PROJECT', NULL)
-  `).run(
+  `,
     "modern-mismatched-fast-hash",
     "pk-modern-mismatched-fast-hash",
     bcrypt.hashSync(MODERN_BCRYPT_ONLY_SECRET, 4),
@@ -102,7 +103,7 @@ function seedSharedApiKeys(): void {
 
   for (let index = 0; index < 100; index += 1) {
     const suffix = index.toString().padStart(3, "0");
-    insert.run(
+    await insert.run(
       `legacy-${suffix}`,
       `pk-legacy-${suffix}`,
       bcrypt.hashSync(`sk-legacy-decoy-${suffix}`, 4),
@@ -113,7 +114,7 @@ function seedSharedApiKeys(): void {
     );
   }
 
-  insert.run(
+  await insert.run(
     "legacy-target-expired",
     "pk-legacy-expired-target",
     bcrypt.hashSync(EXPIRED_SECRET, 4),
@@ -122,7 +123,7 @@ function seedSharedApiKeys(): void {
     "PROJECT",
     "2000-01-01T00:00:00.000Z",
   );
-  insert.run(
+  await insert.run(
     "legacy-target-organization",
     "pk-legacy-organization-target",
     bcrypt.hashSync(ORGANIZATION_SECRET, 4),
@@ -131,7 +132,7 @@ function seedSharedApiKeys(): void {
     "ORGANIZATION",
     null,
   );
-  insert.run(
+  await insert.run(
     "legacy-target-project",
     "pk-legacy-project-target",
     bcrypt.hashSync(PROJECT_SECRET, 4),
@@ -140,7 +141,7 @@ function seedSharedApiKeys(): void {
     "PROJECT",
     null,
   );
-  db.close();
+  await db.close();
 }
 
 async function createAuthProbe(): Promise<Hono<GatewayEnv>> {
@@ -163,16 +164,16 @@ describe("Gateway legacy Bearer authentication", () => {
     process.env.DATABASE_URL = `file:${SHARED_DB}`;
     process.env.SALT = TEST_SALT;
     process.env.GATEWAY_ENCRYPTION_KEY = "a".repeat(64);
-    seedSharedApiKeys();
+    await seedSharedApiKeys();
 
     const { ensureSchema } = await import("../src/db.js");
-    ensureSchema();
+    await ensureSchema();
     probe = await createAuthProbe();
   });
 
   afterAll(async () => {
     const { closeDb } = await import("../src/db.js");
-    closeDb();
+    await closeDb();
   });
 
   it("fails closed when another legacy bcrypt scan is already running", async () => {
@@ -260,21 +261,22 @@ describe("Gateway legacy Bearer authentication", () => {
       publicKey: "pk-legacy-project-target",
     });
 
-    const shared = new DatabaseSync(SHARED_DB);
-    const row = shared
-      .prepare("SELECT fast_hashed_secret_key FROM api_keys WHERE id = 'legacy-target-project'")
-      .get() as { fast_hashed_secret_key: string };
+    const shared = await createLocalDatabase(SHARED_DB);
+    const row = (await shared.get(
+      "SELECT fast_hashed_secret_key FROM api_keys WHERE id = 'legacy-target-project'",
+    )) as { fast_hashed_secret_key: string };
     expect(row.fast_hashed_secret_key).toBe(fastHash(PROJECT_SECRET));
-    shared
-      .prepare("UPDATE api_keys SET hashed_secret_key = ? WHERE id = 'legacy-target-project'")
-      .run(bcrypt.hashSync("no-longer-matching", 4));
-    shared.close();
+    await shared.run(
+      "UPDATE api_keys SET hashed_secret_key = ? WHERE id = 'legacy-target-project'",
+      bcrypt.hashSync("no-longer-matching", 4),
+    );
+    await shared.close();
 
     const { closeDb } = await import("../src/db.js");
-    closeDb();
+    await closeDb();
     vi.resetModules();
     const { ensureSchema } = await import("../src/db.js");
-    ensureSchema();
+    await ensureSchema();
     probe = await createAuthProbe();
 
     const fastPathResponse = await probe.request("/probe", {
@@ -284,11 +286,11 @@ describe("Gateway legacy Bearer authentication", () => {
   });
 
   it("rejects an invalid Bearer secret after exhausting legacy candidates", async () => {
-    const shared = new DatabaseSync(SHARED_DB);
-    const before = shared
-      .prepare("SELECT COUNT(*) AS count FROM api_keys WHERE fast_hashed_secret_key IS NOT NULL")
-      .get() as { count: number };
-    shared.close();
+    const shared = await createLocalDatabase(SHARED_DB);
+    const before = (await shared.get(
+      "SELECT COUNT(*) AS count FROM api_keys WHERE fast_hashed_secret_key IS NOT NULL",
+    )) as { count: number };
+    await shared.close();
 
     const response = await probe.request("/probe", {
       headers: { Authorization: "Bearer sk-not-a-real-legacy-key" },
@@ -299,11 +301,11 @@ describe("Gateway legacy Bearer authentication", () => {
       error: { message: "Invalid secret key", type: "authentication_error" },
     });
 
-    const reread = new DatabaseSync(SHARED_DB);
-    const after = reread
-      .prepare("SELECT COUNT(*) AS count FROM api_keys WHERE fast_hashed_secret_key IS NOT NULL")
-      .get() as { count: number };
-    reread.close();
+    const reread = await createLocalDatabase(SHARED_DB);
+    const after = (await reread.get(
+      "SELECT COUNT(*) AS count FROM api_keys WHERE fast_hashed_secret_key IS NOT NULL",
+    )) as { count: number };
+    await reread.close();
     expect(after.count).toBe(before.count);
   });
 

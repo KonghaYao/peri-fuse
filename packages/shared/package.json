@@ -6,14 +6,31 @@
   "description": "Shared domain logic for Peri-Fuse (SQLite-backed, no ClickHouse/Redis/S3)",
   "files": [
     "dist/**",
-    "drizzle/**"
+    "drizzle/**",
+    "telemetry-drizzle/**"
   ],
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "exports": {
+    "./src/db/testing": {
+      "import": "./dist/src/db/testing.js",
+      "require": "./dist/src/db/testing.js"
+    },
+    "./src/db/errors": {
+      "import": "./dist/src/db/errors.js",
+      "require": "./dist/src/db/errors.js"
+    },
+    "./src/db/relational-filter": {
+      "import": "./dist/src/db/relational-filter.js",
+      "require": "./dist/src/db/relational-filter.js"
+    },
+    "./src/db/local": {
+      "import": "./dist/src/db/local.js",
+      "require": "./dist/src/db/local.js"
+    },
     ".": {
       "import": "./dist/src/index.js",
       "require": "./dist/src/index.js"
@@ -87,22 +104,22 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "test": "vitest run",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate && drizzle-kit generate --config drizzle.telemetry.config.ts"
   },
   "dependencies": {
+    "@tursodatabase/serverless": "1.4.1",
     "@opentelemetry/api": ">=1.0.0 <1.10.0",
     "@opentelemetry/otlp-transformer": "^0.220.0",
     "@opentelemetry/resources": "^2.9.0",
     "@opentelemetry/sdk-trace-base": "^2.9.0",
     "@types/bcryptjs": "^2.4.6",
-    "@types/better-sqlite3": "^7.6.0",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.0.0",
+    "@tursodatabase/database": "0.8.2",
     "date-fns": "^3.6.0",
     "decimal.js": "^10.4.3",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "1.0.0-rc.5-5935859",
     "exponential-backoff": "^3.1.2",
     "ipaddr.js": "^2.2.0",
     "jsonpath-plus": "10.3.0",
@@ -119,7 +136,7 @@
     "@types/lodash": "^4.17.24",
     "@types/node": "^24.3.0",
     "dotenv-cli": "^7.4.4",
-    "drizzle-kit": "^0.31.10",
+    "drizzle-kit": "1.0.0-rc.5-5935859",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^4.1.10"

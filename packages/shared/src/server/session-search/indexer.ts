@@ -1,61 +1,65 @@
-import type Database from "better-sqlite3";
-import { installIoReader } from "../adapters/io-compression";
+import type { LocalExecutor } from "../../db/local";
+import { decodeIoRow } from "../adapters/io-compression";
 import { extractMessages } from "./extraction";
 import { type SearchSource, SessionSearchStorage } from "./storage";
 
-export function readSource(
-  db: Database.Database,
+export async function readSource(
+  db: LocalExecutor,
   source: SearchSource,
-): { input: unknown; output: unknown; type?: string; traceId?: string; eventTime?: string } | null {
-  installIoReader(db);
+): Promise<{
+  input: unknown;
+  output: unknown;
+  type?: string;
+  traceId?: string;
+  eventTime?: string;
+} | null> {
   const table = source.kind === "trace" ? "traces" : "observations";
   const columns =
     source.kind === "trace"
-      ? "input,output,NULL as type,is_deleted,id as traceId,timestamp as eventTime"
-      : "input,output,type,is_deleted,trace_id as traceId,start_time as eventTime";
-  const row = db
-    .prepare(`SELECT ${columns} FROM perifuse_read_${table} WHERE project_id=? AND id=?`)
-    .get(source.projectId, source.id) as
-    | {
-        input: unknown;
-        output: unknown;
-        type?: string;
-        traceId?: string;
-        eventTime?: string;
-        is_deleted?: number;
-      }
-    | undefined;
+      ? "NULL AS type,id AS traceId,timestamp AS eventTime"
+      : "type,trace_id AS traceId,start_time AS eventTime";
+  const row = await db.get(
+    `SELECT input,input_codec,input_raw_size,output,output_codec,output_raw_size,is_deleted,${columns} FROM ${table} WHERE project_id=? AND id=?`,
+    source.projectId,
+    source.id,
+  );
   if (!row || row.is_deleted) return null;
-  return row;
+  return decodeIoRow(row) as {
+    input: unknown;
+    output: unknown;
+    type?: string;
+    traceId?: string;
+    eventTime?: string;
+  };
 }
-export function processDirty(db: Database.Database, limit = 100): number {
+
+export async function processDirty(db: LocalExecutor, limit = 100): Promise<number> {
   const storage = new SessionSearchStorage(db);
   let count = 0;
   let budget = 2 * 1024 * 1024;
-  for (const source of storage.listDirty(limit)) {
+  for (const source of await storage.listDirty(limit)) {
     try {
-      installIoReader(db);
       const table = source.kind === "trace" ? "traces" : "observations";
-      const size = db
-        .prepare(
-          `SELECT perifuse_io_bytes(input,input_codec,input_raw_size)+perifuse_io_bytes(output,output_codec,output_raw_size) AS bytes FROM ${table} WHERE project_id=? AND id=?`,
-        )
-        .get(source.projectId, source.id) as { bytes: number } | undefined;
-      const bytes = size?.bytes ?? 0;
+      const size = await db.get(
+        `SELECT COALESCE(input_raw_size,length(CAST(input AS BLOB)),0)+COALESCE(output_raw_size,length(CAST(output AS BLOB)),0) AS bytes FROM ${table} WHERE project_id=? AND id=?`,
+        source.projectId,
+        source.id,
+      );
+      const bytes = Number(size?.bytes ?? 0);
       if (bytes > 2 * 1024 * 1024) {
-        storage.markLimited(source, "source exceeds 2MiB indexing batch budget");
+        await storage.markLimited(source, "source exceeds 2MiB indexing batch budget");
         continue;
       }
       if (bytes > budget && count > 0) break;
-      const row = readSource(db, source);
-      storage.indexSource(
+      const row = await readSource(db, source);
+      await storage.indexSource(
         { ...source, eventTime: row?.eventTime ?? source.eventTime, traceId: row?.traceId },
         row ? extractMessages(row.input, row.output, row.type) : [],
       );
       budget -= bytes;
       count++;
     } catch (error) {
-      storage.markFailed(source, error);
+      await storage.markFailed(source, error);
     }
   }
   return count;
