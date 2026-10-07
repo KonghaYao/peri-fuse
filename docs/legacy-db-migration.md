@@ -1,6 +1,6 @@
 # 旧 SQLite 数据迁移到 embedded Turso
 
-入口：`scripts/migrate-legacy-db.sh`。它通过 Node 内置 SQLite **只读**访问旧库，使用当前 Turso 驱动写入新库，不重新安装 better-sqlite3。需要 Node.js **22.12.0 或更高版本**、Bash，以及已执行 `pnpm install` 的源码仓库。脚本为旧版 Node 开启内置 SQLite 所需的实验标志，并兼容没有流式迭代接口的 Node 22.12。
+入口：`scripts/migrate-legacy-db.sh`。它通过 Node 内置 SQLite **只读**访问旧库，使用当前 Turso 驱动写入新库，不重新安装 better-sqlite3。源码运行需要 Node.js **22.12.0 或更高版本**、Bash，以及已执行 `pnpm install` 的仓库；包含迁移工具的新 Docker 镜像已提供这些运行依赖，无需在宿主机安装 Node 或 pnpm。脚本为旧版 Node 开启内置 SQLite 所需的实验标志，并兼容没有流式迭代接口的 Node 22.12。
 
 ## 执行步骤
 
@@ -35,6 +35,46 @@ bash scripts/migrate-legacy-db.sh \
 ```
 
 自定义数据库文件可通过 `--metadata-source`、`--telemetry-source`、`--gateway-source` 指定；文件路径也支持 `file:` 前缀。`--role metadata|telemetry|gateway` 只迁移指定库。默认 `all` 会明确报告并跳过不存在的库，不创建空替代库；如果没有任何旧库则退出失败。请确认报告中的跳过项符合预期。
+
+## Docker 部署
+
+迁移发生在挂载的数据卷中，**不是在构建镜像时**。新镜像包含 `/app/scripts/migrate-legacy-db.sh`；旧镜像不包含该脚本，需要先构建或拉取包含本次变更的新镜像。不会在容器启动时自动迁移大库。
+
+仓库默认 Compose 将宿主机 `./data` 挂载到 `/app/data`。使用新镜像执行一次性任务，继承同一个卷与密钥环境配置，但不启动 HTTP 服务：
+
+```bash
+# 先构建/拉取新镜像，保留旧镜像以便回滚
+# 本地构建：先按 docker-compose.yml 注释启用 build，再执行：
+docker compose build peri-fuse
+# 发布镜像：改为 docker compose pull peri-fuse
+
+docker compose stop peri-fuse
+# 同时停止所有使用该数据卷的独立 Gateway 和其他写入进程
+docker compose run --rm --no-deps --entrypoint bash peri-fuse \
+  /app/scripts/migrate-legacy-db.sh --dry-run
+docker compose run --rm --no-deps --entrypoint bash peri-fuse \
+  /app/scripts/migrate-legacy-db.sh --offline
+
+# 仅在迁移成功、确认使用新文件且保留原密钥之后启动
+docker compose up -d peri-fuse
+```
+
+如果用 `docker run`，保持原挂载方式；下面 `peri-fuse:migration` 是你构建的新镜像标签，`peri-fuse-data` 必须替换成原服务实际使用的命名卷。不要新建空卷替代旧数据：
+
+```bash
+docker build -t peri-fuse:migration .
+docker stop peri-fuse
+docker run --rm --entrypoint bash -v peri-fuse-data:/app/data \
+  peri-fuse:migration /app/scripts/migrate-legacy-db.sh --dry-run
+docker run --rm --entrypoint bash -v peri-fuse-data:/app/data \
+  peri-fuse:migration /app/scripts/migrate-legacy-db.sh --offline
+```
+
+使用目录挂载时，将 `-v peri-fuse-data:/app/data` 替换为 `-v /absolute/path/to/data:/app/data`。确保新服务与迁移容器对卷有相同的访问权限；输出文件权限为 `0600`。宿主机需要额外磁盘空间，迁移容器也需足够内存。不要执行 `docker compose down -v`，不要删除卷，也不要只拷贝旧主库而遗漏 WAL / 密钥。
+
+正常中断退出后，用同样的命令追加 `--resume` 即可。异常强杀可能留下 `.legacy-turso-migration.lock`；新容器的 hostname/PID 命名空间不同，脚本会保守拒绝接管。此时必须先确认旧迁移容器及所有写入进程已经停止，再人工清理**仅这个锁文件**，重新运行 `--offline --resume`。不要删除 `.migrating` 数据库、WAL 或迁移状态。恢复时保持相同卷、源路径、目标路径和镜像版本。
+
+默认新路径已经是 `/app/data/*.turso.db`。如果自己的 Compose / `docker run` 仍覆盖 `DATABASE_URL`、`LANGFUSE_SQLITE_DB_PATH`、`GATEWAY_DB_URL` 为旧文件，需要改成新路径。保留原 `SALT` / `GATEWAY_ENCRYPTION_KEY` 或卷内密钥文件；远端 `TURSO_*` 设置会使服务优先使用远端，迁移脚本不会上传本地数据。
 
 ## 大库与断点恢复
 

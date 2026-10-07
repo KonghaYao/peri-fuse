@@ -62,6 +62,8 @@ COPY --from=build /app/packages/langfuse-mcp/dist /app/packages/langfuse-mcp/dis
 COPY --from=build /app/packages/langfuse-mcp/skills /app/packages/langfuse-mcp/skills
 COPY --from=build /app/packages/server/dist /app/packages/server/dist
 COPY --from=build /app/packages/web/dist /app/packages/server/dist/web
+COPY scripts/migrate-legacy-db.sh /app/scripts/migrate-legacy-db.sh
+COPY scripts/legacy-migration /app/scripts/legacy-migration
 
 EXPOSE 23332
 VOLUME ["/app/data"]
