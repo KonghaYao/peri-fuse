@@ -10,18 +10,9 @@ ENV PNPM_HOME="/pnpm" \
 RUN corepack enable
 WORKDIR /app
 
-# ---------- toolchain ----------
-# Native-build toolchain (better-sqlite3 fallback compile). A standalone stage
-# so deps and runtime share the same cached layer — installed only once.
-FROM base AS toolchain
-RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; s|security.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
-
 # ---------- deps ----------
 # Full dependency install (dev included) so every workspace package can build.
-FROM toolchain AS deps
+FROM base AS deps
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/cli/package.json packages/cli/
 COPY packages/gateway/package.json packages/gateway/
@@ -38,7 +29,7 @@ COPY packages ./packages
 RUN pnpm run build
 
 # ---------- runtime ----------
-FROM toolchain AS runtime
+FROM base AS runtime
 ENV NODE_ENV=production \
     LITE_SERVER_PORT=23332 \
     PERIFUSE_HOME=/app/data \
@@ -49,7 +40,7 @@ RUN corepack enable
 
 WORKDIR /app
 # Production deps only: @peri-fuse/server plus its workspace dependency chain
-# (shared, gateway). better-sqlite3 is rebuilt via pnpm onlyBuiltDependencies.
+# (shared, gateway), including the platform-specific prebuilt Turso native module.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/cli/package.json packages/cli/
 COPY packages/gateway/package.json packages/gateway/
@@ -64,12 +55,15 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 # server serves the SPA via its bundled-context lookup path (dist/web).
 COPY --from=build /app/packages/shared/dist /app/packages/shared/dist
 COPY --from=build /app/packages/shared/drizzle /app/packages/shared/drizzle
+COPY --from=build /app/packages/shared/telemetry-drizzle /app/packages/shared/telemetry-drizzle
 COPY --from=build /app/packages/gateway/dist /app/packages/gateway/dist
 COPY --from=build /app/packages/gateway/drizzle /app/packages/gateway/drizzle
 COPY --from=build /app/packages/langfuse-mcp/dist /app/packages/langfuse-mcp/dist
 COPY --from=build /app/packages/langfuse-mcp/skills /app/packages/langfuse-mcp/skills
 COPY --from=build /app/packages/server/dist /app/packages/server/dist
 COPY --from=build /app/packages/web/dist /app/packages/server/dist/web
+COPY scripts/migrate-legacy-db.sh /app/scripts/migrate-legacy-db.sh
+COPY scripts/legacy-migration /app/scripts/legacy-migration
 
 EXPOSE 23332
 VOLUME ["/app/data"]

@@ -74,7 +74,7 @@ export const createOrFetchDatasetRun = async ({
         projectId,
         name,
         description: description ?? null,
-        // The metadata column is TEXT; better-sqlite3 would treat a raw object
+        // The metadata column is TEXT; embedded Turso would treat a raw object
         // as named bind parameters and fail with "Too few parameter values".
         metadata: metadata === undefined || metadata === null ? null : JSON.stringify(metadata),
         createdAt: ts,

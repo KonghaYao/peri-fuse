@@ -113,6 +113,7 @@ describe("Telemetry request resource errors", () => {
       vi.stubEnv("PERIFUSE_READ_WORKERS", workers);
       const directory = mkdtempSync(join(tmpdir(), "perifuse-query-context-"));
       const adapter = new SQLiteTelemetryAdapter(join(directory, "telemetry.db"));
+      await adapter.initialize();
       try {
         // Start workers outside the failing request, as in a long-running server.
         await adapter.query({ query: "SELECT 1" });

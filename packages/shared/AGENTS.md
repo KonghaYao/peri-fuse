@@ -4,12 +4,12 @@ Package-local guidance for AI agents. See root [AGENTS.md](../../AGENTS.md) and 
 
 ## Purpose
 
-Shared domain logic, database access, ingestion pipeline, and OTLP processing used by `server`. Primary owner of the Prisma schema (langfuse.db) and telemetry adapter (telemetry.db).
+Shared domain logic, database access, ingestion pipeline, and OTLP processing used by `server`. Primary owner of the Drizzle metadata and telemetry schemas and embedded Turso adapter.
 
 ## Key Constraints
 
-- **Lite mode only** — no Redis, ClickHouse, S3, BullMQ. All adapters are SQLite/in-memory/local-storage.
-- **Dual DB architecture** — `langfuse.db` (Prisma, auth/metadata) + `telemetry.db` (better-sqlite3, traces/observations/scores).
+- **Lite mode only** — no Redis, ClickHouse, S3, BullMQ. Storage defaults to embedded Turso/in-memory/local-storage; optional remote Turso uses URL/token configuration.
+- **Dual DB architecture** — `langfuse.turso.db` (Drizzle + embedded Turso, auth/metadata) + `telemetry.turso.db` (@tursodatabase/database, traces/observations/scores).
 - **Export boundaries** — `src/index.ts` is frontend-safe; `src/server/index.ts` is server-only. Never leak server modules into the root barrel.
 
 ## Entry Points
@@ -18,7 +18,7 @@ Shared domain logic, database access, ingestion pipeline, and OTLP processing us
 |------|------|
 | `src/index.ts` | Frontend-safe exports (types, zod schemas, domain models) |
 | `src/server/index.ts` | Server-only barrel (repositories, adapters, auth, ingestion) |
-| `src/db.ts` | Prisma client singleton |
+| `src/db.ts` | Drizzle client singleton (historical `prisma` alias) |
 | `src/env.ts` | Shared environment schema |
 | `src/domain/` | Domain models and business rules |
 | `src/server/adapters/` | Storage adapters (factory selects by LANGFUSE_MODE) |
@@ -26,30 +26,29 @@ Shared domain logic, database access, ingestion pipeline, and OTLP processing us
 | `src/server/ingestion/` | Event ingestion pipeline (batch, model match, sampling) |
 | `src/server/otel/` | OTLP protocol parsing and transformation |
 | `src/server/repositories/` | Data access layer |
-| `prisma/schema.sqlite.prisma` | Prisma schema source of truth |
+| `src/db/schema/` and `src/db/telemetry/` | Drizzle schema sources of truth |
 
 ## Commands
 
 ```bash
 pnpm --filter @peri-fuse/shared run build        # tsc build
 pnpm --filter @peri-fuse/shared run typecheck    # tsc --noEmit
-pnpm --filter @peri-fuse/shared run db:generate  # Prisma generate
-pnpm run db:push                                 # Prisma db push (dev)
+pnpm --filter @peri-fuse/shared run db:generate  # Generate metadata + telemetry migrations
 ```
 
 ## Playbooks
 
-### Prisma schema change
+### Drizzle schema change
 
-1. Update `prisma/schema.sqlite.prisma`.
-2. Run `pnpm run db:generate` → `pnpm run db:push`.
+1. Update `src/db/schema/` or `src/db/telemetry/`.
+2. Run `pnpm run db:generate` and commit the generated migration folder. Startup applies pending migrations transactionally.
 3. Update affected repository/query code under `src/server/repositories/`.
 4. Run server tests: `pnpm --filter @peri-fuse/server run test`.
 
 ### Telemetry adapter change
 
 1. Modify `src/server/adapters/sqlite-telemetry-adapter.ts`.
-2. DDL changes must be idempotent (CREATE TABLE IF NOT EXISTS / ALTER with existence check).
+2. Update the Drizzle telemetry schema and generate migrations; use transaction handles for all writes and derived projections.
 3. Run server integration tests to verify ingestion roundtrip.
 
 ### Export surface change

@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * Admin API — Request logs and error logs queries (project-scoped).
  */
@@ -97,7 +98,9 @@ logs.get("/requests/:id", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
   const log = await db.query.spendLog.findFirst({
-    where: and(eq(spendLog.id, c.req.param("id")), eq(spendLog.projectId, projectId)),
+    where: relationalFilter(
+      and(eq(spendLog.id, c.req.param("id")), eq(spendLog.projectId, projectId)),
+    ),
   });
 
   if (!log) {

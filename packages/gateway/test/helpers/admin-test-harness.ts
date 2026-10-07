@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
+import { openLocalDatabase as createLocalDatabase } from "@peri-fuse/shared/src/db/local";
 import bcrypt from "bcryptjs";
 import type { Hono } from "hono";
 
@@ -57,10 +57,10 @@ function fastHash(secretKey: string): string {
     .digest("hex");
 }
 
-function seedSharedApiKeys(): void {
-  const shared = new DatabaseSync(SHARED_DB);
-  shared.exec(`
-    CREATE TABLE api_keys (
+async function seedSharedApiKeys(): Promise<void> {
+  const shared = await createLocalDatabase(SHARED_DB);
+  await shared.exec(`
+    CREATE TABLE _perifuse_migrations(name TEXT PRIMARY KEY); CREATE TABLE api_keys (
       id TEXT PRIMARY KEY,
       public_key TEXT NOT NULL UNIQUE,
       hashed_secret_key TEXT NOT NULL,
@@ -73,13 +73,13 @@ function seedSharedApiKeys(): void {
     );
   `);
 
-  const insert = shared.prepare(`
+  const insert = await shared.prepare(`
     INSERT INTO api_keys (
       id, public_key, hashed_secret_key, fast_hashed_secret_key,
       project_id, organization_id, scope
     ) VALUES (?, ?, ?, ?, ?, ?, 'PROJECT')
   `);
-  insert.run(
+  await insert.run(
     "key-admin-a",
     PUBLIC_KEY_A,
     bcrypt.hashSync(SECRET_KEY_A, 4),
@@ -87,7 +87,7 @@ function seedSharedApiKeys(): void {
     PROJECT_A,
     ORG_A,
   );
-  insert.run(
+  await insert.run(
     "key-admin-b",
     PUBLIC_KEY_B,
     bcrypt.hashSync(SECRET_KEY_B, 4),
@@ -95,7 +95,7 @@ function seedSharedApiKeys(): void {
     PROJECT_B,
     ORG_B,
   );
-  shared.close();
+  await shared.close();
 }
 
 export async function createAdminTestHarness(): Promise<AdminTestHarness> {
@@ -107,11 +107,11 @@ export async function createAdminTestHarness(): Promise<AdminTestHarness> {
   process.env.SALT = TEST_SALT;
   process.env.GATEWAY_ENCRYPTION_KEY = "a".repeat(64);
 
-  seedSharedApiKeys();
+  await seedSharedApiKeys();
 
   const { ensureSchema } = await import("../../src/db.js");
   const { createApp } = await import("../../src/app.js");
-  ensureSchema();
+  await ensureSchema();
   const app = createApp();
 
   return {
@@ -156,7 +156,7 @@ export async function createAdminTestHarness(): Promise<AdminTestHarness> {
     },
     async close() {
       const { closeDb } = await import("../../src/db.js");
-      closeDb();
+      await closeDb();
     },
   };
 }

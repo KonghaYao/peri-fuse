@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, isNull, or, type SQL } from "drizzle-orm";
+import { and, count, eq, isNull, or, type SQL } from "drizzle-orm";
 import { v4 } from "uuid";
 import type { z } from "zod";
 import {
@@ -11,6 +11,12 @@ import { prisma } from "../../../db";
 import { dashboards, dashboardWidgets } from "../../../db/schema/index.js";
 import { parseJsonPrioritised } from "../../../utils/json";
 import {
+  dashboardOrderBy,
+  parseDashboardJson,
+  parseWidgetJson,
+  widgetOrderBy,
+} from "./DashboardService-helpers";
+import {
   type CreateWidgetInput,
   type DashboardDefinitionSchema,
   type DashboardDomain,
@@ -20,39 +26,6 @@ import {
   WidgetDomainSchema,
   type WidgetListResponse,
 } from "./types";
-
-// JSON columns are stored as TEXT under drizzle/SQLite; parse them back into
-// objects/arrays before validating against the domain zod schemas.
-const parseDashboardJson = (row: { definition: string; filters: string }) => ({
-  definition: parseJsonPrioritised(row.definition) ?? { widgets: [] },
-  filters: parseJsonPrioritised(row.filters) ?? [],
-});
-
-const parseWidgetJson = (row: {
-  dimensions: string;
-  metrics: string;
-  filters: string;
-  chartConfig: string;
-}) => ({
-  dimensions: parseJsonPrioritised(row.dimensions) ?? [],
-  metrics: parseJsonPrioritised(row.metrics) ?? [],
-  filters: parseJsonPrioritised(row.filters) ?? [],
-  chartConfig: parseJsonPrioritised(row.chartConfig) ?? {},
-});
-
-const dashboardOrderBy = (orderBy?: OrderByState) =>
-  orderBy
-    ? orderBy.order === "ASC"
-      ? asc(dashboards[orderBy.column as keyof typeof dashboards] as unknown as SQL)
-      : desc(dashboards[orderBy.column as keyof typeof dashboards] as unknown as SQL)
-    : desc(dashboards.updatedAt);
-
-const widgetOrderBy = (orderBy?: OrderByState) =>
-  orderBy
-    ? orderBy.order === "ASC"
-      ? asc(dashboardWidgets[orderBy.column as keyof typeof dashboardWidgets] as unknown as SQL)
-      : desc(dashboardWidgets[orderBy.column as keyof typeof dashboardWidgets] as unknown as SQL)
-    : desc(dashboardWidgets.updatedAt);
 
 export class DashboardService {
   /**
@@ -458,7 +431,7 @@ export class DashboardService {
     }
 
     // Duplicate widget and update dashboard definition atomically
-    return prisma.transaction(async (tx) => {
+    return await prisma.transaction(async (tx) => {
       // 1. create duplicate in project scope (JSON columns are already stored
       //    as strings, so they can be copied verbatim)
       const newWidget = await tx

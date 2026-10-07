@@ -201,8 +201,8 @@ describe("container port configuration", () => {
         }
 
         await Promise.all([
-          expectHealthyEndpoint(defaultContainer, 23332),
-          expectHealthyEndpoint(customContainer, 24332),
+          await expectHealthyEndpoint(defaultContainer, 23332),
+          await expectHealthyEndpoint(customContainer, 24332),
         ]);
 
         const invalid = runDocker([

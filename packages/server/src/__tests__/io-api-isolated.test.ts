@@ -45,6 +45,7 @@ beforeAll(async () => {
   vi.stubEnv("PERIFUSE_IO_COMPRESSION_WRITE", "on");
   vi.stubEnv("PERIFUSE_READ_WORKERS", "1");
   db = new SQLiteTelemetryAdapter(join(dirname(base), "api-compressed.db"));
+  await db.initialize();
   for (const project_id of ["p", "other"]) {
     await db.insert({
       table: "traces",
@@ -106,8 +107,8 @@ it.each([
   "input_codec=1, input=x'000102', input_raw_size=2000",
   "input_codec=1, input_raw_size=33554433",
 ])("损坏正文在 API 显式失败；不请求 IO 的路径不解压：%s", async (damage) => {
-  db.getDatabase().prepare(`UPDATE traces SET ${damage} WHERE project_id='p'`).run();
-  db.getDatabase().prepare(`UPDATE observations SET ${damage} WHERE project_id='p'`).run();
+  await db.getDatabase().run(`UPDATE traces SET ${damage} WHERE project_id='p'`);
+  await db.getDatabase().run(`UPDATE observations SET ${damage} WHERE project_id='p'`);
   for (const url of [
     "/api/public/traces/t?fields=core",
     "/api/public/traces?fields=core",
@@ -152,10 +153,9 @@ it("本地真实 Langfuse SDK 序列化、摄入与公开 API 往返", async () 
     await sdk.flushAsync();
     expect(transport).toHaveBeenCalled();
     expect(
-      db
+      await db
         .getDatabase()
-        .prepare("SELECT input_codec FROM traces WHERE project_id='p' AND id='sdk'")
-        .get(),
+        .get("SELECT input_codec FROM traces WHERE project_id='p' AND id='sdk'"),
     ).toEqual({ input_codec: 1 });
     const response = await traces.request("/api/public/traces/sdk?fields=core,io");
     expect(response.status).toBe(200);

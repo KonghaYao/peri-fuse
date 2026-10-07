@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * Admin API — API Key config CRUD (project-scoped).
  * Keys are created in the shared DB (server); here we manage gateway-side
@@ -67,13 +68,13 @@ keys.post("/", async (c) => {
     return c.json({ error: { message: "publicKey is required" } }, 400);
   }
 
-  if (!projectApiKeyExists(body.publicKey, projectId)) {
+  if (!(await projectApiKeyExists(body.publicKey, projectId))) {
     return c.json({ error: { message: "Project API key not found" } }, 404);
   }
 
   if (body.budgetId != null) {
     const targetBudget = await db.query.budget.findFirst({
-      where: and(eq(budget.id, body.budgetId), eq(budget.projectId, projectId)),
+      where: relationalFilter(and(eq(budget.id, body.budgetId), eq(budget.projectId, projectId))),
     });
     if (!targetBudget) {
       return c.json({ error: { message: "Budget not found" } }, 404);
@@ -81,7 +82,9 @@ keys.post("/", async (c) => {
   }
 
   // Check if config already exists for this publicKey
-  const existing = await db.query.apiKey.findFirst({ where: eq(apiKey.publicKey, body.publicKey) });
+  const existing = await db.query.apiKey.findFirst({
+    where: relationalFilter(eq(apiKey.publicKey, body.publicKey)),
+  });
   if (existing) {
     return c.json({ error: { message: "Config already exists for this publicKey" } }, 409);
   }
@@ -132,19 +135,19 @@ keys.put("/:id", async (c) => {
   const body = await c.req.json();
 
   const existing = await db.query.apiKey.findFirst({
-    where: and(eq(apiKey.id, id), eq(apiKey.projectId, projectId)),
+    where: relationalFilter(and(eq(apiKey.id, id), eq(apiKey.projectId, projectId))),
   });
   if (!existing) {
     return c.json({ error: { message: "API key config not found" } }, 404);
   }
 
-  if (!projectApiKeyExists(existing.publicKey, projectId)) {
+  if (!(await projectApiKeyExists(existing.publicKey, projectId))) {
     return c.json({ error: { message: "Project API key not found" } }, 404);
   }
 
   if (body.budgetId !== undefined && body.budgetId !== null) {
     const targetBudget = await db.query.budget.findFirst({
-      where: and(eq(budget.id, body.budgetId), eq(budget.projectId, projectId)),
+      where: relationalFilter(and(eq(budget.id, body.budgetId), eq(budget.projectId, projectId))),
     });
     if (!targetBudget) {
       return c.json({ error: { message: "Budget not found" } }, 404);
@@ -189,13 +192,13 @@ keys.delete("/:id", async (c) => {
   const id = c.req.param("id");
 
   const existing = await db.query.apiKey.findFirst({
-    where: and(eq(apiKey.id, id), eq(apiKey.projectId, projectId)),
+    where: relationalFilter(and(eq(apiKey.id, id), eq(apiKey.projectId, projectId))),
   });
   if (!existing) {
     return c.json({ error: { message: "API key config not found" } }, 404);
   }
 
-  if (!projectApiKeyExists(existing.publicKey, projectId)) {
+  if (!(await projectApiKeyExists(existing.publicKey, projectId))) {
     return c.json({ error: { message: "Project API key not found" } }, 404);
   }
 

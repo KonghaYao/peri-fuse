@@ -1,43 +1,49 @@
-import { resolve } from "node:path";
-import Database from "better-sqlite3";
+import {
+  createLocalDatabase,
+  initializeLocalDatabase,
+  isRemoteDatabaseUrl,
+  type LocalDatabase,
+  localFileExists,
+  resolveDatabaseConfig,
+} from "@peri-fuse/shared/src/db/local";
 
-let sharedDb: Database.Database | null = null;
+let sharedDb: LocalDatabase | null = null;
+let ready: Promise<LocalDatabase> | null = null;
 
-/**
- * Return the lazily opened, process-lifetime connection to the server's shared API-key database.
- * Gateway auth reads key records through this handle and may backfill only its fast-hash column;
- * project-ownership checks remain read-only and must not mutate shared key identity or scope.
- */
-export function getSharedApiKeyDb(): Database.Database {
-  if (sharedDb) return sharedDb;
-
-  const rawUrl = process.env.DATABASE_URL ?? "file:./.langfuse/langfuse.db";
-  let dbPath: string;
-  if (rawUrl.startsWith("file:")) {
-    const rawPath = rawUrl.slice("file:".length);
-    dbPath = rawPath.startsWith("/") ? rawPath : resolve(process.cwd(), rawPath);
-  } else {
-    dbPath = rawUrl;
+export function getSharedApiKeyDb(): Promise<LocalDatabase> {
+  if (!ready) {
+    const config = resolveDatabaseConfig("metadata", "file:./.langfuse/langfuse.turso.db");
+    if (!isRemoteDatabaseUrl(config.url) && !localFileExists(config.url))
+      return Promise.reject(
+        new Error("Shared API-key database does not exist; start the server first"),
+      );
+    sharedDb = createLocalDatabase(config.url, false, config.authToken);
+    const database = sharedDb;
+    ready = initializeLocalDatabase(database).then(async () => {
+      const marker = await database.get(
+        "SELECT name FROM sqlite_master WHERE name='_perifuse_migrations'",
+      );
+      if (!marker)
+        throw new Error("Legacy shared database is unsupported; select a new database path");
+      return database;
+    });
   }
-
-  sharedDb = new Database(dbPath, { readonly: false });
-  sharedDb.pragma("busy_timeout = 5000");
-  return sharedDb;
+  return ready;
 }
 
-/**
- * Read whether a public key is owned by the requested project and has PROJECT scope.
- * Missing keys, keys owned by another project, and organization-scoped keys are deliberately
- * indistinguishable so Admin callers cannot discover another project's key inventory.
- */
-export function projectApiKeyExists(publicKey: string, projectId: string): boolean {
-  const row = getSharedApiKeyDb()
-    .prepare(
-      `SELECT 1
-       FROM api_keys
-       WHERE public_key = ? AND project_id = ? AND scope = 'PROJECT'
-       LIMIT 1`,
-    )
-    .get(publicKey, projectId);
+export async function projectApiKeyExists(publicKey: string, projectId: string): Promise<boolean> {
+  const db = await getSharedApiKeyDb();
+  const row = await db.get(
+    "SELECT 1 FROM api_keys WHERE public_key=? AND project_id=? AND scope='PROJECT' LIMIT 1",
+    publicKey,
+    projectId,
+  );
   return row !== undefined;
+}
+
+export async function closeSharedApiKeyDb(): Promise<void> {
+  await ready?.catch(() => undefined);
+  await sharedDb?.close();
+  ready = null;
+  sharedDb = null;
 }

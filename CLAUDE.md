@@ -13,14 +13,14 @@
 7. **为未来维护者保留上下文**：非显然的设计决策、兼容约束、已知缺陷和临时方案，必须记录原因、影响范围和移除条件；禁止留下缺少上下文的 `TODO`。
 8. **确保变更可验证、可观测、可回滚**：每项改动都应行为可测试、运行状态可观测、故障可定位，并兼顾向后兼容和回滚路径。
 
-> **变更速查**：提交前运行 `pnpm run typecheck && pnpm run lint && pnpm run test`；修改前端后额外运行 `pnpm run build`（确保 web 生产构建通过）；修改 Prisma schema 后运行 `pnpm run db:generate` 和 `pnpm run db:push`。
+> **变更速查**：提交前运行 `pnpm run typecheck && pnpm run lint && pnpm run test`；修改前端后额外运行 `pnpm run build`（确保 web 生产构建通过）；修改 Drizzle schema 后运行 `pnpm run db:generate` 并提交迁移。
 
 ## 项目与架构地图
 
-Langfuse Lite（包名 `peri-fuse`）是 Langfuse 的轻量级自包含版本，专为本地开发、小团队和边缘部署设计。纯 SQLite 后端，零外部依赖。
+Langfuse Lite（包名 `peri-fuse`）是 Langfuse 的轻量级自包含版本，专为本地开发、小团队和边缘部署设计。默认使用 embedded Turso + Drizzle，无需外部基础设施；可选配置远端 Turso URL/token。
 
 - 主要能力：LLM 可观测性（traces/spans/generations/scores）、OpenTelemetry (OTLP) 数据接入、兼容 Langfuse SDK 的 REST API、轻量 Web 仪表盘、LLM 代理网关（PeriGateway）。
-- pnpm monorepo + Turbo 构建编排，Node.js >= 22。
+- pnpm monorepo + Turbo 构建编排，Node.js >= 22.12.0。
 - `packages/` 包含 6 个内部包：`shared`、`server`、`web`、`gateway`、`cli`、`langfuse-mcp`；跨包能力应通过包导出的稳定接口复用，不得依赖包内实现细节。
 
 ### 后端地图（packages/server）
@@ -74,7 +74,7 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 
 ### 共享层地图（packages/shared）
 
-- `src/db.ts`：Prisma 客户端实例。
+- `src/db.ts`：Drizzle 客户端实例（保留历史 prisma 别名）。
 - `src/env.ts`：全局环境变量 schema 与解析。
 - `src/domain/`：领域模型与业务规则。
 - `src/server/adapters/`：存储适配器（SQLite telemetry、内存缓存、内存队列、本地存储）。
@@ -83,7 +83,7 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 - `src/server/otel/`：OTLP 协议解析与转换。
 - `src/server/repositories/`：数据访问层（含 `lite-queries.ts` 轻量查询）。
 - `src/server/services/`：业务服务（Dashboard、TableView 等）。
-- `prisma/schema.sqlite.prisma`：Prisma schema 真相来源。
+- `src/db/schema/` 和 `src/db/telemetry/`：Drizzle schema 真相来源。
 - `prisma/migrations/`：迁移历史。
 
 ### 前端地图（packages/web）
@@ -121,8 +121,7 @@ pnpm run lint                 # Biome lint + format 检查
 pnpm run lint:fix             # Biome 自动修复
 pnpm run test                 # 隔离摄入回归 + 全包 Vitest 测试（自动构建后端依赖）
 pnpm run test:ingestion       # 使用临时数据库运行摄入、压缩、统计及搜索回归
-pnpm run db:generate          # Prisma generate（schema → client）
-pnpm run db:push              # Prisma db push（schema → SQLite，开发用）
+pnpm run db:generate          # Drizzle metadata + telemetry migration generation
 
 # Gateway 单独操作
 pnpm --filter @peri/gateway run dev        # Gateway 开发模式（port 4100）
@@ -153,7 +152,7 @@ pnpm run svc:logs             # 查看服务日志
 
 - server 只负责协议接入（Hono 路由）、认证、参数校验和响应映射。
 - shared 承载领域逻辑、数据访问、摄入管线和 OTLP 处理。
-- gateway 是独立的 LLM 代理网关，通过读取 server 的共享 DB（api_keys 表）完成鉴权，自身数据存储在独立的 gateway.db。
+- gateway 是独立的 LLM 代理网关，通过读取 server 的共享 DB（api_keys 表）完成鉴权，自身数据存储在独立的 gateway.turso.db。
 - web 是纯前端 SPA，通过 `/api/public/*` REST API 与 server 交互，不直接依赖 shared。
 - 禁止 server 反向依赖 web，禁止 web 直接导入 shared 内部实现。
 
@@ -200,25 +199,26 @@ pnpm run svc:logs             # 查看服务日志
 ### 存储层
 
 - 三 SQLite 数据库架构：
-  - `langfuse.db`（Prisma）：认证、项目、组织、API Key 等元数据。Server 和 Gateway 共享读取。
-  - `telemetry.db`（better-sqlite3）：traces、observations、scores 等遥测数据。
-  - `gateway.db`（Drizzle ORM + better-sqlite3）：Gateway 自有数据（Provider、ModelDeployment、ApiKey config、Budget、日志）。
+  - `langfuse.turso.db`（Drizzle + embedded Turso）：认证、项目、组织、API Key 等元数据。Server 和 Gateway 共享读取。
+  - `telemetry.turso.db`（@tursodatabase/database）：traces、observations、scores 等遥测数据。
+  - `gateway.turso.db`（Drizzle ORM + @tursodatabase/database）：Gateway 自有数据（Provider、ModelDeployment、ApiKey config、Budget、日志）。
+- 可选通过 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` 将三类数据存入远端 Turso；也可按 metadata、telemetry、gateway 分别覆盖，详见 [存储配置](./docs/embedded-turso.md)。连接失败不回退本地，现有本地数据不会自动上传。
 - 存储适配器通过 `packages/shared/src/server/adapters/factory.ts` 按 `LANGFUSE_MODE` 选择。
 - Lite 模式使用 `sqlite-telemetry-adapter`、`in-memory-cache-adapter`、`in-memory-queue-adapter`、`local-storage-adapter`。
 - 不得在 lite 路径中引入对 Redis/S3/ClickHouse/BullMQ 的运行时依赖。
 
 ## 数据库与迁移
 
-### Server / Shared（Prisma）
+### Server / Shared（Drizzle + embedded Turso）
 
-- Prisma schema 真相来源：`packages/shared/prisma/schema.sqlite.prisma`。
-- 标准流程：修改 schema → `pnpm run db:generate` → `pnpm run db:push`（开发）→ 运行相关测试。
-- 遥测数据库（telemetry.db）的表结构由 `sqlite-telemetry-adapter.ts` 中的 DDL 管理。
+- 元数据 schema：`packages/shared/src/db/schema/`；遥测 schema：`packages/shared/src/db/telemetry/`。
+- 标准流程：修改 schema → `pnpm run db:generate` → 提交 migration.sql / snapshot.json → 运行相关测试。启动时按 journal 事务应用迁移。
+- 启动只初始化新库；旧 SQLite 文件不自动转换或删除。需要保留旧数据时，停服后执行 `bash scripts/migrate-legacy-db.sh --offline`，详见 [旧库迁移](./docs/legacy-db-migration.md)。
 
 ### Gateway（Drizzle ORM）
 
 - Schema 定义：`packages/gateway/src/db/schema.ts`。
-- 迁移文件：`packages/gateway/drizzle/*.sql`（手动编写，幂等执行）。
+- 迁移文件：`packages/gateway/drizzle/*/migration.sql`（由 Drizzle Kit 生成，事务 journal 管理）。
 - 迁移逻辑：`packages/gateway/src/db.ts` 中的 `ensureSchema()` 在启动时检测并执行未应用的迁移。
 - 迁移设计必须考虑已有数据兼容性和幂等性（使用 `PRAGMA table_info` 检测列是否存在）。
 - 新增表/列时：编写增量 SQL 迁移文件 → 更新 `ensureSchema()` 检测逻辑 → 更新 schema.ts 定义。
@@ -267,14 +267,15 @@ pnpm run svc:logs             # 查看服务日志
 - `LITE_MAX_ACTIVE_REQUESTS` / `LITE_MAX_REQUEST_BYTES` / `LITE_MAX_DECOMPRESSED_BYTES`：默认 64 个活动请求、16 MiB 上传、32 MiB OTLP 解压输出。完整边界及错误语义见 [运行时内存边界](./docs/runtime-memory-limits.md)。
 - `LANGFUSE_MODE`：运行模式（固定 `lite`，server 启动时自动设置）。
 - `PERIFUSE_HOME`：全局数据目录（默认 `~/.peri-fuse`），所有 SQLite 数据库、salt、encryption key 存放于此。
-- `DATABASE_URL`：Prisma SQLite 路径（默认 `<PERIFUSE_HOME>/langfuse.db`）。
-- `LANGFUSE_SQLITE_DB_PATH`：遥测 SQLite 路径（默认 `<PERIFUSE_HOME>/telemetry.db`）。
+- `DATABASE_URL`：元数据 Turso 本地路径（默认 `<PERIFUSE_HOME>/langfuse.turso.db`）。
+- `LANGFUSE_SQLITE_DB_PATH`：遥测 SQLite 路径（默认 `<PERIFUSE_HOME>/telemetry.turso.db`）。
+- `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`：可选远端数据库 URL 和 token，优先于旧本地路径配置。`TURSO_METADATA_DATABASE_URL`、`TURSO_TELEMETRY_DATABASE_URL`、`TURSO_GATEWAY_DATABASE_URL` 及对应 `TURSO_<ROLE>_AUTH_TOKEN` 可分别覆盖。
 - `SALT`：API Key 哈希盐值（自动生成并持久化到 `<PERIFUSE_HOME>/.salt`，生产环境建议手动设置）。
 
 ### Gateway
 
 - `GATEWAY_PORT`：Gateway 端口（默认 4100）。
-- `GATEWAY_DB_URL`：Gateway SQLite 路径（默认 `<PERIFUSE_HOME>/gateway.db`）。
+- `GATEWAY_DB_URL`：Gateway SQLite 路径（默认 `<PERIFUSE_HOME>/gateway.turso.db`）。
 - `GATEWAY_ENCRYPTION_KEY`：Provider API Key 加密密钥（64 字符 hex，自动生成并持久化到 `<PERIFUSE_HOME>/.encryption-key`）。
 - `GATEWAY_LOG_REQUESTS`：是否记录请求日志（默认 true）。
 - `GATEWAY_FLUSH_INTERVAL_MS` / `GATEWAY_DAILY_FLUSH_INTERVAL_MS`：兼容保留，已不影响记账；每次请求结束时同步提交 SQLite 事务。

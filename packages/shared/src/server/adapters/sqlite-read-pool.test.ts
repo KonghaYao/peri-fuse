@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Worker } from "node:worker_threads";
-import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openLocalDatabase as createLocalDatabase } from "../../db/local";
 import { SqliteReadPool } from "./sqlite-read-pool";
 import { SQLiteTelemetryAdapter } from "./sqlite-telemetry-adapter";
 import { withTelemetryQuerySignal } from "./telemetry-query-context";
@@ -15,20 +15,20 @@ const adapters: SQLiteTelemetryAdapter[] = [];
 const slots = (pool: SqliteReadPool) =>
   (pool as unknown as { slots: Array<{ worker: Worker }> }).slots;
 
-beforeEach(() => {
+beforeEach(async () => {
   directory = mkdtempSync(join(tmpdir(), "perifuse-read-pool-"));
   dbPath = join(directory, "test.db");
-  const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
-  db.exec("CREATE TABLE items (value TEXT); INSERT INTO items VALUES ('hello'), ('world')");
-  db.close();
+  const db = await createLocalDatabase(dbPath);
+  await db.exec("PRAGMA " + "journal_mode = WAL");
+  await db.exec("CREATE TABLE items (value TEXT); INSERT INTO items VALUES ('hello'), ('world')");
+  await db.close();
 });
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   await Promise.all([
-    ...pools.splice(0).map((pool) => pool.close()),
-    ...adapters.splice(0).map((db) => db.close()),
+    ...pools.splice(0).map(async (pool) => await pool.close()),
+    ...adapters.splice(0).map(async (db) => await db.close()),
   ]);
   rmSync(directory, { recursive: true, force: true });
 });
@@ -170,8 +170,12 @@ describe("SQLite read worker lifecycle", () => {
 
 it("applies ambient cancellation and result limits to synchronous fallback queries", async () => {
   vi.stubEnv("PERIFUSE_READ_WORKERS", "0");
-  const db = new SQLiteTelemetryAdapter(dbPath);
+  const db = new SQLiteTelemetryAdapter(join(directory, "telemetry.turso.db"));
+  await db.initialize();
   adapters.push(db);
+  await db
+    .getDatabase()
+    .exec("CREATE TABLE items(value TEXT); INSERT INTO items VALUES('hello'),('world')");
   const controller = new AbortController();
   controller.abort();
   await expect(

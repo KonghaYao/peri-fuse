@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * Lite server authentication.
  *
@@ -81,7 +82,9 @@ export async function verifyAuthHeader(
     let apiKey =
       salt != null
         ? await prisma.query.apiKeys.findFirst({
-            where: eq(apiKeys.fastHashedSecretKey, createShaHash(secretKey, salt)),
+            where: relationalFilter(
+              eq(apiKeys.fastHashedSecretKey, createShaHash(secretKey, salt)),
+            ),
             with: apiKeyWith,
           })
         : null;
@@ -89,7 +92,7 @@ export async function verifyAuthHeader(
     // Slow path: bcrypt comparison against the legacy hash, then backfill.
     if (!apiKey) {
       const slowKey = await prisma.query.apiKeys.findFirst({
-        where: eq(apiKeys.publicKey, publicKey),
+        where: relationalFilter(eq(apiKeys.publicKey, publicKey)),
         with: apiKeyWith,
       });
 

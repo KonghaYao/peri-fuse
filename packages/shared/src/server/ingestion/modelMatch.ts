@@ -1,3 +1,4 @@
+import { relationalFilter, relationalOrder } from "@peri-fuse/shared/src/db/relational-filter";
 import { Decimal } from "decimal.js";
 import { asc, eq, sql } from "drizzle-orm";
 import type { Model } from "../../";
@@ -206,9 +207,9 @@ export async function findPricingTiersForModel(modelId: string): Promise<Pricing
   if (!modelId) return [];
 
   const tiers = await prisma.query.pricingTiers.findMany({
-    where: eq(pricingTiersTable.modelId, modelId),
+    where: relationalFilter(eq(pricingTiersTable.modelId, modelId)),
     with: { prices: true },
-    orderBy: asc(pricingTiersTable.priority),
+    orderBy: relationalOrder(asc(pricingTiersTable.priority)),
   });
 
   return tiers.map((tier) => ({

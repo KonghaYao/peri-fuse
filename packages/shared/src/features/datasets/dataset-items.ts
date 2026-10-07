@@ -8,12 +8,15 @@
  * no current version (deleted/archived) are 404 for PATCH/DELETE (decision R2).
  */
 import { randomUUID } from "node:crypto";
+import { relationalFilter, relationalOrder } from "@peri-fuse/shared/src/db/relational-filter";
 import { and, count, desc, eq, gt, isNull, lte, or } from "drizzle-orm";
-import { type DatasetItem, type DatasetStatus, prisma } from "../../db";
+import { type DatasetItem, type DatasetStatus, type Db, prisma } from "../../db";
 import { datasetItems, datasets } from "../../db/schema/index.js";
 import { LangfuseNotFoundError } from "../../errors";
 import { stringifyJson } from "./datasets";
 import type { DatasetItemCreateBody, DatasetItemUpdateBody } from "./types";
+
+type DatasetExecutor = Pick<Db, "query" | "insert" | "update">;
 
 // ---------------------------------------------------------------------------
 // Current-version lookup
@@ -23,14 +26,17 @@ export async function getDatasetItemCurrentVersion(
   projectId: string,
   datasetId: string,
   itemId: string,
+  executor: DatasetExecutor = prisma,
 ): Promise<DatasetItem | null> {
-  const row = await prisma.query.datasetItems.findFirst({
-    where: and(
-      eq(datasetItems.id, itemId),
-      eq(datasetItems.projectId, projectId),
-      eq(datasetItems.datasetId, datasetId),
-      isNull(datasetItems.validTo),
-      eq(datasetItems.isDeleted, false),
+  const row = await executor.query.datasetItems.findFirst({
+    where: relationalFilter(
+      and(
+        eq(datasetItems.id, itemId),
+        eq(datasetItems.projectId, projectId),
+        eq(datasetItems.datasetId, datasetId),
+        isNull(datasetItems.validTo),
+        eq(datasetItems.isDeleted, false),
+      ),
     ),
   });
   return row ?? null;
@@ -40,8 +46,9 @@ async function requireDatasetItemCurrentVersion(
   projectId: string,
   datasetId: string,
   itemId: string,
+  executor: DatasetExecutor = prisma,
 ): Promise<DatasetItem> {
-  const row = await getDatasetItemCurrentVersion(projectId, datasetId, itemId);
+  const row = await getDatasetItemCurrentVersion(projectId, datasetId, itemId, executor);
   if (!row) {
     throw new LangfuseNotFoundError(
       `Dataset item with id '${itemId}' not found or has no active version`,
@@ -60,11 +67,13 @@ export async function getDatasetItemById(
   itemId: string,
 ): Promise<DatasetItem | null> {
   const row = await prisma.query.datasetItems.findFirst({
-    where: and(
-      eq(datasetItems.id, itemId),
-      eq(datasetItems.projectId, projectId),
-      isNull(datasetItems.validTo),
-      eq(datasetItems.isDeleted, false),
+    where: relationalFilter(
+      and(
+        eq(datasetItems.id, itemId),
+        eq(datasetItems.projectId, projectId),
+        isNull(datasetItems.validTo),
+        eq(datasetItems.isDeleted, false),
+      ),
     ),
   });
   return row ?? null;
@@ -74,10 +83,12 @@ export async function getDatasetItemById(
 // Writes
 // ---------------------------------------------------------------------------
 
-function closeCurrentVersion(row: DatasetItem, now: Date): void {
-  // better-sqlite3 is a single synchronous connection, so the
-  // close-then-insert pair is atomic without an explicit transaction.
-  prisma
+async function closeCurrentVersion(
+  executor: DatasetExecutor,
+  row: DatasetItem,
+  now: Date,
+): Promise<void> {
+  await executor
     .update(datasetItems)
     .set({ validTo: now, updatedAt: now })
     .where(
@@ -91,6 +102,7 @@ function closeCurrentVersion(row: DatasetItem, now: Date): void {
 }
 
 function insertItemVersion(
+  executor: DatasetExecutor,
   projectId: string,
   datasetId: string,
   itemId: string,
@@ -104,7 +116,7 @@ function insertItemVersion(
   },
   now: Date,
 ): Promise<DatasetItem> {
-  return prisma
+  return executor
     .insert(datasetItems)
     .values({
       id: itemId,
@@ -134,39 +146,45 @@ export async function createDatasetItems(
   datasetId: string,
   items: DatasetItemCreateBody[],
 ): Promise<DatasetItem[]> {
-  const dataset = await prisma.query.datasets.findFirst({
-    where: and(eq(datasets.id, datasetId), eq(datasets.projectId, projectId)),
-  });
-  if (!dataset) {
-    throw new LangfuseNotFoundError(`Dataset with id '${datasetId}' not found`);
-  }
+  return prisma.transaction(
+    async (tx) => {
+      const dataset = await tx.query.datasets.findFirst({
+        where: relationalFilter(and(eq(datasets.id, datasetId), eq(datasets.projectId, projectId))),
+      });
+      if (!dataset) {
+        throw new LangfuseNotFoundError(`Dataset with id '${datasetId}' not found`);
+      }
 
-  const created: DatasetItem[] = [];
-  for (const item of items) {
-    const now = new Date();
-    const itemId = item.id ?? randomUUID();
-    const current = await getDatasetItemCurrentVersion(projectId, datasetId, itemId);
-    if (current) {
-      closeCurrentVersion(current, now);
-    }
-    created.push(
-      await insertItemVersion(
-        projectId,
-        datasetId,
-        itemId,
-        {
-          input: stringifyJson(item.input),
-          expectedOutput: stringifyJson(item.expectedOutput),
-          metadata: stringifyJson(item.metadata),
-          sourceTraceId: item.sourceTraceId ?? null,
-          sourceObservationId: item.sourceObservationId ?? null,
-          status: "ACTIVE",
-        },
-        now,
-      ),
-    );
-  }
-  return created;
+      const created: DatasetItem[] = [];
+      for (const item of items) {
+        const now = new Date();
+        const itemId = item.id ?? randomUUID();
+        const current = await getDatasetItemCurrentVersion(projectId, datasetId, itemId, tx);
+        if (current) {
+          await closeCurrentVersion(tx, current, now);
+        }
+        created.push(
+          await insertItemVersion(
+            tx,
+            projectId,
+            datasetId,
+            itemId,
+            {
+              input: stringifyJson(item.input),
+              expectedOutput: stringifyJson(item.expectedOutput),
+              metadata: stringifyJson(item.metadata),
+              sourceTraceId: item.sourceTraceId ?? null,
+              sourceObservationId: item.sourceObservationId ?? null,
+              status: "ACTIVE",
+            },
+            now,
+          ),
+        );
+      }
+      return created;
+    },
+    { behavior: "immediate" },
+  );
 }
 
 export async function listDatasetItems(
@@ -183,8 +201,8 @@ export async function listDatasetItems(
   );
 
   const items = await prisma.query.datasetItems.findMany({
-    where,
-    orderBy: desc(datasetItems.createdAt),
+    where: relationalFilter(where),
+    orderBy: relationalOrder(desc(datasetItems.createdAt)),
     limit: opts.limit,
     offset: (opts.page - 1) * opts.limit,
   });
@@ -240,8 +258,8 @@ export async function listDatasetItemsV1(
   );
 
   const items = await prisma.query.datasetItems.findMany({
-    where,
-    orderBy: desc(datasetItems.createdAt),
+    where: relationalFilter(where),
+    orderBy: relationalOrder(desc(datasetItems.createdAt)),
     limit: opts.limit,
     offset: (opts.page - 1) * opts.limit,
   });
@@ -266,27 +284,33 @@ export async function updateDatasetItem(
   itemId: string,
   body: DatasetItemUpdateBody,
 ): Promise<DatasetItem> {
-  const current = await requireDatasetItemCurrentVersion(projectId, datasetId, itemId);
-  const now = new Date();
+  return prisma.transaction(
+    async (tx) => {
+      const current = await requireDatasetItemCurrentVersion(projectId, datasetId, itemId, tx);
+      const now = new Date();
 
-  closeCurrentVersion(current, now);
-  return insertItemVersion(
-    projectId,
-    datasetId,
-    itemId,
-    {
-      input: body.input !== undefined ? stringifyJson(body.input) : (current.input ?? null),
-      expectedOutput:
-        body.expectedOutput !== undefined
-          ? stringifyJson(body.expectedOutput)
-          : (current.expectedOutput ?? null),
-      metadata:
-        body.metadata !== undefined ? stringifyJson(body.metadata) : (current.metadata ?? null),
-      sourceTraceId: body.sourceTraceId ?? current.sourceTraceId ?? null,
-      sourceObservationId: body.sourceObservationId ?? current.sourceObservationId ?? null,
-      status: (body.status ?? current.status ?? "ACTIVE") as DatasetStatus,
+      await closeCurrentVersion(tx, current, now);
+      return insertItemVersion(
+        tx,
+        projectId,
+        datasetId,
+        itemId,
+        {
+          input: body.input !== undefined ? stringifyJson(body.input) : (current.input ?? null),
+          expectedOutput:
+            body.expectedOutput !== undefined
+              ? stringifyJson(body.expectedOutput)
+              : (current.expectedOutput ?? null),
+          metadata:
+            body.metadata !== undefined ? stringifyJson(body.metadata) : (current.metadata ?? null),
+          sourceTraceId: body.sourceTraceId ?? current.sourceTraceId ?? null,
+          sourceObservationId: body.sourceObservationId ?? current.sourceObservationId ?? null,
+          status: (body.status ?? current.status ?? "ACTIVE") as DatasetStatus,
+        },
+        now,
+      );
     },
-    now,
+    { behavior: "immediate" },
   );
 }
 
@@ -297,7 +321,7 @@ export async function deleteDatasetItem(
   itemId: string,
 ): Promise<void> {
   const current = await requireDatasetItemCurrentVersion(projectId, datasetId, itemId);
-  prisma
+  await prisma
     .update(datasetItems)
     .set({ isDeleted: true, validTo: new Date(), updatedAt: new Date() })
     .where(

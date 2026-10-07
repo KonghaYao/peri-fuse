@@ -1,4 +1,5 @@
 import { dirname, join } from "node:path";
+import { rejectSql } from "@peri-fuse/shared/src/db/testing";
 import type { Context, Next } from "hono";
 import { afterAll, beforeEach, expect, it, vi } from "vitest";
 import { SQLiteTelemetryAdapter } from "../../../shared/src/server/adapters/sqlite-telemetry-adapter";
@@ -48,17 +49,16 @@ vi.stubEnv("PERIFUSE_IO_COMPRESSION_WRITE", "on");
 const db = new SQLiteTelemetryAdapter(
   join(dirname(process.env.LANGFUSE_SQLITE_DB_PATH), "http.db"),
 );
+await db.initialize();
 const sql = db.getDatabase();
-beforeEach(() =>
-  sql.exec(
-    "DROP TRIGGER IF EXISTS fail_http; DELETE FROM observations; DELETE FROM traces; DELETE FROM ingestion_field_versions",
-  ),
-);
-afterAll(() => db.close());
-const fail = () =>
-  sql.exec(
-    "CREATE TRIGGER fail_http BEFORE INSERT ON observations BEGIN SELECT RAISE(ABORT, 'synthetic'); END",
+beforeEach(async () => {
+  vi.restoreAllMocks();
+  await sql.exec(
+    "DELETE FROM observations; DELETE FROM traces; DELETE FROM ingestion_field_versions",
   );
+});
+afterAll(async () => await db.close());
+const fail = () => rejectSql(sql, /INSERT(?: OR REPLACE)? INTO observations/i, vi);
 
 it("REST 207 准确区分提交、校验失败与可重试失败", async () => {
   const batch = [
@@ -83,9 +83,9 @@ it("REST 207 准确区分提交、校验失败与可重试失败", async () => {
   const result = await failed.json();
   expect(result.successes).toEqual([{ id: "trace", status: 201 }]);
   expect(result.errors.map((e: { status: number }) => e.status)).toEqual([400, 500]);
-  sql.exec("DROP TRIGGER fail_http");
+  vi.restoreAllMocks();
   expect((await (await send()).json()).successes).toHaveLength(2);
-  expect(sql.prepare("SELECT COUNT(*) AS n FROM observations").get()).toEqual({ n: 1 });
+  expect(await sql.get("SELECT COUNT(*) AS n FROM observations")).toEqual({ n: 1 });
 });
 
 it.each(["application/json", "application/x-protobuf"])(
@@ -149,8 +149,8 @@ it.each(["application/json", "application/x-protobuf"])(
       });
     fail();
     expect((await send()).status).toBe(503);
-    expect(sql.prepare("SELECT COUNT(*) AS n FROM observations").get()).toEqual({ n: 0 });
-    sql.exec("DROP TRIGGER fail_http");
+    expect(await sql.get("SELECT COUNT(*) AS n FROM observations")).toEqual({ n: 0 });
+    vi.restoreAllMocks();
     const success = await send();
     expect(success.status).toBe(200);
     if (contentType === "application/x-protobuf") {
@@ -160,10 +160,10 @@ it.each(["application/json", "application/x-protobuf"])(
       expect(await success.json()).toEqual({});
     }
     expect((await send()).status).toBe(200);
-    expect(sql.prepare("SELECT COUNT(*) AS n FROM observations").get()).toEqual({ n: 1 });
-    expect(sql.prepare("SELECT input_codec FROM observations").get()).toEqual({ input_codec: 1 });
+    expect(await sql.get("SELECT COUNT(*) AS n FROM observations")).toEqual({ n: 1 });
+    expect(await sql.get("SELECT input_codec FROM observations")).toEqual({ input_codec: 1 });
     const [decoded] = await db.query<{ input: string }>({
-      query: "SELECT input FROM perifuse_read_observations",
+      query: "SELECT input,input_codec,input_raw_size FROM observations",
     });
     expect(JSON.parse(decoded.input)).toBe("OTLP 中文 ".repeat(2000));
   },

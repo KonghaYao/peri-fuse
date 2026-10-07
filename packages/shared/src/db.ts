@@ -1,7 +1,7 @@
 // This file exports the drizzle db connection and the TypeScript types.
 // This is not imported in the index.ts file of this package, as we must not import this into FE code.
 //
-// Migrated from Prisma to Drizzle (better-sqlite3). The `prisma` export is kept
+// Migrated from Prisma to Drizzle (embedded Turso). The `prisma` export is kept
 // as an alias of the Drizzle database for a smooth transition; new code should
 // prefer `getDb()`. Model types previously re-exported from `@prisma/client` are
 // now inferred from the Drizzle schema (see ./types). The `Prisma` namespace
@@ -13,7 +13,7 @@ export { closeDb, type Db, ensureSchema, getDb };
 
 /**
  * Drizzle database instance. Named `prisma` for historical continuity; it is a
- * Drizzle `BetterSQLite3Database`, NOT a PrismaClient. Use Drizzle query APIs
+ * Drizzle `TursoDatabaseDatabase`, NOT a PrismaClient. Use Drizzle query APIs
  * (`db.select()…`, `db.query.<table>…`, `db.insert()…`, `db.all(sql`…`)`).
  */
 export const prisma = getDb();

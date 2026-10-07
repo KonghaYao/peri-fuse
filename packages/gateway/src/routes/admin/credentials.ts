@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * Admin API — Credential CRUD (project-scoped).
  */
@@ -16,8 +17,8 @@ credentials.get("/", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
   const items = await db.query.credential.findMany({
-    where: eq(credential.projectId, projectId),
-    orderBy: [desc(credential.createdAt)],
+    where: relationalFilter(eq(credential.projectId, projectId)),
+    orderBy: (table) => [desc(table.createdAt)],
   });
 
   const safe = items.map((cr) => ({
@@ -73,7 +74,7 @@ credentials.put("/:id", async (c) => {
   const body = await c.req.json();
 
   const existing = await db.query.credential.findFirst({
-    where: and(eq(credential.id, id), eq(credential.projectId, projectId)),
+    where: relationalFilter(and(eq(credential.id, id), eq(credential.projectId, projectId))),
   });
   if (!existing) {
     return c.json({ error: { message: "Credential not found" } }, 404);
@@ -111,7 +112,7 @@ credentials.delete("/:id", async (c) => {
   const id = c.req.param("id");
 
   const existing = await db.query.credential.findFirst({
-    where: and(eq(credential.id, id), eq(credential.projectId, projectId)),
+    where: relationalFilter(and(eq(credential.id, id), eq(credential.projectId, projectId))),
   });
   if (!existing) {
     return c.json({ error: { message: "Credential not found" } }, 404);

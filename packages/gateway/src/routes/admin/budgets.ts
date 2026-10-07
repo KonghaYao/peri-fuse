@@ -1,3 +1,5 @@
+import { isDatabaseConstraint } from "@peri-fuse/shared/src/db/errors";
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * Admin API — Budget CRUD (project-scoped).
  */
@@ -16,8 +18,8 @@ budgets.get("/", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
   const items = await db.query.budget.findMany({
-    where: eq(budget.projectId, projectId),
-    orderBy: [desc(budget.createdAt)],
+    where: relationalFilter(eq(budget.projectId, projectId)),
+    orderBy: (table) => [desc(table.createdAt)],
   });
 
   const withCounts = await Promise.all(
@@ -42,10 +44,10 @@ budgets.get("/:id", async (c) => {
   const db = getDb();
   const projectId = c.get("projectId");
   const found = await db.query.budget.findFirst({
-    where: and(eq(budget.id, c.req.param("id")), eq(budget.projectId, projectId)),
+    where: relationalFilter(and(eq(budget.id, c.req.param("id")), eq(budget.projectId, projectId))),
     with: {
       keys: {
-        where: eq(apiKey.projectId, projectId),
+        where: relationalFilter(eq(apiKey.projectId, projectId)),
         columns: { id: true, keyName: true, publicKey: true, spend: true },
       },
     },
@@ -116,7 +118,7 @@ budgets.put("/:id", async (c) => {
   const body = await c.req.json();
 
   const existing = await db.query.budget.findFirst({
-    where: and(eq(budget.id, id), eq(budget.projectId, projectId)),
+    where: relationalFilter(and(eq(budget.id, id), eq(budget.projectId, projectId))),
   });
   if (!existing) {
     return c.json({ error: { message: "Budget not found" } }, 404);
@@ -174,22 +176,25 @@ budgets.delete("/:id", async (c) => {
   const id = c.req.param("id");
 
   const existing = await db.query.budget.findFirst({
-    where: and(eq(budget.id, id), eq(budget.projectId, projectId)),
+    where: relationalFilter(and(eq(budget.id, id), eq(budget.projectId, projectId))),
   });
   if (!existing) {
     return c.json({ error: { message: "Budget not found" } }, 404);
   }
 
   try {
-    db.transaction((tx) => {
-      tx.update(apiKey)
+    await db.transaction(async (tx) => {
+      await tx
+        .update(apiKey)
         .set({ budgetId: null })
         .where(and(eq(apiKey.budgetId, id), eq(apiKey.projectId, projectId)))
         .run();
-      tx.delete(budget)
+      await tx
+        .delete(budget)
         .where(and(eq(budget.id, id), eq(budget.projectId, projectId)))
         .run();
-      tx.insert(auditLog)
+      await tx
+        .insert(auditLog)
         .values({
           id: generateId(),
           projectId,
@@ -205,11 +210,7 @@ budgets.delete("/:id", async (c) => {
         .run();
     });
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "SQLITE_CONSTRAINT_FOREIGNKEY"
-    ) {
+    if (isDatabaseConstraint(error, "foreign-key")) {
       console.error(
         `[peri-gateway] Refused budget deletion for project ${projectId}, budget ${id}:`,
         error,

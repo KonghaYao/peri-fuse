@@ -53,9 +53,9 @@ describe("DailySpend batch aggregation", () => {
 
   it("reports every request when a batch creates a daily spend row", async () => {
     const apiKey = "batch-insert-key";
-    spendFlusher.enqueue(spendEvent(apiKey, "success", 10, 1, 0.1));
-    spendFlusher.enqueue(spendEvent(apiKey, "success", 20, 2, 0.2));
-    spendFlusher.enqueue(spendEvent(apiKey, "success", 30, 3, 0.3));
+    await spendFlusher.enqueue(spendEvent(apiKey, "success", 10, 1, 0.1));
+    await spendFlusher.enqueue(spendEvent(apiKey, "success", 20, 2, 0.2));
+    await spendFlusher.enqueue(spendEvent(apiKey, "success", 30, 3, 0.3));
 
     await spendFlusher.flushDaily();
     const summary = await harness.request("A", "GET", `/admin/usage/summary?apiKey=${apiKey}`);
@@ -73,11 +73,11 @@ describe("DailySpend batch aggregation", () => {
 
   it("adds every request when a batch updates a daily spend row", async () => {
     const apiKey = "batch-update-key";
-    spendFlusher.enqueue(spendEvent(apiKey, "success", 5, 1, 0.05));
+    await spendFlusher.enqueue(spendEvent(apiKey, "success", 5, 1, 0.05));
     await spendFlusher.flushDaily();
 
-    spendFlusher.enqueue(spendEvent(apiKey, "success", 10, 2, 0.1));
-    spendFlusher.enqueue(spendEvent(apiKey, "success", 20, 4, 0.2));
+    await spendFlusher.enqueue(spendEvent(apiKey, "success", 10, 2, 0.1));
+    await spendFlusher.enqueue(spendEvent(apiKey, "success", 20, 4, 0.2));
     await spendFlusher.flushDaily();
 
     const summary = await harness.request("A", "GET", `/admin/usage/summary?apiKey=${apiKey}`);
@@ -95,12 +95,12 @@ describe("DailySpend batch aggregation", () => {
 
   it("keeps both outcome counts when an update batch has mixed statuses", async () => {
     const apiKey = "batch-mixed-status-key";
-    spendFlusher.enqueue(spendEvent(apiKey, "success", 1, 1, 0.01));
+    await spendFlusher.enqueue(spendEvent(apiKey, "success", 1, 1, 0.01));
     await spendFlusher.flushDaily();
 
-    spendFlusher.enqueue(spendEvent(apiKey, "error", 2, 2, 0.02));
-    spendFlusher.enqueue(spendEvent(apiKey, "success", 3, 3, 0.03));
-    spendFlusher.enqueue(spendEvent(apiKey, "error", 4, 4, 0.04));
+    await spendFlusher.enqueue(spendEvent(apiKey, "error", 2, 2, 0.02));
+    await spendFlusher.enqueue(spendEvent(apiKey, "success", 3, 3, 0.03));
+    await spendFlusher.enqueue(spendEvent(apiKey, "error", 4, 4, 0.04));
     await spendFlusher.flushDaily();
 
     const summary = await harness.request("A", "GET", `/admin/usage/summary?apiKey=${apiKey}`);

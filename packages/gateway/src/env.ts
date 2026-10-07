@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { resolveDatabaseConfig } from "@peri-fuse/shared/src/db/local";
 
 /**
  * Global data directory shared with the server (SQLite databases, keys).
@@ -19,7 +20,7 @@ if (!fs.existsSync(dataDir)) {
 
 // Resolve SQLite database URL
 if (!process.env.GATEWAY_DB_URL) {
-  process.env.GATEWAY_DB_URL = `file:${path.join(dataDir, "gateway.db")}`;
+  process.env.GATEWAY_DB_URL = `file:${path.join(dataDir, "gateway.turso.db")}`;
 } else if (process.env.GATEWAY_DB_URL.startsWith("file:")) {
   const rawPath = process.env.GATEWAY_DB_URL.slice("file:".length);
   if (!path.isAbsolute(rawPath)) {
@@ -42,7 +43,7 @@ if (!process.env.GATEWAY_ENCRYPTION_KEY) {
 
 export const gatewayEnv = {
   port: process.env.GATEWAY_PORT ? parseInt(process.env.GATEWAY_PORT, 10) : 4100,
-  dbUrl: process.env.GATEWAY_DB_URL!,
+  dbUrl: resolveDatabaseConfig("gateway", process.env.GATEWAY_DB_URL!).url,
   encryptionKey: process.env.GATEWAY_ENCRYPTION_KEY!,
   logRequests: process.env.GATEWAY_LOG_REQUESTS !== "false",
   logMaxBodySize: process.env.GATEWAY_LOG_MAX_BODY_SIZE

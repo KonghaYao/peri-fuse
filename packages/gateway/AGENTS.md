@@ -4,13 +4,13 @@ Package-local guidance for AI agents. See root [AGENTS.md](../../AGENTS.md) and 
 
 ## Purpose
 
-PeriGateway is a unified LLM proxy gateway: multi-provider routing, rate limiting, budget control, and request observability. Standalone Hono service on port 4100 with its own SQLite database (Drizzle ORM).
+PeriGateway is a unified LLM proxy gateway: multi-provider routing, rate limiting, budget control, and request observability. Standalone Hono service on port 4100 with Drizzle storage: embedded Turso by default, optionally remote Turso via URL/token configuration.
 
 ## Key Constraints
 
 - **All resources are project-scoped.** Every table has `projectId`, every query filters by it.
 - **No admin key.** All routes (proxy + admin) authenticate via project-scoped API keys (Bearer or Basic).
-- **Auth is verified against the server's shared DB** (`api_keys` table in langfuse.db). Gateway never stores secrets itself.
+- **Auth is verified against the server's shared DB** (`api_keys` table in langfuse.turso.db). Gateway never stores secrets itself.
 - **Only PROJECT-scoped keys accepted.** ORGANIZATION keys → 403.
 
 ## Entry Points

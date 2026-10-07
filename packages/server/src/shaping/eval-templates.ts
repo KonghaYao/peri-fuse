@@ -12,6 +12,7 @@ import type {
   UpdateEvalTemplateRequest,
 } from "@peri-fuse/shared";
 import { prisma } from "@peri-fuse/shared/src/db";
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 import { evalTemplates } from "@peri-fuse/shared/src/db/schema/index.js";
 import { and, count, desc, eq, isNull, max, or } from "drizzle-orm";
 
@@ -65,9 +66,11 @@ export async function getEvalTemplateById(
   templateId: string,
 ): Promise<EvalTemplateRow | null> {
   return prisma.query.evalTemplates.findFirst({
-    where: and(
-      eq(evalTemplates.id, templateId),
-      or(eq(evalTemplates.projectId, projectId), isNull(evalTemplates.projectId)),
+    where: relationalFilter(
+      and(
+        eq(evalTemplates.id, templateId),
+        or(eq(evalTemplates.projectId, projectId), isNull(evalTemplates.projectId)),
+      ),
     ),
   });
 }
@@ -82,8 +85,8 @@ export async function listEvalTemplatesForPublicApi(params: {
 
   const [rows, total] = await Promise.all([
     prisma.query.evalTemplates.findMany({
-      where,
-      orderBy: [desc(evalTemplates.createdAt)],
+      where: relationalFilter(where),
+      orderBy: (table) => [desc(table.createdAt)],
       limit,
       offset: (page - 1) * limit,
     }),

@@ -9,7 +9,7 @@
 已确认搜索范围为 user 与 assistant（AI）消息的正文；界面只提供正文和时间范围两个搜索条件。
 工具消息、system/developer 消息、名称、标签和 ID 统一搜索不属于本功能范围。
 
-首版采用 SQLite FTS5 + 独立搜索投影，存放在现有 telemetry.db，不引入外部服务。
+首版采用 embedded Turso + 普通 trigram 倒排表 + 独立搜索投影，存放在telemetry.turso.db，不引入外部服务。
 公开 sessions 列表继续遵守原有 SDK 分页契约；新增搜索入口只承担快速定位。
 
 当前实现依据：
@@ -52,12 +52,10 @@ observation 使用 start_time，trace-only 消息使用 trace.timestamp。
 未展示的候选不被解释成“不存在”，达到预算时提示补充关键词或缩小时间范围。
 
 索引和查询使用同一版本的 Unicode 规范化与大小写处理。首版是规范化后的连续片段匹配，
-不是语义搜索、错字纠正或任意 FTS 表达式。引号、星号等按文本处理，由后端编译 MATCH 参数。
+不是语义搜索、错字纠正或查询表达式。引号、星号等均按字面文本处理，后端绑定 trigram 和 literal 参数。
 
-SQLite trigram 对少于 3 个 Unicode 字符的全文查询不返回命中；这一限制已在本地 SQLite 3.49.2
-用“退款／退款失／退款失败／timeout”验证。生产启动还需探测功能支持。
+应用层按 Unicode code point 提取三字 gram；规范化后少于 3 个字符的查询会被拒绝。
 两字中文若是刚需，应单独设计 bigram 倒排索引并测存储、热门词与写入成本，不能用扫描兜底。
-参见 [SQLite trigram 文档](https://www.sqlite.org/fts5.html#the_trigram_tokenizer)。
 
 ## 搜索弹窗与上下文预览
 
@@ -138,13 +136,13 @@ assistant 消息同时包含文本与 tool_calls 时，只提取正文文本；�
 | --- | --- |
 | search_texts | INTEGER 主键；project_id、content_hash、chunk_no、display_text、normalized_text、索引版本；支持正文块按需读取 |
 | search_occurrences | 文本块到消息来源的关系；occurrence_id、project_id、text_id、source_kind、source_id、trace_id、role、field、message_order、chunk_no、source_version、event_time |
-| search_fts | FTS5 trigram：项目 scope 和正文；rowid 对应 search_texts 主键 |
+| search_trigrams | 普通倒排表：主键 `(project_id, gram, text_id)`；三字 Unicode gram 去重 |
 | search_dirty | 持久化待处理来源；project_id、source_kind、source_id、revision、重试状态 |
 | search_index_state | 回填进度、覆盖范围、积压、索引版本和最近错误 |
 
 在项目内按提取后的显示文本 hash 和提取版本去重，完全相同历史消息只索引一次，通过 occurrences 保留来源。
 不能仅用规范化文本 hash 合并原文不同的消息，否则预览可能展示另一个来源的大小写、字符或排版。
-不能删除其他来源仍引用的文本；垃圾回收仅移除无有效引用的文本及对应 FTS 条目。
+不能删除其他来源仍引用的文本；垃圾回收仅移除无有效引用的文本及对应 trigram 条目。
 去重不能跨项目；命中必须返回仍然有效且在本项目内的 occurrence。
 相同正文可分别由 user 和 assistant 引用；role 和记录时间保留在 occurrence 上，不因文本去重而丢失。
 一个被排除的工具消息即使与有效用户消息正文相同，也不能成为该文本的可搜索来源。
@@ -153,10 +151,9 @@ assistant 消息同时包含文本与 tool_calls 时，只提取正文文本；�
 以覆盖最长查询的跨块匹配。单块额外重叠的字节成本计入预算。
 全文提取和索引都在后台分批执行；不可只截取头部却宣称整条消息可搜索。
 
-FTS 使用 search_texts 的 external-content 投影，避免正文再复制一份。
-正文表、FTS 条目及引用变更在短事务内维护，不把 FTS 直接挂到巨大的 observations 原表。
-external-content 的一致性需要应用保证，更新、删除和旧数据回填均须测试，
-参见 [SQLite external-content 文档](https://www.sqlite.org/fts5.html#external_content_tables)。
+正文只保存于 search_texts，search_trigrams 使用普通表记录 `(project_id, gram, text_id)`。
+同一文本内的 gram 去重；文本、倒排条目和引用变更在同一个短事务内维护。
+不使用 FTS 虚拟表、external-content 或 SQL trigger。一致性由应用事务保证，更新、删除和回填均须测试。
 
 初始索引方向：
 
@@ -169,7 +166,7 @@ external-content 的一致性需要应用保证，更新、删除和旧数据回
 
 ## 查询路径与成本上限
 
-对最近 6 小时以内的短窗口，查询可先使用 `(project_id,event_time)` 索引遍历搜索投影，再以规范化正文上的连续字面匹配求交；正文过滤必须发生在候选 LIMIT 之前，因此不能用截断候选的方式伪造完整结果。较宽窗口继续使用 FTS5 MATCH 以避免枚举大量时间候选。两条路径都受相同的 500 ms 可取消预算和候选上限约束，短窗口路径不读取原始 input/output。
+对最近 6 小时以内的短窗口，查询可先使用 `(project_id,event_time)` 索引遍历搜索投影，再以规范化正文上的连续字面匹配求交；正文过滤必须发生在候选 LIMIT 之前，因此不能用截断候选的方式伪造完整结果。较宽窗口继续使用 项目内 trigram 求交 + `instr(normalized_text, literal)` 字面验证 以避免枚举大量时间候选。两条路径都受相同的 500 ms 可取消预算和候选上限约束，短窗口路径不读取原始 input/output。
 
 1. 从认证取得 projectId，验证正文与时间范围；缺省范围由服务器设为最近 1 小时。
 2. 将项目、正文和记录时间的约束纳入同一候选查询；后端把项目 scope 与正文条件编译到 MATCH 中。
@@ -177,19 +174,19 @@ external-content 的一致性需要应用保证，更新、删除和旧数据回
 4. 批量用项目 + 来源 ID 验证来源当前存在、未删除、版本有效，并通过 traces 获取当前 session_id。
 5. 对候选会话去重，最多 20 个结果；只对最终命中提取短片段。
 
-FTS 内 scope 使用后端生成的规范化项目标识，可用固定长度十六进制摘要。
+倒排条目和所有查询均以原始 project_id 隔离，不依赖全文匹配中的项目 scope。
 关系表及最终授权检查仍使用真实 project_id；scope 不是鉴权替代品。
 不能先对所有项目取 Top K，再过滤项目，否则其他项目会挤掉合法结果。
 同样不能先对全部历史取 Top K，再过滤最近 1 小时，否则历史命中会挤掉当前窗口内的会话。
 
-短时间窗口优先评估由 `(project_id, event_time)` 索引驱动，再与 FTS 文本命中求交；
-低命中关键词也可评估 FTS 驱动，再按 `(project_id, text_id, event_time)` 查来源。
+短时间窗口优先评估由 `(project_id, event_time)` 索引驱动，再与 字面文本命中求交；
+低命中关键词也可评估 trigram 倒排表驱动，再按 `(project_id, text_id, event_time)` 查来源。
 具体访问顺序以执行计划和基准确认，不能假定 SQLite 自动同时高效使用两个索引。
 若采用时间驱动且候选枚举已达到预算，需要返回 limited，不能在有限样本中没找到就宣称整个时间窗口无结果。
 
 建议初始预算：一次最多 200 个匹配文本、1,000 个来源候选，响应不超过 64 KiB。
 重复用户消息或 AI 回答即使只索引一份也可能关联大量来源，所以 occurrences 查询本身必须 LIMIT，
-不能先展开所有引用再在应用层截断。时间条件在 SQL 中生效不代表 FTS postings 一定被预先裁剪，仍需实测。
+不能先展开所有引用再在应用层截断。时间条件在 SQL 中生效不代表 trigram postings 一定被预先裁剪，仍需实测。
 
 **LIMIT 限制返回量，不保证底层检索或排序只处理同样数量的记录。**
 热门词、较长的自定义时间窗口、相关性排序仍可能昂贵。因此：
@@ -197,11 +194,11 @@ FTS 内 scope 使用后端生成的规范化项目标识，可用固定长度十
 - 搜索使用服务进程管理的独立、有界读取 worker，初始同时执行 1 个、排队 8 个，避免占满现有读取池。
 - 建议总预算 500 ms（含排队），按剩余时间下发各步；运行中的 SQL 必须可中断。
 - 当前同步 fallback 不能保证在没有产出行时及时打断查询；全文搜索不能依赖该 fallback。
-- FTS 超时不退化到原表扫描；已完成的阶段可返回明确标识的不完整结果，否则返回 SEARCH_TIMEOUT。
+- 搜索超时不退化到原表扫描；已完成的阶段可返回明确标识的不完整结果，否则返回 SEARCH_TIMEOUT。
 - 候选不足 20 个也可能已经达到预算，此时不能宣称搜索已穷尽。
 
-首版不承诺对所有命中做精确的全局会话排序。FTS 排名衡量文本块，
-不是会话的最终相关性；产品文案不得把候选排序称为完整的会话排名。
+首版按匹配来源时间排序，不计算全文相关性排名，也不承诺所有会话的精确全局排序。
+产品文案不得把有界候选排序称为完整的会话排名。
 
 ## 写入、可见性与删除
 
@@ -214,10 +211,10 @@ worker 从持久化队列读最新内容、提取去重、更新投影，成功�
 索引状态给出新内容延迟与历史覆盖；目标正常负载下 5 秒内可搜索，属于待验证目标。
 
 所有入口都要覆盖：SDK ingestion、OTLP、更新、软删除、物理删除和 retention。
-现有 INSERT OR REPLACE 路径不能想当然依赖 DELETE trigger 获得旧行删除通知。
+INSERT OR REPLACE 路径在事务内显式读取旧行，再维护派生状态，不依赖 DELETE trigger。
 应通过统一写入模块标记来源 dirty；删除与投影失效不能只放在某一条 HTTP 路由中。
 
-FTS 中只保存文本及项目 scope，不固定 session_id；命中后通过当前 trace 解析会话，
+搜索投影只保存文本及项目隔离标识，不固定 session_id；命中后通过当前 trace 解析会话，
 可处理 observation 先到、sessionId 后到，以及会话关联发生变化。
 来源已删除或版本失效时立即抑制旧命中，再异步清理索引；不返回已经失效的片段。
 物理清理必须保留足够的来源标识以清理引用，重试幂等。
@@ -233,7 +230,7 @@ FTS 中只保存文本及项目 scope，不固定 session_id；命中后通过�
 ## 模块和 HTTP 契约
 
 在 shared 内增加 session-search 模块，对外只暴露搜索和后台生命周期能力。
-文本抽取、FTS 语法编译、去重、投影事务、revision、上下文范围读取和查询预算封装在模块内部。
+文本抽取、trigram 提取与字面验证、去重、投影事务、revision、上下文范围读取和查询预算封装在模块内部。
 Server 负责认证、参数校验、错误映射；Web 负责交互、片段展示与详情定位。
 
 建议新增 `POST /api/public/session-search`，使用已有项目认证，不修改 SDK sessions 返回格式。
@@ -255,7 +252,7 @@ Server 负责认证、参数校验、错误映射；Web 负责交互、片段展
 `returnedSessions`、`limited`、`limitReason`、`indexState`、`coverage`、`resolvedTimeRange`。
 `limited` 表示预算导致不完整，不能用 `hasMore: false` 隐藏截断。
 不返回虚构的 totalItems；不把查询文本、正文或鉴权内容写入日志。
-片段按纯文本与高亮范围返回，前端不直接注入 FTS 生成的 HTML。
+片段按纯文本与高亮范围返回，前端不直接注入 数据库生成的 HTML。
 
 空输入时弹窗显示输入提示，不请求普通列表或上下文；短正文返回 QUERY_TOO_SHORT；忙碌返回 SEARCH_BUSY；
 超时返回 SEARCH_TIMEOUT；索引未就绪显示明确状态。退出或改词时取消请求。
@@ -290,7 +287,7 @@ Server 负责认证、参数校验、错误映射；Web 负责交互、片段展
 | 预览读取成本 | 按来源位置范围读取；长 session 不应增加单次预览返回量，500 ms 内取消／超时 |
 | 正常负载新数据可见性 | P95 < 5 秒 |
 | 摄入影响 | 与关闭索引的同负载基线相比，P95 增幅目标 < 10% |
-| 存储 | 记录去重率、提取文本字节数、FTS 倍率、回填峰值，再决定启用阈值 |
+| 存储 | 记录去重率、提取文本字节数、trigram 索引倍率、回填峰值，再决定启用阈值 |
 
 基准需要固定 CPU、内存、磁盘、查询集和数据分布；同时报告冷缓存、并发、失败率，
 不能只统计成功请求而排除热门词超时。按数据字节和会话重复历史长度分层，不只按行数。
@@ -300,7 +297,7 @@ Server 负责认证、参数校验、错误映射；Web 负责交互、片段展
 实施顺序：
 
 1. 按已确认的 user/assistant 正文和默认 1 小时实现协议提取规则；建立中文、英文、跨块和重复消息样本。
-2. 实现搜索模块与小型基准，验证 FTS、项目 scope、热门词预算及索引体积。
+2. 实现搜索模块与小型基准，验证 trigram、项目隔离、热门词预算及索引体积。
 3. 接入事务 dirty 队列、重启恢复、迟到关联、删除和回填；实现上下文范围读取及两个 HTTP 入口，再加入搜索弹窗。
 4. 在实际 telemetry 数据的隔离副本上测查询、写入争用和磁盘放大，达标后逐项目启用。
 

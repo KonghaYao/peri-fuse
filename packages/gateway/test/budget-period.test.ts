@@ -1,4 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
+import { rejectSql } from "@peri-fuse/shared/src/db/testing";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { apiKey, budget, provider } from "../src/db/schema.js";
 import { getDb } from "../src/db.js";
@@ -209,10 +211,10 @@ describe("Gateway budget periods", () => {
       await runBudgetReset(new Date("2026-08-29T00:00:00.000Z"));
 
       const healedBudget = await db.query.budget.findFirst({
-        where: eq(budget.id, "historical-invalid-budget"),
+        where: relationalFilter(eq(budget.id, "historical-invalid-budget")),
       });
       const healedProvider = await db.query.provider.findFirst({
-        where: eq(provider.id, "historical-invalid-provider"),
+        where: relationalFilter(eq(provider.id, "historical-invalid-provider")),
       });
       expect(healedBudget?.duration).toBeNull();
       expect(healedBudget?.resetAt).toBeNull();
@@ -268,13 +270,13 @@ describe("Gateway budget periods", () => {
       await runBudgetReset(new Date("2026-08-29T00:00:00.000Z"));
 
       const healedBudget = await db.query.budget.findFirst({
-        where: eq(budget.id, "historical-overflow-budget"),
+        where: relationalFilter(eq(budget.id, "historical-overflow-budget")),
       });
       const unchangedKey = await db.query.apiKey.findFirst({
-        where: eq(apiKey.id, "historical-overflow-key"),
+        where: relationalFilter(eq(apiKey.id, "historical-overflow-key")),
       });
       const healedProvider = await db.query.provider.findFirst({
-        where: eq(provider.id, "historical-overflow-provider"),
+        where: relationalFilter(eq(provider.id, "historical-overflow-provider")),
       });
       expect(healedBudget?.duration).toBeNull();
       expect(healedBudget?.resetAt).toBeNull();
@@ -331,15 +333,17 @@ describe("Gateway budget periods", () => {
 
     await runBudgetReset(new Date("2026-08-29T00:00:00.000Z"));
 
-    const keyA = await db.query.apiKey.findFirst({ where: eq(apiKey.id, "due-period-key-a") });
+    const keyA = await db.query.apiKey.findFirst({
+      where: relationalFilter(eq(apiKey.id, "due-period-key-a")),
+    });
     const keyB = await db.query.apiKey.findFirst({
-      where: eq(apiKey.id, "legacy-foreign-period-key-b"),
+      where: relationalFilter(eq(apiKey.id, "legacy-foreign-period-key-b")),
     });
     const resetBudget = await db.query.budget.findFirst({
-      where: eq(budget.id, "due-period-budget"),
+      where: relationalFilter(eq(budget.id, "due-period-budget")),
     });
     const resetProvider = await db.query.provider.findFirst({
-      where: eq(provider.id, "due-period-provider"),
+      where: relationalFilter(eq(provider.id, "due-period-provider")),
     });
 
     expect(keyA?.spend).toBe(0);
@@ -365,31 +369,20 @@ describe("Gateway budget periods", () => {
       spend: 5,
       budgetId: "atomic-period-budget",
     });
-    db.run(
-      sql.raw(`
-      CREATE TRIGGER fail_atomic_budget_reset
-      BEFORE UPDATE OF resetAt ON Budget
-      WHEN OLD.id = 'atomic-period-budget'
-      BEGIN
-        SELECT RAISE(ABORT, 'forced reset failure');
-      END
-    `),
-    );
+    const fault = rejectSql(db.$client, /UPDATE "budget"/i, vi);
 
     try {
-      await expect(runBudgetReset(new Date("2026-08-29T00:00:00.000Z"))).rejects.toThrow(
-        "forced reset failure",
-      );
+      await expect(runBudgetReset(new Date("2026-08-29T00:00:00.000Z"))).rejects.toThrow();
       const key = await db.query.apiKey.findFirst({
-        where: eq(apiKey.id, "atomic-period-key"),
+        where: relationalFilter(eq(apiKey.id, "atomic-period-key")),
       });
       const unchangedBudget = await db.query.budget.findFirst({
-        where: eq(budget.id, "atomic-period-budget"),
+        where: relationalFilter(eq(budget.id, "atomic-period-budget")),
       });
       expect(key?.spend).toBe(5);
       expect(unchangedBudget?.resetAt).toBe("2026-08-28T23:59:00.000Z");
     } finally {
-      db.run(sql.raw("DROP TRIGGER IF EXISTS fail_atomic_budget_reset"));
+      fault.mockRestore();
     }
   });
 });

@@ -4,9 +4,10 @@ export function startMaintenanceLoop(
   refresh: (signal: AbortSignal) => Promise<unknown>,
   intervalMs: number,
   onError: (error: unknown) => void,
-): () => void {
+): () => Promise<void> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let active: Promise<void>;
   const run = async (pass: (signal: AbortSignal) => Promise<unknown>) => {
     try {
       await pass(controller.signal);
@@ -14,14 +15,17 @@ export function startMaintenanceLoop(
       if (!controller.signal.aborted) onError(error);
     } finally {
       if (!controller.signal.aborted) {
-        timer = setTimeout(() => void run(refresh), intervalMs);
+        timer = setTimeout(() => {
+          active = run(refresh);
+        }, intervalMs);
         timer.unref?.();
       }
     }
   };
-  void run(initial);
-  return () => {
+  active = run(initial);
+  return async () => {
     controller.abort();
     clearTimeout(timer);
+    await active;
   };
 }

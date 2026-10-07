@@ -1,12 +1,12 @@
-import Database from "better-sqlite3";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { openLocalDatabase as createLocalDatabase } from "../../db/local";
 import { initializeTelemetrySchema } from "../adapters/sqlite-telemetry-schema";
 import { getSessionContext } from "./context";
 import { extractMessages } from "./extraction";
 import { querySessionSearchRead } from "./read-pool";
 import { SessionSearchStorage } from "./storage";
 
-const db = new Database(":memory:");
+const db = await createLocalDatabase(":memory:");
 vi.mock("./read-pool", () => ({
   querySessionSearchRead: vi.fn(
     async (
@@ -19,22 +19,26 @@ vi.mock("./read-pool", () => ({
 vi.mock("../adapters", () => ({
   getTelemetryDB: () => ({
     query: async (o: { query: string; params?: Record<string, unknown> }) =>
-      db.prepare(o.query).all(o.params ?? {}),
+      await db.all(o.query, o.params ?? {}),
   }),
 }));
 const project = "context-project";
 
-beforeAll(() => {
-  initializeTelemetrySchema(db);
-  db.prepare(
+beforeAll(async () => {
+  await initializeTelemetrySchema(db);
+  await db.run(
     "INSERT INTO traces(id,project_id,session_id,timestamp,is_deleted) VALUES(?,?,?,?,0)",
-  ).run("trace-1", project, "session-1", "2026-01-01 00:00:00");
+    "trace-1",
+    project,
+    "session-1",
+    "2026-01-01 00:00:00",
+  );
   const storage = new SessionSearchStorage(db);
   const messages = Array.from({ length: 20 }, (_, i) => ({
     role: (i % 2 ? "assistant" : "user") as "user" | "assistant",
     content: `message ${i}`,
   }));
-  storage.indexSource(
+  await storage.indexSource(
     {
       projectId: project,
       kind: "trace",
@@ -45,19 +49,22 @@ beforeAll(() => {
     },
     extractMessages(messages, undefined),
   );
-  db.prepare(
+  await db.run(
     "INSERT INTO search_source_revisions(project_id,source_kind,source_id,revision) VALUES(?,?,?,?)",
-  ).run(project, "trace", "trace-1", 1);
+    project,
+    "trace",
+    "trace-1",
+    1,
+  );
 });
-afterAll(() => db.close());
+afterAll(async () => await db.close());
 
 describe("session context projection", () => {
   it("returns two messages before and after a middle anchor", async () => {
-    const row = db
-      .prepare(
-        "SELECT occurrence_id,source_version,message_order FROM search_occurrences WHERE project_id=? AND message_order=15 LIMIT 1",
-      )
-      .get(project) as { occurrence_id: string; source_version: number; message_order: number };
+    const row = (await db.get(
+      "SELECT occurrence_id,source_version,message_order FROM search_occurrences WHERE project_id=? AND message_order=15 LIMIT 1",
+      project,
+    )) as { occurrence_id: string; source_version: number; message_order: number };
     vi.mocked(querySessionSearchRead).mockClear();
     const result = await getSessionContext(project, {
       occurrenceId: row.occurrence_id,
@@ -71,11 +78,10 @@ describe("session context projection", () => {
   });
 
   it("rejects a cursor from another project or version", async () => {
-    const row = db
-      .prepare(
-        "SELECT occurrence_id,source_version FROM search_occurrences WHERE project_id=? LIMIT 1",
-      )
-      .get(project) as { occurrence_id: string; source_version: number };
+    const row = (await db.get(
+      "SELECT occurrence_id,source_version FROM search_occurrences WHERE project_id=? LIMIT 1",
+      project,
+    )) as { occurrence_id: string; source_version: number };
     await expect(
       getSessionContext(project, {
         occurrenceId: row.occurrence_id,
@@ -88,11 +94,10 @@ describe("session context projection", () => {
   });
 
   it("continues with the after cursor", async () => {
-    const row = db
-      .prepare(
-        "SELECT occurrence_id,source_version FROM search_occurrences WHERE project_id=? AND message_order=15 LIMIT 1",
-      )
-      .get(project) as { occurrence_id: string; source_version: number };
+    const row = (await db.get(
+      "SELECT occurrence_id,source_version FROM search_occurrences WHERE project_id=? AND message_order=15 LIMIT 1",
+      project,
+    )) as { occurrence_id: string; source_version: number };
     const first = await getSessionContext(project, {
       occurrenceId: row.occurrence_id,
       sourceVersion: row.source_version,
@@ -108,31 +113,39 @@ describe("session context projection", () => {
     expect(next.data.messages.every((m) => m.messageOrder >= 18)).toBe(true);
   });
 
-  it("keeps long message chunks separately addressable", () => {
+  it("keeps long message chunks separately addressable", async () => {
     const storage = new SessionSearchStorage(db);
-    db.prepare(
+    await db.run(
       "INSERT INTO traces(id,project_id,session_id,timestamp,is_deleted) VALUES(?,?,?,?,0)",
-    ).run("long-trace", project, "session-long", "2026-01-01 00:00:00");
-    storage.indexSource(
+      "long-trace",
+      project,
+      "session-long",
+      "2026-01-01 00:00:00",
+    );
+    await storage.indexSource(
       { projectId: project, kind: "trace", id: "long-trace", revision: 1, traceId: "trace-1" },
       [{ role: "user", field: "input.messages", order: 99, text: `needle ${"x".repeat(25_000)}` }],
     );
-    db.prepare(
+    await db.run(
       "INSERT INTO search_source_revisions(project_id,source_kind,source_id,revision) VALUES(?,?,?,?)",
-    ).run(project, "trace", "long-trace", 1);
-    const chunks = db
-      .prepare("SELECT chunk_no FROM search_occurrences WHERE source_id=? ORDER BY chunk_no")
-      .all("long-trace") as Array<{ chunk_no: number }>;
+      project,
+      "trace",
+      "long-trace",
+      1,
+    );
+    const chunks = (await db.all(
+      "SELECT chunk_no FROM search_occurrences WHERE source_id=? ORDER BY chunk_no",
+      "long-trace",
+    )) as Array<{ chunk_no: number }>;
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks[1].chunk_no).toBe(chunks[0].chunk_no + 1);
   });
 
   it("expands chunks as one message and paginates its tail within the wire budget", async () => {
-    const row = db
-      .prepare(
-        "SELECT occurrence_id,source_version,chunk_no FROM search_occurrences WHERE source_id=? ORDER BY chunk_no LIMIT 1",
-      )
-      .get("long-trace") as { occurrence_id: string; source_version: number; chunk_no: number };
+    const row = (await db.get(
+      "SELECT occurrence_id,source_version,chunk_no FROM search_occurrences WHERE source_id=? ORDER BY chunk_no LIMIT 1",
+      "long-trace",
+    )) as { occurrence_id: string; source_version: number; chunk_no: number };
     const first = await getSessionContext(project, {
       occurrenceId: row.occurrence_id,
       sourceVersion: row.source_version,
@@ -158,27 +171,34 @@ describe("session context projection", () => {
 
   it("keeps a high chunk anchor visible and returns five long neighbors", async () => {
     const storage = new SessionSearchStorage(db);
-    db.prepare(
+    await db.run(
       "INSERT INTO traces(id,project_id,session_id,timestamp,is_deleted) VALUES(?,?,?,?,0)",
-    ).run("high-anchor", project, "session-high", "2026-01-01 00:00:00");
+      "high-anchor",
+      project,
+      "session-high",
+      "2026-01-01 00:00:00",
+    );
     const messages = Array.from({ length: 5 }, (_, order) => ({
       role: "user" as const,
       field: "input.messages",
       order,
       text: `${order}-${"邻".repeat(order === 2 ? 500_000 : 20_000)}`,
     }));
-    storage.indexSource(
+    await storage.indexSource(
       { projectId: project, kind: "trace", id: "high-anchor", revision: 1, traceId: "high-anchor" },
       messages,
     );
-    db.prepare(
+    await db.run(
       "INSERT INTO search_source_revisions(project_id,source_kind,source_id,revision) VALUES(?,?,?,?)",
-    ).run(project, "trace", "high-anchor", 1);
-    const row = db
-      .prepare(
-        "SELECT occurrence_id,source_version,chunk_no FROM search_occurrences WHERE source_id=? AND message_order=2 ORDER BY chunk_no DESC LIMIT 1",
-      )
-      .get("high-anchor") as { occurrence_id: string; source_version: number; chunk_no: number };
+      project,
+      "trace",
+      "high-anchor",
+      1,
+    );
+    const row = (await db.get(
+      "SELECT occurrence_id,source_version,chunk_no FROM search_occurrences WHERE source_id=? AND message_order=2 ORDER BY chunk_no DESC LIMIT 1",
+      "high-anchor",
+    )) as { occurrence_id: string; source_version: number; chunk_no: number };
     expect(row.chunk_no).toBeGreaterThan(100);
     const result = await getSessionContext(project, {
       occurrenceId: row.occurrence_id,
@@ -194,22 +214,29 @@ describe("session context projection", () => {
 
   it("reconstructs multibyte blocks across cursors without overlap", async () => {
     const storage = new SessionSearchStorage(db);
-    db.prepare(
+    await db.run(
       "INSERT INTO traces(id,project_id,session_id,timestamp,is_deleted) VALUES(?,?,?,?,0)",
-    ).run("multibyte", project, "session-multi", "2026-01-01 00:00:00");
+      "multibyte",
+      project,
+      "session-multi",
+      "2026-01-01 00:00:00",
+    );
     const source = "你好世界".repeat(8_000);
-    storage.indexSource(
+    await storage.indexSource(
       { projectId: project, kind: "trace", id: "multibyte", revision: 1, traceId: "multibyte" },
       [{ role: "user", field: "input.messages", order: 0, text: source }],
     );
-    db.prepare(
+    await db.run(
       "INSERT INTO search_source_revisions(project_id,source_kind,source_id,revision) VALUES(?,?,?,?)",
-    ).run(project, "trace", "multibyte", 1);
-    const row = db
-      .prepare(
-        "SELECT occurrence_id,source_version FROM search_occurrences WHERE source_id=? LIMIT 1",
-      )
-      .get("multibyte") as { occurrence_id: string; source_version: number };
+      project,
+      "trace",
+      "multibyte",
+      1,
+    );
+    const row = (await db.get(
+      "SELECT occurrence_id,source_version FROM search_occurrences WHERE source_id=? LIMIT 1",
+      "multibyte",
+    )) as { occurrence_id: string; source_version: number };
     let page = await getSessionContext(project, {
       occurrenceId: row.occurrence_id,
       sourceVersion: row.source_version,
@@ -229,24 +256,31 @@ describe("session context projection", () => {
 
   it("uses UTF-16-safe boundaries for mixed emoji and CJK pages", async () => {
     const storage = new SessionSearchStorage(db);
-    db.prepare(
+    await db.run(
       "INSERT INTO traces(id,project_id,session_id,timestamp,is_deleted) VALUES(?,?,?,?,0)",
-    ).run("mixed-pages", project, "session-mixed", "2026-01-01 00:00:00");
+      "mixed-pages",
+      project,
+      "session-mixed",
+      "2026-01-01 00:00:00",
+    );
     const source = Array.from({ length: 12_000 }, (_, index) =>
       index % 3 === 0 ? "🙂" : index % 3 === 1 ? "中" : "a",
     ).join("");
-    storage.indexSource(
+    await storage.indexSource(
       { projectId: project, kind: "trace", id: "mixed-pages", revision: 1, traceId: "mixed-pages" },
       [{ role: "user", field: "input.messages", order: 0, text: source }],
     );
-    db.prepare(
+    await db.run(
       "INSERT INTO search_source_revisions(project_id,source_kind,source_id,revision) VALUES(?,?,?,?)",
-    ).run(project, "trace", "mixed-pages", 1);
-    const chunks = db
-      .prepare(
-        "SELECT occurrence_id,source_version,chunk_no,display_start FROM search_occurrences WHERE source_id=? ORDER BY chunk_no",
-      )
-      .all("mixed-pages") as Array<{
+      project,
+      "trace",
+      "mixed-pages",
+      1,
+    );
+    const chunks = (await db.all(
+      "SELECT occurrence_id,source_version,chunk_no,display_start FROM search_occurrences WHERE source_id=? ORDER BY chunk_no",
+      "mixed-pages",
+    )) as Array<{
       occurrence_id: string;
       source_version: number;
       chunk_no: number;
@@ -284,12 +318,11 @@ describe("session context projection", () => {
   });
 
   it("does not expose an indexed occurrence after its source is deleted", async () => {
-    const row = db
-      .prepare(
-        "SELECT occurrence_id,source_version FROM search_occurrences WHERE source_id=? LIMIT 1",
-      )
-      .get("long-trace") as { occurrence_id: string; source_version: number };
-    db.prepare("DELETE FROM traces WHERE project_id=? AND id=?").run(project, "long-trace");
+    const row = (await db.get(
+      "SELECT occurrence_id,source_version FROM search_occurrences WHERE source_id=? LIMIT 1",
+      "long-trace",
+    )) as { occurrence_id: string; source_version: number };
+    await db.run("DELETE FROM traces WHERE project_id=? AND id=?", project, "long-trace");
     await expect(
       getSessionContext(project, {
         occurrenceId: row.occurrence_id,

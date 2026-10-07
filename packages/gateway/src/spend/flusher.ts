@@ -1,7 +1,9 @@
 /**
  * Durable spend recording. The historical flusher API is retained for embedders,
- * but acceptance now commits SQLite synchronously instead of retaining events.
+ * but acceptance now commits Turso asynchronously instead of retaining events.
  */
+
+import { sql } from "drizzle-orm";
 import { getDb } from "../db.js";
 import { gatewayEnv } from "../env.js";
 import { slowLogWriter } from "../slow-log/writer.js";
@@ -54,6 +56,7 @@ interface SpendOptions {
 export class SpendFlusher {
   private accepted = 0;
   private failures = 0;
+  private readonly inflight = new Set<Promise<void>>();
 
   constructor(private readonly options: SpendOptions = {}) {}
 
@@ -67,9 +70,14 @@ export class SpendFlusher {
   }
 
   /** Fail admission before contacting an upstream if SQLite cannot accept a writer. */
-  assertWritable(): void {
+  async assertWritable(): Promise<void> {
     try {
-      getDb().transaction(() => undefined, { behavior: "immediate" });
+      await getDb().transaction(
+        async (tx) => {
+          await tx.run(sql`UPDATE _perifuse_migrations SET name=name WHERE 0`);
+        },
+        { behavior: "immediate" },
+      );
     } catch (cause) {
       this.failures++;
       console.error("[spend-flusher] Accounting admission failed:", cause);
@@ -82,9 +90,19 @@ export class SpendFlusher {
    * Rejected events are never queued or partially counted; the caller must surface
    * the error, including when an upstream response has already started streaming.
    */
-  enqueue(event: SpendEvent): void {
+  async enqueue(event: SpendEvent): Promise<void> {
+    const write = this.commit(event);
+    this.inflight.add(write);
     try {
-      recordSpend(getDb(), event, {
+      await write;
+    } finally {
+      this.inflight.delete(write);
+    }
+  }
+
+  private async commit(event: SpendEvent): Promise<void> {
+    try {
+      await recordSpend(getDb(), event, {
         logRequests: this.options.logRequests ?? gatewayEnv.logRequests,
         logMaxBodySize: this.options.logMaxBodySize ?? gatewayEnv.logMaxBodySize,
       });
@@ -122,13 +140,19 @@ export class SpendFlusher {
 
   /** Counters are process-local; no event payloads are retained for diagnostics. */
   stats(): { accepted: number; failures: number; pending: number } {
-    return { accepted: this.accepted, failures: this.failures, pending: 0 };
+    return { accepted: this.accepted, failures: this.failures, pending: this.inflight.size };
   }
 
-  /** Compatibility methods: all accepted writes are already durable. */
-  async flush(): Promise<void> {}
-  async flushDaily(): Promise<void> {}
-  async flushAll(): Promise<void> {}
+  /** Shutdown waits for all in-flight writes to settle. */
+  async flush(): Promise<void> {
+    await this.flushAll();
+  }
+  async flushDaily(): Promise<void> {
+    await this.flushAll();
+  }
+  async flushAll(): Promise<void> {
+    while (this.inflight.size) await Promise.allSettled([...this.inflight]);
+  }
 }
 
 export const spendFlusher = new SpendFlusher();

@@ -28,7 +28,7 @@ await esbuild.build({
   format: "cjs",
   outfile: path.join(__dirname, "dist/server.cjs"),
   // Native modules cannot be bundled — keep as external requires.
-  external: ["better-sqlite3"],
+  external: ["@tursodatabase/database", "@tursodatabase/database-common"],
   // Suppress warnings from node: protocol imports and dynamic requires.
   logLevel: "warning",
 });
@@ -38,16 +38,35 @@ await esbuild.build({
 // - gateway's findMigrationSql() checks __dirname/../drizzle/ → reads cli/dist/drizzle/
 console.log("[cli build] Copying migration SQL…");
 const sharedDrizzle = path.resolve(__dirname, "../shared/drizzle");
+const telemetryDrizzle = path.resolve(__dirname, "../shared/telemetry-drizzle");
 const gatewayDrizzle = path.resolve(__dirname, "../gateway/drizzle");
-const sharedSearch = path.resolve(__dirname, "../shared/dist/src/server/session-search");
-if (fs.existsSync(sharedSearch)) {
-  fs.cpSync(sharedSearch, path.join(__dirname, "dist/src/server/session-search"), {
-    recursive: true,
+await esbuild.build({
+  entryPoints: [path.resolve(__dirname, "../shared/src/db/local.ts")],
+  bundle: true,
+  platform: "node",
+  target: "node22",
+  format: "cjs",
+  outfile: path.join(__dirname, "dist/src/db/local.js"),
+  external: ["@tursodatabase/database", "@tursodatabase/database-common"],
+});
+for (const name of ["indexer", "backfill"]) {
+  await esbuild.build({
+    entryPoints: [path.resolve(__dirname, `../shared/src/server/session-search/${name}.ts`)],
+    bundle: true,
+    platform: "node",
+    target: "node22",
+    format: "cjs",
+    outfile: path.join(__dirname, `dist/src/server/session-search/${name}.js`),
+    external: ["@tursodatabase/database", "@tursodatabase/database-common"],
   });
 }
 
 // Shared migrations → <cli>/drizzle/
+for (const target of ["drizzle", "telemetry-drizzle", "dist/drizzle"]) {
+  fs.rmSync(path.join(__dirname, target), { recursive: true, force: true });
+}
 fs.cpSync(sharedDrizzle, path.join(__dirname, "drizzle"), { recursive: true });
+fs.cpSync(telemetryDrizzle, path.join(__dirname, "telemetry-drizzle"), { recursive: true });
 // Gateway migrations → <cli>/dist/drizzle/
 fs.cpSync(gatewayDrizzle, path.join(__dirname, "dist/drizzle"), { recursive: true });
 

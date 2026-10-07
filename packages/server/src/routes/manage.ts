@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * Management API routes — project and API key CRUD.
  *
@@ -21,9 +22,9 @@ const manage = new Hono();
 
 manage.get("/api/manage/projects", async (c) => {
   const rows = await prisma.query.projects.findMany({
-    where: isNull(projects.deletedAt),
+    where: relationalFilter(isNull(projects.deletedAt)),
     with: { organization: true },
-    orderBy: asc(projects.createdAt),
+    orderBy: (table) => asc(table.createdAt),
   });
 
   const withCounts = await Promise.all(

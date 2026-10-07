@@ -1,3 +1,4 @@
+import { relationalFilter, relationalOrder } from "@peri-fuse/shared/src/db/relational-filter";
 import { and, desc, eq, gt, inArray, type SQL } from "drizzle-orm";
 import {
   type Action,
@@ -119,10 +120,12 @@ export const getTriggerConfigurations = async ({
   status: JobConfigState;
 }): Promise<TriggerDomainWithActions[]> => {
   const foundTriggers = await prisma.query.triggers.findMany({
-    where: and(
-      eq(triggersTable.projectId, projectId),
-      eq(triggersTable.eventSource, eventSource),
-      eq(triggersTable.status, status),
+    where: relationalFilter(
+      and(
+        eq(triggersTable.projectId, projectId),
+        eq(triggersTable.eventSource, eventSource),
+        eq(triggersTable.status, status),
+      ),
     ),
     with: {
       automations: {
@@ -193,7 +196,9 @@ export const getAutomationById = async ({
   automationId: string;
 }): Promise<AutomationDomain | null> => {
   const automation = await prisma.query.automations.findFirst({
-    where: and(eq(automationsTable.id, automationId), eq(automationsTable.projectId, projectId)),
+    where: relationalFilter(
+      and(eq(automationsTable.id, automationId), eq(automationsTable.projectId, projectId)),
+    ),
     with: {
       action: true,
       trigger: true,
@@ -228,12 +233,12 @@ export const getAutomations = async ({
   if (actionId) conditions.push(eq(automationsTable.actionId, actionId));
 
   const foundAutomations = await prisma.query.automations.findMany({
-    where: and(...conditions),
+    where: relationalFilter(and(...conditions)),
     with: {
       action: true,
       trigger: true,
     },
-    orderBy: desc(automationsTable.createdAt),
+    orderBy: relationalOrder(desc(automationsTable.createdAt)),
   });
 
   const domains = foundAutomations

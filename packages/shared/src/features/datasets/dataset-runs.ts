@@ -9,6 +9,7 @@
  * absent (older DB, adapter not yet upgraded) we return an empty item list.
  */
 import { randomUUID } from "node:crypto";
+import { relationalFilter, relationalOrder } from "@peri-fuse/shared/src/db/relational-filter";
 import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { type DatasetItem, type DatasetRuns, prisma, toKnownRequestError } from "../../db";
 import { datasetItems, datasetRuns } from "../../db/schema/index.js";
@@ -88,10 +89,12 @@ export async function getDatasetRunById(
   runId: string,
 ): Promise<DatasetRuns> {
   const row = await prisma.query.datasetRuns.findFirst({
-    where: and(
-      eq(datasetRuns.id, runId),
-      eq(datasetRuns.projectId, projectId),
-      eq(datasetRuns.datasetId, datasetId),
+    where: relationalFilter(
+      and(
+        eq(datasetRuns.id, runId),
+        eq(datasetRuns.projectId, projectId),
+        eq(datasetRuns.datasetId, datasetId),
+      ),
     ),
   });
   if (!row) {
@@ -108,8 +111,8 @@ export async function listDatasetRuns(
   const where = and(eq(datasetRuns.datasetId, datasetId), eq(datasetRuns.projectId, projectId));
 
   const items = await prisma.query.datasetRuns.findMany({
-    where,
-    orderBy: desc(datasetRuns.createdAt),
+    where: relationalFilter(where),
+    orderBy: relationalOrder(desc(datasetRuns.createdAt)),
     limit: opts.limit,
     offset: (opts.page - 1) * opts.limit,
   });
@@ -216,11 +219,13 @@ export async function getDatasetItemsCurrentVersions(
 ): Promise<Map<string, DatasetItem>> {
   if (itemIds.length === 0) return new Map();
   const rows = await prisma.query.datasetItems.findMany({
-    where: and(
-      eq(datasetItems.projectId, projectId),
-      inArray(datasetItems.id, itemIds),
-      isNull(datasetItems.validTo),
-      eq(datasetItems.isDeleted, false),
+    where: relationalFilter(
+      and(
+        eq(datasetItems.projectId, projectId),
+        inArray(datasetItems.id, itemIds),
+        isNull(datasetItems.validTo),
+        eq(datasetItems.isDeleted, false),
+      ),
     ),
   });
   return new Map(rows.map((row) => [row.id, row]));

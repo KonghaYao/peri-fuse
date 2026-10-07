@@ -1,25 +1,17 @@
-/**
- * SQLite telemetry adapter – stores trace/observation/score data in a local
- * SQLite database file. This is the "lite mode" adapter.
- *
- * Uses better-sqlite3 for synchronous, high-performance local access.
- * Database file: `.langfuse/telemetry.db` (or `LANGFUSE_SQLITE_DB_PATH`).
- *
- * NOTE: This is an initial implementation. Complex ClickHouse-specific queries
- * (aggregations, FINAL deduplication, array operations) will need to be
- * translated to SQLite-compatible SQL in the repository layer.
- */
-
 import * as fs from "node:fs";
 import * as path from "node:path";
-import Database from "better-sqlite3";
+import {
+  applyLocalMigrations,
+  createLocalDatabase,
+  isRemoteDatabaseUrl,
+  type LocalDatabase,
+  resolveDatabaseConfig,
+  resolveLocalPath,
+  validateDatabaseConfig,
+} from "../../db/local";
 import { logger } from "../logger";
-import { isSessionSearchAvailable } from "../session-search/schema";
-import { SessionSearchStorage } from "../session-search/storage";
-import { initializeDailyStatsDirty } from "../stats/daily-stats-dirty";
-import { refreshIngestionMetrics } from "./ingestion-metrics";
-import { initializeIngestionVersions, selectVersionedColumns } from "./ingestion-versions";
-import { encodeIoRow, initializeIoSchema, installIoReader, ioColumns } from "./io-compression";
+import { selectVersionedColumns } from "./ingestion-versions";
+import { decodeIoRow, encodeIoRow, ioColumns } from "./io-compression";
 import {
   DEFAULT_MAX_RESULT_BYTES,
   DEFAULT_MAX_RESULT_ROWS,
@@ -27,8 +19,12 @@ import {
   resolveReadPoolSize,
   SqliteReadPool,
 } from "./sqlite-read-pool";
-import { TelemetrySchemaMigrations } from "./sqlite-telemetry-migrations";
-import { initializeTelemetrySchema } from "./sqlite-telemetry-schema";
+import { readTelemetryMigrations } from "./sqlite-telemetry-schema";
+import {
+  executeTelemetryCommand,
+  isTelemetryEntity,
+  recordTelemetryMutation,
+} from "./telemetry-mutations";
 import {
   currentTelemetryQuerySignal,
   recordTelemetryQueryError,
@@ -36,156 +32,81 @@ import {
 } from "./telemetry-query-context";
 import type { TelemetryDBAdapter, TelemetryInsertOpts, TelemetryQueryOpts } from "./types";
 
-const DEFAULT_DB_PATH = ".langfuse/telemetry.db";
-
 export {
   TRACE_METRICS_CACHE_CREATION_TOKENS_SQL,
   TRACE_METRICS_CACHED_TOKENS_SQL,
   TRACE_METRICS_GROSS_INPUT_TOKENS_SQL,
 } from "./trace-metrics-sql";
 
-/** Find the monorepo root by traversing up from CWD looking for pnpm-workspace.yaml */
 function findMonorepoRoot(): string {
-  let dir = process.cwd();
-  for (let i = 0; i < 10; i++) {
-    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) {
-      return dir;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
+  let directory = process.cwd();
+  for (let depth = 0; depth < 10; depth++) {
+    if (fs.existsSync(path.join(directory, "pnpm-workspace.yaml"))) return directory;
+    const parent = path.dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
   }
-  // Fallback to CWD
   return process.cwd();
 }
 
 export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
-  private db: Database.Database;
+  private readonly db: LocalDatabase;
+  private readonly ready: Promise<void>;
   private readonly dbPath: string;
+  private readonly authToken?: string;
+  private readonly compressIo: boolean;
   private readPool: SqliteReadPool | null = null;
   private readPoolInit = false;
-  /** Writes since the last ANALYZE; triggers a re-ANALYZE at the threshold. */
-  private analyzeWriteCounter = 0;
-  private static readonly ANALYZE_WRITE_THRESHOLD = 50_000;
+  private closed = false;
 
-  private readonly compressIo: boolean;
   constructor(dbPath?: string) {
     const compression = process.env.PERIFUSE_IO_COMPRESSION_WRITE;
-    if (compression !== undefined && compression !== "off" && compression !== "on") {
+    if (compression !== undefined && compression !== "off" && compression !== "on")
       throw new Error("IO_COMPRESSION_INVALID_CONFIG");
-    }
     this.compressIo = compression === "on";
-    const rawPath = dbPath ?? process.env.LANGFUSE_SQLITE_DB_PATH ?? DEFAULT_DB_PATH;
-    // Resolve relative paths from the monorepo root so the DB location is
-    // consistent regardless of which package's CWD starts the process.
-    const resolvedPath = path.isAbsolute(rawPath)
-      ? rawPath
-      : path.resolve(findMonorepoRoot(), rawPath);
-    this.dbPath = resolvedPath;
-
-    // Ensure directory exists
-    fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
-
-    this.db = new Database(resolvedPath);
-
-    // Performance optimizations for local usage
-    this.db.pragma("journal_mode = WAL");
-    this.db.pragma("synchronous = NORMAL");
-    this.db.pragma("busy_timeout = 5000");
-    this.db.pragma("cache_size = -64000"); // 64MB cache
-    this.db.pragma("foreign_keys = ON");
-    // REPLACE 的隐式 DELETE 也必须标记旧日桶。
-    this.db.pragma("recursive_triggers = ON");
-
-    // Initialize schema
-    initializeTelemetrySchema(this.db);
-    new TelemetrySchemaMigrations(this.db).migrate();
-    initializeIngestionVersions(this.db);
-    initializeDailyStatsDirty(this.db);
-    initializeIoSchema(this.db);
-    installIoReader(this.db);
-    this.analyzeTables();
-
-    logger.info(`[SQLiteTelemetryAdapter] Database opened at ${resolvedPath}`);
+    const config =
+      dbPath === undefined
+        ? resolveDatabaseConfig("telemetry", ".langfuse/telemetry.turso.db")
+        : validateDatabaseConfig({
+            url: dbPath,
+            authToken: process.env.TURSO_TELEMETRY_AUTH_TOKEN ?? process.env.TURSO_AUTH_TOKEN,
+          });
+    this.dbPath = isRemoteDatabaseUrl(config.url)
+      ? config.url
+      : resolveLocalPath(config.url, findMonorepoRoot());
+    this.authToken = config.authToken;
+    this.db = createLocalDatabase(this.dbPath, false, this.authToken);
+    this.ready = applyLocalMigrations(this.db, readTelemetryMigrations());
+    void this.ready.catch(() => undefined);
   }
 
-  /**
-   * Refresh SQLite query-plan statistics (ANALYZE) for the hot tables.
-   *
-   * Without ANALYZE the planner falls back to default cost estimates: on a
-   * million-row observations table it can pick a low-selectivity index (e.g.
-   * idx_obs_start_level via `is_deleted = 0`) over the precise
-   * (project_id, trace_id) index, turning a trace point lookup into a
-   * full-project scan + temp B-tree (measured: ~1.5s → ~7ms on 1.1M rows).
-   * ANALYZE is cheap (~0.1s at 1M+ rows) and runs once at startup; the stats
-   * go stale as the DB grows, so re-run on a write-count threshold.
-   */
-  private analyzeTables(): void {
-    try {
-      this.db.exec("ANALYZE observations; ANALYZE traces; ANALYZE scores; ANALYZE trace_metrics;");
-    } catch (error) {
-      logger.error("[SQLiteTelemetryAdapter] ANALYZE failed", error);
-    }
+  async initialize(): Promise<void> {
+    if (this.closed) throw new Error("Telemetry database is closed");
+    await this.ready;
   }
 
-  private maybeReanalyze(): void {
-    this.analyzeWriteCounter++;
-    if (this.analyzeWriteCounter >= SQLiteTelemetryAdapter.ANALYZE_WRITE_THRESHOLD) {
-      this.analyzeWriteCounter = 0;
-      this.analyzeTables();
-    }
-  }
-
-  /**
-   * Lazily start the read-only worker pool (once). PERIFUSE_READ_WORKERS=0
-   * disables it, falling back to synchronous reads on the main connection.
-   */
   private getReadPool(): SqliteReadPool | null {
     if (!this.readPoolInit) {
       this.readPoolInit = true;
-      const size = resolveReadPoolSize();
-      if (size > 0) {
-        try {
-          this.readPool = new SqliteReadPool(this.dbPath, size);
-        } catch (error) {
-          logger.error(
-            "[SQLiteTelemetryAdapter] Read pool failed to start; using sync reads",
-            error,
-          );
-          this.readPool = null;
-        }
-      }
+      const size = this.dbPath === ":memory:" ? 0 : resolveReadPoolSize();
+      if (size > 0) this.readPool = new SqliteReadPool(this.dbPath, size, {}, this.authToken);
     }
     return this.readPool;
   }
 
   async query<T = Record<string, unknown>>(opts: TelemetryQueryOpts): Promise<T[]> {
-    opts = {
-      ...opts,
-      signal: opts.signal ?? currentTelemetryQuerySignal(),
-    };
+    await this.initialize();
+    opts = { ...opts, signal: opts.signal ?? currentTelemetryQuerySignal() };
     opts.signal?.throwIfAborted();
     for (const limit of [opts.timeoutMs, opts.maxResultRows, opts.maxResultBytes]) {
-      if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0)) {
-        throw new Error("Invalid SQLite query limit");
-      }
-    }
-    // Offload pure reads to worker threads so heavy aggregates never block the
-    // event loop; WAL permits these read-only connections alongside writes.
-    if (isReadOnlySql(opts.query)) {
-      const pool = this.getReadPool();
-      if (pool) {
-        try {
-          return await pool.query<T>(opts.query, opts.params ?? {}, opts);
-        } catch (error) {
-          recordTelemetryQueryError(error);
-          logger.error(`[SQLiteTelemetryAdapter] Query failed: ${opts.query}`, error);
-          throw error;
-        }
-      }
+      if (limit !== undefined && (!Number.isFinite(limit) || limit <= 0))
+        throw new Error("Invalid telemetry query limit");
     }
     try {
-      const stmt = this.db.prepare(opts.query);
+      if (isReadOnlySql(opts.query)) {
+        const pool = this.getReadPool();
+        if (pool) return await pool.query<T>(opts.query, opts.params ?? {}, opts);
+      }
       const deadline = Date.now() + (opts.timeoutMs ?? 30_000);
       const rows: T[] = [];
       let bytes = 0;
@@ -197,264 +118,190 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         opts.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES,
         DEFAULT_MAX_RESULT_BYTES,
       );
-      for (const row of stmt.iterate(opts.params ?? {}) as Iterable<Record<string, unknown>>) {
+      for await (const source of this.db.iterate(opts.query, opts.params ?? {}, {
+        queryTimeout: opts.timeoutMs ?? 30_000,
+      })) {
         opts.signal?.throwIfAborted();
         if (Date.now() >= deadline)
-          throw new TelemetryQueryError("TIMEOUT", "SQLite query timed out");
+          throw new TelemetryQueryError("TIMEOUT", "Telemetry query timed out");
+        const row = decodeIoRow(source);
         bytes += 64;
         for (const [key, value] of Object.entries(row)) {
-          bytes += key.length * 2 + 32;
           bytes +=
-            typeof value === "string"
+            key.length * 2 +
+            32 +
+            (typeof value === "string"
               ? value.length * 2
               : value instanceof Uint8Array
                 ? value.byteLength
-                : 8;
+                : 8);
         }
-        if (rows.length >= maxRows || bytes > maxBytes) {
+        if (rows.length >= maxRows || bytes > maxBytes)
           throw new TelemetryQueryError(
             "RESULT_LIMIT",
-            "SQLite query result limit exceeded; paginate or narrow the query",
+            "Telemetry query result limit exceeded; paginate or narrow the query",
           );
-        }
         rows.push(row as T);
       }
-      if (Date.now() >= deadline)
-        throw new TelemetryQueryError("TIMEOUT", "SQLite query timed out");
       return rows;
     } catch (error) {
       recordTelemetryQueryError(error);
-      logger.error(`[SQLiteTelemetryAdapter] Query failed: ${opts.query}`, error);
+      logger.error("[SQLiteTelemetryAdapter] Query failed", error);
       throw error;
     }
   }
 
   async command(opts: TelemetryQueryOpts): Promise<{ changes: number }> {
-    try {
-      const stmt = this.db.prepare(opts.query);
-      const info = stmt.run(opts.params ?? {});
-      return { changes: info.changes };
-    } catch (error) {
-      logger.error(`[SQLiteTelemetryAdapter] Command failed: ${opts.query}`, error);
-      throw error;
-    }
+    await this.initialize();
+    return this.db.transactionAsync((tx) => executeTelemetryCommand(tx, opts)).immediate();
   }
 
   async commandBatch(commands: TelemetryQueryOpts[], guard?: TelemetryQueryOpts): Promise<boolean> {
+    await this.initialize();
     return this.db
-      .transaction(() => {
-        // 先拿写锁再验证，其他连接不能在验证与发布之间修改源数据。
-        if (guard && !this.db.prepare(guard.query).get(guard.params ?? {})) return false;
-        for (const opts of commands) this.db.prepare(opts.query).run(opts.params ?? {});
+      .transactionAsync(async (tx) => {
+        if (guard && !(await tx.get(guard.query, guard.params ?? {}))) return false;
+        for (const opts of commands) await executeTelemetryCommand(tx, opts);
         return true;
       })
       .immediate();
   }
 
   async insert<T = Record<string, unknown>>(opts: TelemetryInsertOpts<T>): Promise<void> {
-    if (opts.records.length === 0) return;
-
-    if (opts.updateColumns) {
-      const updateColumns = opts.updateColumns;
-      this.db.transaction(() => {
-        const affected = new Map<string, Set<string>>();
-        const collect = (row: Record<string, unknown>) => {
-          const projectId = String(row.project_id);
-          const traceId =
-            opts.table === "traces"
-              ? row.id
-              : (
-                  this.db
-                    .prepare("SELECT trace_id FROM observations WHERE project_id=? AND id=?")
-                    .get(projectId, row.id) as { trace_id: string | null } | undefined
-                )?.trace_id;
-          if (typeof traceId !== "string") return;
-          if (!affected.has(projectId)) affected.set(projectId, new Set());
-          affected.get(projectId)!.add(traceId);
-        };
-        opts.records.forEach((record, index) => {
+    if (!opts.records.length) return;
+    await this.initialize();
+    await this.db
+      .transactionAsync(async (tx) => {
+        for (const [index, record] of opts.records.entries()) {
           const row = record as Record<string, unknown>;
           const encoded = encodeIoRow(opts.table, row, this.compressIo);
           const columns = Object.keys(encoded);
-          const requested = updateColumns[index].filter((c) => columns.includes(c));
-          const updates = opts.eventIds
-            ? selectVersionedColumns(
-                this.db,
-                opts.table,
-                row,
-                requested,
-                opts.eventIds[index],
-                opts.inheritColumns?.[index],
+          const before = isTelemetryEntity(opts.table)
+            ? await tx.get(
+                `SELECT * FROM ${opts.table} WHERE project_id=? AND id=?`,
+                row.project_id,
+                row.id,
               )
-            : requested;
-          const clauses = updates.flatMap((c) =>
-            ioColumns(opts.table, c).map((column) => `${column}=excluded.${column}`),
-          );
-          for (const c of opts.inheritColumns?.[index] ?? []) {
-            if (!opts.eventIds && !requested.includes(c) && (c === "input" || c === "output")) {
-              for (const column of ioColumns(opts.table, c)) {
-                clauses.push(`${column}=CASE WHEN ${opts.table}.${c}_codec=0 AND
-                  ${opts.table}.${c} IS NULL
-                  THEN excluded.${column} ELSE ${opts.table}.${column} END`);
+            : undefined;
+          let conflict = "";
+          if (opts.updateColumns) {
+            const requested = opts.updateColumns[index].filter((column) =>
+              columns.includes(column),
+            );
+            const updates = opts.eventIds
+              ? await selectVersionedColumns(
+                  tx,
+                  opts.table,
+                  row,
+                  requested,
+                  opts.eventIds[index],
+                  opts.inheritColumns?.[index],
+                )
+              : requested;
+            const clauses = [
+              ...new Set(updates.flatMap((column) => ioColumns(opts.table, column))),
+            ].map((column) => `${column}=excluded.${column}`);
+            for (const column of opts.inheritColumns?.[index] ?? []) {
+              if (
+                !opts.eventIds &&
+                !requested.includes(column) &&
+                (column === "input" || column === "output")
+              ) {
+                for (const companion of ioColumns(opts.table, column))
+                  clauses.push(
+                    `${companion}=CASE WHEN ${opts.table}.${column}_codec=0 AND ${opts.table}.${column} IS NULL THEN excluded.${companion} ELSE ${opts.table}.${companion} END`,
+                  );
               }
             }
+            conflict = ` ON CONFLICT(project_id,id) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`;
           }
-          collect(row);
-          const sql = `INSERT INTO ${opts.table} (${columns.join(",")})
-            VALUES (${columns.map((c) => `@${c}`).join(",")})
-            ON CONFLICT(project_id,id) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`;
-          this.db.prepare(sql).run(encoded);
-          this.markSearchDirty(opts.table, row);
-          collect(row);
-        });
-        for (const [projectId, traceIds] of affected) {
-          for (const traceId of traceIds) refreshIngestionMetrics(this.db, projectId, traceId);
+          await tx.run(
+            `INSERT ${opts.updateColumns ? "" : "OR REPLACE "}INTO ${opts.table} (${columns.join(",")}) VALUES (${columns.map((column) => `@${column}`).join(",")})${conflict}`,
+            encoded,
+          );
+          const after = isTelemetryEntity(opts.table)
+            ? await tx.get(
+                `SELECT * FROM ${opts.table} WHERE project_id=? AND id=?`,
+                row.project_id,
+                row.id,
+              )
+            : undefined;
+          await recordTelemetryMutation(tx, opts.table, before, after);
         }
-      })();
-      this.maybeReanalyze();
-      return;
-    }
-
-    const columns = Object.keys(opts.records[0] as Record<string, unknown>).flatMap((c) =>
-      ioColumns(opts.table, c),
-    );
-    const placeholders = columns.map((c) => `@${c}`).join(", ");
-    const sql = `INSERT OR REPLACE INTO ${opts.table} (${columns.join(", ")}) VALUES (${placeholders})`;
-
-    try {
-      const stmt = this.db.prepare(sql);
-      const insertMany = this.db.transaction((records: T[]) => {
-        for (const record of records) {
-          stmt.run(encodeIoRow(opts.table, record as Record<string, unknown>, this.compressIo));
-          this.markSearchDirty(opts.table, record as Record<string, unknown>);
-        }
-      });
-      insertMany(opts.records);
-      this.maybeReanalyze();
-    } catch (error) {
-      logger.error(`[SQLiteTelemetryAdapter] Insert into ${opts.table} failed`, error);
-      throw error;
-    }
+      })
+      .immediate();
   }
 
-  /**
-   * Insert with field-level merge: on PK conflict, only overwrite columns
-   * whose incoming value is non-null. Preserves existing data for columns
-   * that the new event does not carry.
-   */
   async mergeInsert<T = Record<string, unknown>>(opts: TelemetryInsertOpts<T>): Promise<void> {
-    if (opts.records.length === 0) return;
-
-    const columns = Object.keys(opts.records[0] as Record<string, unknown>).flatMap((c) =>
-      ioColumns(opts.table, c),
-    );
-    const placeholders = columns.map((c) => `@${c}`).join(", ");
-
-    // Determine PK columns for the ON CONFLICT target
-    const pkColumns =
-      opts.table === "traces" ||
-      opts.table === "observations" ||
-      opts.table === "scores" ||
-      opts.table === "dataset_run_items"
-        ? ["project_id", "id"]
-        : ["id"];
-
-    // Build SET clause: only overwrite when incoming value is non-null
-    const updateCols = Object.keys(opts.records[0] as Record<string, unknown>).filter(
-      (c) => !pkColumns.includes(c),
-    );
-    const setClauses = updateCols
-      .flatMap((c) =>
-        ioColumns(opts.table, c).map(
-          (column) =>
-            `${column} = CASE WHEN excluded.${c} IS NOT NULL THEN excluded.${column} ELSE ${opts.table}.${column} END`,
-        ),
-      )
-      .join(", ");
-
-    const sql = `INSERT INTO ${opts.table} (${columns.join(", ")}) VALUES (${placeholders}) ON CONFLICT(${pkColumns.join(", ")}) DO UPDATE SET ${setClauses}`;
-
-    try {
-      const stmt = this.db.prepare(sql);
-      const insertMany = this.db.transaction((records: T[]) => {
-        for (const record of records) {
-          stmt.run(encodeIoRow(opts.table, record as Record<string, unknown>, this.compressIo));
-          this.markSearchDirty(opts.table, record as Record<string, unknown>);
+    if (!opts.records.length) return;
+    await this.initialize();
+    await this.db
+      .transactionAsync(async (tx) => {
+        for (const record of opts.records) {
+          const row = record as Record<string, unknown>;
+          const encoded = encodeIoRow(opts.table, row, this.compressIo);
+          const columns = Object.keys(encoded);
+          const keys =
+            isTelemetryEntity(opts.table) || opts.table === "dataset_run_items"
+              ? ["project_id", "id"]
+              : ["id"];
+          const clauses = Object.keys(row)
+            .filter((column) => !keys.includes(column))
+            .flatMap((column) =>
+              ioColumns(opts.table, column).map(
+                (companion) =>
+                  `${companion}=CASE WHEN excluded.${column} IS NOT NULL THEN excluded.${companion} ELSE ${opts.table}.${companion} END`,
+              ),
+            );
+          const before = isTelemetryEntity(opts.table)
+            ? await tx.get(
+                `SELECT * FROM ${opts.table} WHERE project_id=? AND id=?`,
+                row.project_id,
+                row.id,
+              )
+            : undefined;
+          await tx.run(
+            `INSERT INTO ${opts.table} (${columns.join(",")}) VALUES (${columns.map((column) => `@${column}`).join(",")}) ON CONFLICT(${keys.join(",")}) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`,
+            encoded,
+          );
+          const after = isTelemetryEntity(opts.table)
+            ? await tx.get(
+                `SELECT * FROM ${opts.table} WHERE project_id=? AND id=?`,
+                row.project_id,
+                row.id,
+              )
+            : undefined;
+          await recordTelemetryMutation(tx, opts.table, before, after);
         }
-      });
-      insertMany(opts.records);
-      this.maybeReanalyze();
-    } catch (error) {
-      logger.error(`[SQLiteTelemetryAdapter] MergeInsert into ${opts.table} failed`, error);
-      throw error;
-    }
+      })
+      .immediate();
   }
 
-  private markSearchDirty(table: string, record: Record<string, unknown>): void {
-    if (table !== "traces" && table !== "observations") return;
-    if (!isSessionSearchAvailable(this.db)) return;
-    const projectId = record.project_id;
-    const id = record.id;
-    if (typeof projectId !== "string" || typeof id !== "string") return;
-    const raw = record.updated_at ?? record.event_ts ?? record.created_at;
-    const eventTime = record.start_time ?? record.timestamp ?? record.event_ts;
-    const revision = typeof raw === "number" ? raw : Date.parse(String(raw ?? "")) || Date.now();
-    try {
-      new SessionSearchStorage(this.db).markDirty({
-        projectId,
-        id,
-        revision,
-        kind: table === "traces" ? "trace" : "observation",
-        eventTime: typeof eventTime === "string" ? eventTime : undefined,
-      });
-    } catch {
-      // 不记录 SQLite 原始异常，避免包含遥测正文。
-      logger.error(`[SQLiteTelemetryAdapter] Failed to mark ${table} source dirty`);
-      throw new Error("Failed to mark ingestion source dirty");
-    }
-  }
-
-  /**
-   * List dataset run items for a project, optionally scoped to one run.
-   * Read-only: routed through the worker pool when available (SELECT).
-   */
   async queryDatasetRunItems(
     projectId: string,
     datasetRunId?: string,
   ): Promise<Record<string, unknown>[]> {
-    if (datasetRunId) {
-      return this.query({
-        query: `SELECT * FROM dataset_run_items WHERE project_id = @projectId AND dataset_run_id = @datasetRunId AND is_deleted = 0 ORDER BY created_at ASC`,
-        params: { projectId, datasetRunId },
-      });
-    }
     return this.query({
-      query: `SELECT * FROM dataset_run_items WHERE project_id = @projectId AND is_deleted = 0 ORDER BY created_at ASC`,
-      params: { projectId },
+      query: `SELECT * FROM dataset_run_items WHERE project_id=@projectId AND is_deleted=0 ${datasetRunId ? "AND dataset_run_id=@datasetRunId" : ""} ORDER BY created_at`,
+      params: { projectId, datasetRunId },
     });
   }
 
   async *queryStream<T = Record<string, unknown>>(opts: TelemetryQueryOpts): AsyncGenerator<T> {
-    // SQLite doesn't support true streaming, but we can iterate rows
-    const rows = await this.query<T>(opts);
-    for (const row of rows) {
-      yield row;
-    }
+    for (const row of await this.query<T>(opts)) yield row;
   }
 
-  /** Queue occupancy and worker lifecycle for process diagnostics. */
   getReadPoolStats() {
     return this.readPool?.stats() ?? null;
   }
-
-  /** Main connection for the bounded session-search lifecycle worker. */
-  getDatabase(): Database.Database {
+  getDatabase(): LocalDatabase {
     return this.db;
   }
 
   async healthCheck(): Promise<boolean> {
     try {
-      this.db.prepare("SELECT 1").get();
+      await this.initialize();
+      await this.db.get("SELECT 1");
       return true;
     } catch {
       return false;
@@ -462,7 +309,9 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   }
 
   async close(): Promise<void> {
+    this.closed = true;
+    await this.ready.catch(() => undefined);
     await this.readPool?.close();
-    this.db.close();
+    await this.db.close();
   }
 }

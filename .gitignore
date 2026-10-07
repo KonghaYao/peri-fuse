@@ -14,7 +14,13 @@ dist/
 .langfuse/
 *.db
 *.db-shm
+*.db-tshm
 *.db-wal
+*.db.migrating*
+*.db.migration.json*
+.legacy-turso-migration.lock
+.salt
+.encryption-key
 
 # Test artifacts
 .test/
@@ -62,3 +68,4 @@ data/
 
 # CLI build artifacts (copied at build time for publishing)
 packages/cli/drizzle/
+packages/cli/telemetry-drizzle/

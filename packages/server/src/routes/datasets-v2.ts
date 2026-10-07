@@ -1,3 +1,4 @@
+import { relationalFilter } from "@peri-fuse/shared/src/db/relational-filter";
 /**
  * v2 datasets public API routes (spec operations `datasets_list` /
  * `datasets_create` / `datasets_get`).
@@ -96,7 +97,7 @@ app.get("/api/public/v2/datasets/:datasetName", authMiddleware, responseCache(2_
   const projectId = c.get("auth").scope.projectId;
   const name = c.req.param("datasetName");
   const row = await prisma.query.datasets.findFirst({
-    where: and(eq(datasets.projectId, projectId), eq(datasets.name, name)),
+    where: relationalFilter(and(eq(datasets.projectId, projectId), eq(datasets.name, name))),
   });
   if (!row) {
     throw new LangfuseNotFoundError(`Dataset with name '${name}' not found`);

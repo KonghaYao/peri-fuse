@@ -8,6 +8,7 @@
  * working with only an import change.
  */
 import { sql as _sql, type SQL } from "drizzle-orm";
+import { isDatabaseConstraint } from "./errors.js";
 
 /** A raw SQL fragment, equivalent to the former `Prisma.Sql`. */
 export type Sql = SQL;
@@ -33,14 +34,14 @@ export class PrismaClientKnownRequestError extends Error {
 const _PrismaClientKnownRequestError = PrismaClientKnownRequestError;
 
 /**
- * Map a better-sqlite3 / Drizzle error to a Prisma-style code where possible.
+ * Map a embedded Turso / Drizzle error to a Prisma-style code where possible.
  * SQLite sets `code === "SQLITE_CONSTRAINT_UNIQUE"` (or a message containing
  * "UNIQUE constraint failed") for unique violations.
  */
 export function toKnownRequestError(err: unknown): PrismaClientKnownRequestError | null {
   const e = err as { code?: string; message?: string };
   const msg = e?.message ?? "";
-  if (e?.code === "SQLITE_CONSTRAINT_UNIQUE" || /UNIQUE constraint failed/i.test(msg)) {
+  if (isDatabaseConstraint(err, "unique")) {
     return new PrismaClientKnownRequestError(msg || "Unique constraint failed", {
       code: "P2002",
     });

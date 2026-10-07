@@ -94,7 +94,7 @@ const REFRESH_INTERVAL_MS = 30_000;
  * Start maintenance: initial backfill + periodic refresh of recent days.
  * Returns a stop function (used for graceful shutdown / tests).
  */
-export function startDailyStatsMaintenance(intervalMs = REFRESH_INTERVAL_MS): () => void {
+export function startDailyStatsMaintenance(intervalMs = REFRESH_INTERVAL_MS): () => Promise<void> {
   return startMaintenanceLoop(
     (signal) => withTelemetryQuerySignal(signal, () => backfillMissingDays(signal)),
     (signal) => withTelemetryQuerySignal(signal, () => refreshRecentDays(signal)),

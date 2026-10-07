@@ -8,6 +8,7 @@ import { getDb } from "../db.js";
 import { nextBudgetResetAt } from "./budget-period.js";
 
 let resetTimer: ReturnType<typeof setInterval> | null = null;
+let activeReset: Promise<void> | null = null;
 
 /**
  * Run one deterministic budget reset pass.
@@ -22,7 +23,8 @@ export async function runBudgetReset(now = new Date()): Promise<void> {
   for (const b of configuredBudgets) {
     const nextReset = nextBudgetResetAt(b.duration!, now);
     if (nextReset === null) {
-      db.update(budget)
+      await db
+        .update(budget)
         .set({ duration: null, resetAt: null })
         .where(and(eq(budget.id, b.id), eq(budget.projectId, b.projectId)))
         .run();
@@ -33,12 +35,14 @@ export async function runBudgetReset(now = new Date()): Promise<void> {
     }
     if (!b.resetAt || b.resetAt > nowIso) continue;
 
-    db.transaction((tx) => {
-      tx.update(apiKey)
+    await db.transaction(async (tx) => {
+      await tx
+        .update(apiKey)
         .set({ spend: 0 })
         .where(and(eq(apiKey.budgetId, b.id), eq(apiKey.projectId, b.projectId)))
         .run();
-      tx.update(budget)
+      await tx
+        .update(budget)
         .set({ resetAt: nextReset })
         .where(and(eq(budget.id, b.id), eq(budget.projectId, b.projectId)))
         .run();
@@ -53,7 +57,8 @@ export async function runBudgetReset(now = new Date()): Promise<void> {
   for (const p of configuredProviders) {
     const nextReset = nextBudgetResetAt(p.budgetPeriod!, now);
     if (nextReset === null) {
-      db.update(provider)
+      await db
+        .update(provider)
         .set({ budgetPeriod: null, budgetResetAt: null })
         .where(and(eq(provider.id, p.id), eq(provider.projectId, p.projectId)))
         .run();
@@ -74,14 +79,20 @@ export async function runBudgetReset(now = new Date()): Promise<void> {
 export function startBudgetReset(): void {
   if (resetTimer) return;
   resetTimer = setInterval(() => {
-    runBudgetReset().catch((err) => console.error("[budget-reset] error:", err));
+    if (activeReset) return;
+    activeReset = runBudgetReset()
+      .catch((err) => console.error("[budget-reset] error:", err))
+      .finally(() => {
+        activeReset = null;
+      });
   }, 60_000); // Check every minute
   if (resetTimer.unref) resetTimer.unref();
 }
 
-export function stopBudgetReset(): void {
+export async function stopBudgetReset(): Promise<void> {
   if (resetTimer) {
     clearInterval(resetTimer);
     resetTimer = null;
   }
+  await activeReset;
 }

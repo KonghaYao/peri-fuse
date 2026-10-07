@@ -59,7 +59,7 @@ export interface TelemetryInsertOpts<T = Record<string, unknown>> {
  * Abstract interface for the telemetry data store.
  *
  * - Full mode: backed by ClickHouse
- * - Lite mode: backed by SQLite (better-sqlite3)
+ * - Lite mode: backed by SQLite (embedded Turso)
  */
 export interface TelemetryDBAdapter {
   /** Underlying database handle for bounded SQLite readers; absent for remote backends. */

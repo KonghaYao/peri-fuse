@@ -8,6 +8,28 @@ afterEach(() => {
 });
 
 describe("serial maintenance", () => {
+  it("waits for an in-flight pass to settle before shutdown completes", async () => {
+    let finish!: () => void;
+    let stopped = false;
+    const stop = startMaintenanceLoop(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      async () => {},
+      10,
+      vi.fn(),
+    );
+    const shutdown = stop().then(() => {
+      stopped = true;
+    });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    finish();
+    await shutdown;
+    expect(stopped).toBe(true);
+  });
+
   it("waits for startup/backfill and for each refresh before scheduling another pass", async () => {
     vi.useFakeTimers();
     let finishInitial!: () => void;

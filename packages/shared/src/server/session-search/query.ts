@@ -1,7 +1,8 @@
 import { getTelemetryDB } from "../adapters";
-import { contentHash, normalizeSearchText } from "./extraction";
+import { normalizeSearchText } from "./extraction";
 import { makeSnippet } from "./highlight";
 import { querySessionSearchRead, stopSessionSearchReadPool } from "./read-pool";
+import { searchTrigrams } from "./schema";
 import type { SessionSearchHit, SessionSearchRequest, SessionSearchResponse } from "./types";
 
 const CANDIDATE_CAP = 1000;
@@ -44,7 +45,8 @@ export async function searchSessions(
   const limit = Math.min(Math.max(input.limit ?? 20, 1), 20);
   const normalizedLiteral = normalizeSearchText(query);
   if (Array.from(normalizedLiteral).length < 3) throw new Error("QUERY_TOO_SHORT");
-  const normalized = normalizedLiteral.replaceAll('"', '""');
+  const grams = searchTrigrams(normalizedLiteral);
+  const gramParams = Object.fromEntries(grams.map((gram, index) => [`gram${index}`, gram]));
   const deadline = Date.now() + 500;
   const budget = new AbortController();
   const abort = () => budget.abort();
@@ -56,22 +58,22 @@ export async function searchSessions(
     signal?.removeEventListener("abort", abort);
   };
   const shortWindow = Date.parse(resolved.to) - Date.parse(resolved.from) <= 6 * 60 * 60 * 1000;
-  const scope = contentHash(projectId).slice(0, 32);
   try {
     const candidateCte = shortWindow
       ? `WITH time_candidates AS MATERIALIZED (
       SELECT * FROM search_occurrences INDEXED BY idx_search_occ_window
       WHERE project_id=@projectId AND event_time >= @from AND event_time < @to
     )`
-      : `WITH fts_candidates AS MATERIALIZED (
-      SELECT rowid FROM search_fts
-      WHERE normalized_text MATCH @match AND project_scope MATCH @scope
+      : `WITH text_candidates AS MATERIALIZED (
+      SELECT text_id FROM search_trigrams
+      WHERE project_id=@projectId AND gram IN (${grams.map((_, index) => `@gram${index}`).join(",")})
+      GROUP BY text_id HAVING count(*)=${grams.length}
     )`;
     const candidateFrom = shortWindow
       ? `FROM time_candidates o
     JOIN search_texts t ON t.text_id=o.text_id AND t.project_id=@projectId`
-      : `FROM fts_candidates f
-    CROSS JOIN search_texts t ON t.text_id=f.rowid AND t.project_id=@projectId
+      : `FROM text_candidates f
+    CROSS JOIN search_texts t ON t.text_id=f.text_id AND t.project_id=@projectId
     CROSS JOIN search_occurrences o INDEXED BY idx_search_occ_text
       ON o.text_id=t.text_id AND o.project_id=@projectId
       AND o.event_time >= @from AND o.event_time < @to`;
@@ -90,14 +92,13 @@ export async function searchSessions(
     LEFT JOIN traces tr ON o.source_kind='trace' AND tr.project_id=o.project_id AND tr.id=o.source_id AND tr.is_deleted=0
     LEFT JOIN traces tr2 ON o.source_kind='observation' AND tr2.project_id=o.project_id AND tr2.id=o.trace_id AND tr2.is_deleted=0
     JOIN search_source_revisions sr ON sr.project_id=o.project_id AND sr.source_kind=o.source_kind AND sr.source_id=o.source_id AND sr.revision=o.source_version
-    WHERE t.project_id=@projectId AND ${shortWindow ? "instr(t.normalized_text,@literal)>0" : "1=1"}
+    WHERE t.project_id=@projectId AND instr(t.normalized_text,@literal)>0
       AND ((o.source_kind='trace' AND tr.id IS NOT NULL) OR (o.source_kind='observation' AND ob.id IS NOT NULL AND tr2.id IS NOT NULL))
     ORDER BY o.event_time DESC, o.occurrence_id DESC LIMIT @cap`,
       {
         projectId,
         literal: normalizedLiteral,
-        match: `"${normalized}"`,
-        scope,
+        ...gramParams,
         from: resolved.from,
         to: resolved.to,
         cap: CANDIDATE_CAP + 1,

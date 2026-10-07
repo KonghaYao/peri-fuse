@@ -94,8 +94,8 @@ app.get("/api/public/sessions/:sessionId", authMiddleware, responseCache(2_000),
   const traceRows = await db.query<Record<string, unknown>>({
     query: `
       SELECT id, name, timestamp, user_id, environment
-             ${includeIo ? ", input, output" : ""}
-      FROM perifuse_read_traces
+             ${includeIo ? ", input, input_codec, input_raw_size, output, output_codec, output_raw_size" : ""}
+      FROM traces
       WHERE project_id = @projectId
         AND session_id = @sessionId
         AND is_deleted = 0

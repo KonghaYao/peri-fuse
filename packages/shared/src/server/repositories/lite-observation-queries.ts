@@ -14,7 +14,9 @@ export async function liteGetObservationsForTrace(
 ): Promise<ObservationRecordReadType[]> {
   const db = getTelemetryDB();
 
-  const ioColumns = includeIO ? "input, output, metadata," : "";
+  const ioColumns = includeIO
+    ? "input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata,"
+    : "";
 
   try {
     const rows = await db.query<Record<string, unknown>>({
@@ -33,7 +35,7 @@ export async function liteGetObservationsForTrace(
                completion_start_time,
                prompt_id, prompt_name, prompt_version,
                created_at, updated_at, event_ts
-        FROM perifuse_read_observations
+        FROM observations
         WHERE project_id = @projectId AND trace_id = @traceId AND is_deleted = 0
         ORDER BY start_time ASC
       `,
@@ -100,7 +102,9 @@ export async function liteGetObservationsForTraces(
   if (traceIds.length === 0) return result;
 
   const db = getTelemetryDB();
-  const ioColumns = includeIO ? "input, output, metadata," : "";
+  const ioColumns = includeIO
+    ? "input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata,"
+    : "";
   const placeholders = traceIds.map((_, i) => `@id${i}`).join(",");
   const params: Record<string, unknown> = { projectId };
   traceIds.forEach((id, i) => {
@@ -124,7 +128,7 @@ export async function liteGetObservationsForTraces(
                completion_start_time,
                prompt_id, prompt_name, prompt_version,
                created_at, updated_at, event_ts
-        FROM perifuse_read_observations
+        FROM observations
         WHERE project_id = @projectId AND trace_id IN (${placeholders}) AND is_deleted = 0
         ORDER BY start_time ASC
       `,
@@ -197,7 +201,7 @@ export async function liteGetObservationById(
 
   try {
     const rows = await db.query<Record<string, unknown>>({
-      query: `SELECT * FROM perifuse_read_observations WHERE project_id = @projectId AND id = @observationId AND is_deleted = 0 LIMIT 1`,
+      query: `SELECT * FROM observations WHERE project_id = @projectId AND id = @observationId AND is_deleted = 0 LIMIT 1`,
       params: { projectId, observationId },
     });
 
@@ -271,8 +275,8 @@ export async function liteGetObservationsTable(
           name, level, status_message, version, model, model_parameters, total_cost,
           prompt_id, prompt_name, prompt_version, start_time, end_time, completion_start_time,
           created_at, updated_at, event_ts, provided_usage_details, provided_cost_details,
-          usage_details, cost_details ${includeIO ? ", input, output, metadata" : ""}
-        FROM perifuse_read_observations
+          usage_details, cost_details ${includeIO ? ", input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata" : ""}
+        FROM observations
         WHERE project_id = @projectId AND is_deleted = 0
         ${clause ? `AND ${clause}` : ""}
         ORDER BY start_time DESC
@@ -340,7 +344,7 @@ export async function liteGetObservationsTableCount(
   try {
     const rows = await db.query<{ count: number }>({
       query: `
-        SELECT COUNT(*) as count FROM perifuse_read_observations
+        SELECT COUNT(*) as count FROM observations
         WHERE project_id = @projectId AND is_deleted = 0
         ${clause ? `AND ${clause}` : ""}
       `,
