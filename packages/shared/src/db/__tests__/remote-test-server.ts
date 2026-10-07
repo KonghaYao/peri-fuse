@@ -48,6 +48,12 @@ export async function startRemoteTestServer(basePath = "", search = "") {
       let body = "";
       for await (const chunk of request) body += chunk;
       const payload = JSON.parse(body) as Payload;
+      if (payload.baton && !streams.has(payload.baton)) {
+        response
+          .writeHead(400)
+          .end(JSON.stringify({ message: "The stream has expired due to inactivity" }));
+        return;
+      }
       const baton = payload.baton ?? `stream-${++sequence}`;
       let stream = streams.get(baton);
       if (!stream) {
@@ -179,6 +185,10 @@ export async function startRemoteTestServer(basePath = "", search = "") {
     authToken: token,
     directory,
     requestCount: () => requests,
+    async expireStreams() {
+      await Promise.all([...streams.values()].map(({ db }) => db.close()));
+      streams.clear();
+    },
     async close() {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

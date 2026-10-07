@@ -22,6 +22,40 @@ afterEach(async () => {
 });
 
 describe("remote Turso HTTP storage", () => {
+  it("reconnects expired idle sessions for pipeline and cursor requests", async () => {
+    const client = await openLocalDatabase(server.url, false, server.authToken);
+    try {
+      await client.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)");
+      await server.expireStreams();
+      await client.run("INSERT INTO items VALUES(1)");
+      await server.expireStreams();
+      const statement = await client.prepare("SELECT id FROM items");
+      expect(await statement.all()).toEqual([{ id: 1 }]);
+      await server.expireStreams();
+      await client.exec("INSERT INTO items VALUES(2)");
+      expect(await client.get("SELECT count(*) AS count FROM items")).toEqual({ count: 2 });
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("does not reconnect an expired transaction or commit partial writes", async () => {
+    const client = await openLocalDatabase(server.url, false, server.authToken);
+    try {
+      await client.exec("CREATE TABLE items(id INTEGER PRIMARY KEY)");
+      await expect(
+        client.transactionAsync(async (transaction) => {
+          await transaction.run("INSERT INTO items VALUES(1)");
+          await server.expireStreams();
+          await transaction.run("INSERT INTO items VALUES(2)");
+        })(),
+      ).rejects.toThrow("expired");
+      expect(await client.get("SELECT count(*) AS count FROM items")).toEqual({ count: 0 });
+    } finally {
+      await client.close();
+    }
+  });
+
   it("protects remote read-only connections without requiring query_only support", async () => {
     const writer = await openLocalDatabase(server.url, false, server.authToken);
     await writer.exec("CREATE TABLE items(id INTEGER PRIMARY KEY); INSERT INTO items VALUES(1)");

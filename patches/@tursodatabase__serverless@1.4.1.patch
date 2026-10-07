@@ -1,8 +1,8 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index f3298ad825bdb47228fdd4b6e81abfd18ac496bb..3aae901b1f7f80db940bc5f035d009304d4f0eb9 100644
+index f3298ad825bdb47228fdd4b6e81abfd18ac496bb..cf69f69d945e5292e6b162a2620cefa4a6e8ac22 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -145,10 +145,15 @@ function wrapAbortError(error) {
+@@ -145,10 +145,29 @@ function wrapAbortError(error) {
    }
    throw error;
  }
@@ -11,24 +11,38 @@ index f3298ad825bdb47228fdd4b6e81abfd18ac496bb..3aae901b1f7f80db940bc5f035d00930
 +  url.pathname = `${url.pathname.replace(/\/+$/, "")}${endpoint}`;
 +  return url.toString();
 +}
++async function fetchSession(ctx, endpoint, request, signal) {
++  const url = endpointUrl(ctx.url, endpoint);
++  const response = await fetch(url, buildFetchOptions(ctx, JSON.stringify(request), signal));
++  if (response.status !== 400 || !request.baton || !ctx.autocommit) return response;
++  let error;
++  try {
++    error = await response.clone().json();
++  } catch {
++    return response;
++  }
++  if (error.message !== "The stream has expired due to inactivity") return response;
++  await response.body?.cancel();
++  return fetch(url, buildFetchOptions(ctx, JSON.stringify({ ...request, baton: null }), signal));
++}
  async function executeCursor(ctx, request, signal) {
    let response;
    try {
 -    response = await fetch(`${ctx.url}/v3/cursor`, buildFetchOptions(ctx, JSON.stringify(request), signal));
-+    response = await fetch(endpointUrl(ctx.url, "/v3/cursor"), buildFetchOptions(ctx, JSON.stringify(request), signal));
++    response = await fetchSession(ctx, "/v3/cursor", request, signal);
    } catch (error) {
      wrapAbortError(error);
    }
-@@ -233,7 +238,7 @@ async function executeCursor(ctx, request, signal) {
+@@ -233,7 +252,7 @@ async function executeCursor(ctx, request, signal) {
  async function executePipeline(ctx, request, signal) {
    let response;
    try {
 -    response = await fetch(`${ctx.url}/v3/pipeline`, buildFetchOptions(ctx, JSON.stringify(request), signal));
-+    response = await fetch(endpointUrl(ctx.url, "/v3/pipeline"), buildFetchOptions(ctx, JSON.stringify(request), signal));
++    response = await fetchSession(ctx, "/v3/pipeline", request, signal);
    } catch (error) {
      wrapAbortError(error);
    }
-@@ -360,7 +365,7 @@ function batchInputError(index, message) {
+@@ -360,7 +379,7 @@ function batchInputError(index, message) {
    return error;
  }
  function normalizeUrl(url) {
@@ -37,11 +51,19 @@ index f3298ad825bdb47228fdd4b6e81abfd18ac496bb..3aae901b1f7f80db940bc5f035d00930
  }
  function isValidIdentifier(str) {
    return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
+@@ -388,6 +407,7 @@ var Session = class _Session {
+       url: this.baseUrl,
+       authToken: this.config.authToken,
+       remoteEncryptionKey: this.config.remoteEncryptionKey,
++      autocommit: this.autocommit,
+       requestHeaders
+     };
+   }
 diff --git a/dist/index.js b/dist/index.js
-index 94efd1987358587ad7b0eeefc1907c25ef5a618d..cb19c3c3ff301e6f81feb36cf1759897070efc25 100644
+index 94efd1987358587ad7b0eeefc1907c25ef5a618d..71e1b491e32a6b8f12c0a41a85183e0ba8402d6c 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -143,10 +143,15 @@ function wrapAbortError(error) {
+@@ -143,10 +143,29 @@ function wrapAbortError(error) {
    }
    throw error;
  }
@@ -50,24 +72,38 @@ index 94efd1987358587ad7b0eeefc1907c25ef5a618d..cb19c3c3ff301e6f81feb36cf1759897
 +  url.pathname = `${url.pathname.replace(/\/+$/, "")}${endpoint}`;
 +  return url.toString();
 +}
++async function fetchSession(ctx, endpoint, request, signal) {
++  const url = endpointUrl(ctx.url, endpoint);
++  const response = await fetch(url, buildFetchOptions(ctx, JSON.stringify(request), signal));
++  if (response.status !== 400 || !request.baton || !ctx.autocommit) return response;
++  let error;
++  try {
++    error = await response.clone().json();
++  } catch {
++    return response;
++  }
++  if (error.message !== "The stream has expired due to inactivity") return response;
++  await response.body?.cancel();
++  return fetch(url, buildFetchOptions(ctx, JSON.stringify({ ...request, baton: null }), signal));
++}
  async function executeCursor(ctx, request, signal) {
    let response;
    try {
 -    response = await fetch(`${ctx.url}/v3/cursor`, buildFetchOptions(ctx, JSON.stringify(request), signal));
-+    response = await fetch(endpointUrl(ctx.url, "/v3/cursor"), buildFetchOptions(ctx, JSON.stringify(request), signal));
++    response = await fetchSession(ctx, "/v3/cursor", request, signal);
    } catch (error) {
      wrapAbortError(error);
    }
-@@ -231,7 +236,7 @@ async function executeCursor(ctx, request, signal) {
+@@ -231,7 +250,7 @@ async function executeCursor(ctx, request, signal) {
  async function executePipeline(ctx, request, signal) {
    let response;
    try {
 -    response = await fetch(`${ctx.url}/v3/pipeline`, buildFetchOptions(ctx, JSON.stringify(request), signal));
-+    response = await fetch(endpointUrl(ctx.url, "/v3/pipeline"), buildFetchOptions(ctx, JSON.stringify(request), signal));
++    response = await fetchSession(ctx, "/v3/pipeline", request, signal);
    } catch (error) {
      wrapAbortError(error);
    }
-@@ -358,7 +363,7 @@ function batchInputError(index, message) {
+@@ -358,7 +377,7 @@ function batchInputError(index, message) {
    return error;
  }
  function normalizeUrl(url) {
@@ -76,3 +112,11 @@ index 94efd1987358587ad7b0eeefc1907c25ef5a618d..cb19c3c3ff301e6f81feb36cf1759897
  }
  function isValidIdentifier(str) {
    return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(str);
+@@ -386,6 +405,7 @@ var Session = class _Session {
+       url: this.baseUrl,
+       authToken: this.config.authToken,
+       remoteEncryptionKey: this.config.remoteEncryptionKey,
++      autocommit: this.autocommit,
+       requestHeaders
+     };
+   }
