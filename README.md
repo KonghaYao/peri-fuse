@@ -4,7 +4,7 @@ A lightweight, self-contained LLM observability server — the open-source platf
 
 Peri-Fuse uses **embedded Turso + Drizzle** by default, with no external infrastructure (no ClickHouse, Redis, S3, or BullMQ). You can optionally replace local databases with remote Turso using a URL and auth token. It's designed for local development, small teams, and edge deployments.
 
-This release initializes fresh `.turso.db` databases; existing SQLite files are not converted or deleted. See [embedded Turso storage](docs/embedded-turso.md) for pinned versions, migrations, concurrency and maintenance.
+This release initializes fresh `.turso.db` databases; existing SQLite files are not automatically converted or deleted. To preserve legacy data, stop the service and run `bash scripts/migrate-legacy-db.sh --offline`. See [legacy migration](docs/legacy-db-migration.md) for safe inspection, large-database handling and resuming, and [embedded Turso storage](docs/embedded-turso.md) for pinned versions and migrations.
 Requires Node.js 22.12.0 or newer.
 
 ## Features

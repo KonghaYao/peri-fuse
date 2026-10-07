@@ -19,6 +19,12 @@ you need their history, and choose new paths for this release. New empty databas
 receive committed baselines automatically. Subsequent generated migrations are
 applied atomically and recorded in `_perifuse_migrations`.
 
+For an existing better-sqlite3 installation, use
+`bash scripts/migrate-legacy-db.sh --offline` after stopping every writer. This
+explicit migration reads legacy DB/WAL files without replacing them, copies data
+in bounded transactions, preserves key files and rebuilds search trigrams. See
+[legacy database migration](legacy-db-migration.md) for inspection and resume steps.
+
 ## Optional remote Turso
 
 Set `TURSO_DATABASE_URL=libsql://your-database-your-org.turso.io` and

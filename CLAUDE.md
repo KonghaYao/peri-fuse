@@ -213,7 +213,7 @@ pnpm run svc:logs             # 查看服务日志
 
 - 元数据 schema：`packages/shared/src/db/schema/`；遥测 schema：`packages/shared/src/db/telemetry/`。
 - 标准流程：修改 schema → `pnpm run db:generate` → 提交 migration.sql / snapshot.json → 运行相关测试。启动时按 journal 事务应用迁移。
-- 只初始化新库；旧 SQLite 文件不转换、不删除。使用新的默认 `.turso.db` 路径。
+- 启动只初始化新库；旧 SQLite 文件不自动转换或删除。需要保留旧数据时，停服后执行 `bash scripts/migrate-legacy-db.sh --offline`，详见 [旧库迁移](./docs/legacy-db-migration.md)。
 
 ### Gateway（Drizzle ORM）
 

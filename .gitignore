@@ -16,6 +16,11 @@ dist/
 *.db-shm
 *.db-tshm
 *.db-wal
+*.db.migrating*
+*.db.migration.json*
+.legacy-turso-migration.lock
+.salt
+.encryption-key
 
 # Test artifacts
 .test/
