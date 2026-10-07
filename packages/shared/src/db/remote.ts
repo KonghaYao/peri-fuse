@@ -27,6 +27,15 @@ function statementArguments(parameters: unknown[]): unknown {
   return parameters;
 }
 
+async function assertReadOnly(
+  session: Session,
+  sql: string,
+  options?: QueryOptions,
+): Promise<void> {
+  const description = await session.describe(sql, options);
+  if (!description.is_readonly) throw new Error("Database is read-only");
+}
+
 async function* streamRows(
   config: DatabaseConnectionConfig,
   sql: string,
@@ -35,7 +44,7 @@ async function* streamRows(
 ) {
   const session = new Session(config);
   try {
-    await session.sequence("PRAGMA query_only = 1", options);
+    await assertReadOnly(session, sql, options);
     const { entries } = await session.executeRaw(
       sql,
       parameters as unknown[] | Record<string, unknown>,
@@ -98,18 +107,43 @@ function wrapStatement(
   return wrapper;
 }
 
-function executor(connection: Connection, config?: DatabaseConnectionConfig) {
+function executor(connection: Connection, config?: DatabaseConnectionConfig, readonly = false) {
+  const checkReadOnly = async (sql: string) => {
+    if (!readonly || !config) return;
+    const session = new Session(config);
+    try {
+      await assertReadOnly(session, sql);
+    } finally {
+      await session.close();
+    }
+  };
   return {
-    exec: (sql: string) => connection.exec(sql),
-    run: (sql: string, ...parameters: unknown[]) => connection.run(sql, ...parameters),
-    get: (sql: string, ...parameters: unknown[]) => connection.get(sql, ...parameters),
-    all: (sql: string, ...parameters: unknown[]) => connection.all(sql, ...parameters),
-    prepare: async (sql: string) =>
-      wrapStatement(
+    async exec(sql: string) {
+      await checkReadOnly(sql);
+      if (readonly) await connection.all(sql);
+      else await connection.exec(sql);
+    },
+    async run(sql: string, ...parameters: unknown[]) {
+      await checkReadOnly(sql);
+      return connection.run(sql, ...parameters);
+    },
+    async get(sql: string, ...parameters: unknown[]) {
+      await checkReadOnly(sql);
+      return connection.get(sql, ...parameters);
+    },
+    async all(sql: string, ...parameters: unknown[]) {
+      await checkReadOnly(sql);
+      return connection.all(sql, ...parameters);
+    },
+    async prepare(sql: string) {
+      await checkReadOnly(sql);
+      return wrapStatement(
         await connection.prepare(sql),
         config ? (parameters, options) => streamRows(config, sql, parameters, options) : undefined,
-      ),
+      );
+    },
     async *iterate(sql: string, parameters?: unknown, options?: QueryOptions) {
+      await checkReadOnly(sql);
       const statement = wrapStatement(
         await connection.prepare(sql),
         config
@@ -126,11 +160,10 @@ export function createRemoteDatabase(config: DatabaseConnectionConfig, readonly 
   const transactions = new Set<Promise<unknown>>();
   let closed = false;
   const database = {
-    ...executor(connection, config),
+    ...executor(connection, config, readonly),
     name: config.url,
     async connect() {
       if (closed) throw new Error("Database is closed");
-      if (readonly) await connection.exec("PRAGMA query_only = 1");
     },
     async close() {
       closed = true;

@@ -75,6 +75,10 @@ export async function startRemoteTestServer(basePath = "", search = "") {
               closed = true;
               result = { type: entry.type };
             } else if (entry.type === "sequence") {
+              if (/\bPRAGMA\s+query_only\b/i.test(entry.sql ?? ""))
+                throw new Error(
+                  "SQL string could not be parsed: unsupported statement: PRAGMA query_only",
+                );
               await db.exec(entry.sql!);
               updateAutocommit(entry.sql!);
               result = { type: entry.type };
@@ -88,7 +92,10 @@ export async function startRemoteTestServer(basePath = "", search = "") {
                     .map((column) => ({ name: column.name, decltype: column.type })),
                   params: [],
                   is_explain: false,
-                  is_readonly: statement.reader,
+                  is_readonly:
+                    (statement.reader &&
+                      !/\b(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(entry.sql!.split(";")[0])) ||
+                    /^\s*PRAGMA\s+foreign_keys\s*=\s*ON\s*$/i.test(entry.sql!),
                 },
               };
               statement.close();

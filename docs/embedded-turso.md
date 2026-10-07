@@ -74,6 +74,10 @@ Startup creates and migrates tables and therefore requires write access.
 Read and search workers receive the same remote configuration. Remote reads use
 streaming HTTP cursors and retain row/byte/time limits; index writes and migrations
 use dedicated transaction sessions with foreign keys enabled before BEGIN.
+Remote read-only connections and streaming reads use the protocol's statement
+description (`is_readonly`) to reject mutations, including writes with RETURNING
+and CTE writes. They do not rely on `PRAGMA query_only`, which libSQL servers may
+reject. Read-only execution uses the single-statement cursor, not SQL sequences.
 Remote network latency and service limits apply to ingestion and search; use a
 nearby database region. Local filesystem backup instructions do not apply to
 remote storage: use Turso's database backup/export facilities instead.

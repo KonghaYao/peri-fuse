@@ -22,6 +22,35 @@ afterEach(async () => {
 });
 
 describe("remote Turso HTTP storage", () => {
+  it("protects remote read-only connections without requiring query_only support", async () => {
+    const writer = await openLocalDatabase(server.url, false, server.authToken);
+    await writer.exec("CREATE TABLE items(id INTEGER PRIMARY KEY); INSERT INTO items VALUES(1)");
+    const reader = await openLocalDatabase(server.url, true, server.authToken);
+    try {
+      expect(await reader.get("SELECT id FROM items")).toEqual({ id: 1 });
+      const mutations = [
+        "DELETE FROM items",
+        "INSERT INTO items VALUES(2) RETURNING id",
+        "WITH candidate AS (SELECT 1) DELETE FROM items RETURNING id",
+      ];
+      for (const sql of mutations) {
+        await expect(reader.exec(sql)).rejects.toThrow("read-only");
+        await expect(reader.run(sql)).rejects.toThrow("read-only");
+        await expect(reader.get(sql)).rejects.toThrow("read-only");
+        await expect(reader.all(sql)).rejects.toThrow("read-only");
+        await expect(reader.prepare(sql)).rejects.toThrow("read-only");
+        await expect(reader.iterate(sql).next()).rejects.toThrow("read-only");
+        await expect(writer.iterate(sql).next()).rejects.toThrow("read-only");
+      }
+      await expect(reader.transactionAsync(async () => undefined)()).rejects.toThrow("read-only");
+      await reader.exec("SELECT id FROM items; DELETE FROM items");
+      expect(await writer.get("SELECT count(*) AS count FROM items")).toEqual({ count: 1 });
+    } finally {
+      await reader.close();
+      await writer.close();
+    }
+  });
+
   it.each(["/tenant/database", "/tenant/database/"])(
     "preserves base path %s and query parameters in reads, transactions and streaming",
     async (basePath) => {
