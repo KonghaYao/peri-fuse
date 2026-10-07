@@ -96,8 +96,8 @@ async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
       // non-JSON error body
     }
     // Stored credentials were invalidated server-side (e.g. pruned web-ui
-    // key). Drop the context so the router bounces back to project
-    // selection, where one click obtains fresh credentials.
+    // key). Drop the context so project initialization can obtain fresh
+    // credentials when the user retries.
     if (res.status === 401) clearProjectContext();
     throw new ApiError(res.status, message);
   }

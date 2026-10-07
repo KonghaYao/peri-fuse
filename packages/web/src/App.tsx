@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Layout } from "@/shared/components/layout";
+import { ProjectBootstrap } from "@/shared/components/project-bootstrap";
 import { TooltipProvider } from "@/shared/components/ui/tooltip";
 import { hasActiveProject, useProjectContext } from "@/shared/store/project";
 
@@ -116,7 +117,7 @@ function RootRedirect() {
   );
 }
 
-export default function App() {
+function AppRoutes() {
   return (
     <TooltipProvider delayDuration={200}>
       <Routes>
@@ -275,5 +276,13 @@ export default function App() {
         </Route>
       </Routes>
     </TooltipProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <ProjectBootstrap>
+      <AppRoutes />
+    </ProjectBootstrap>
   );
 }

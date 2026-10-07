@@ -43,6 +43,10 @@ checks. Dependency installation and compilation remain on Node.js/pnpm build
 stages; the runtime image only receives production dependencies and built assets.
 The release workflow builds both `linux/amd64` and `linux/arm64` (Apple Silicon).
 
+The dashboard defaults to light mode and automatically activates Default Project
+on a fresh visit. Saved theme and valid project selections are preserved; stale
+project selections are replaced before data pages load.
+
 ### Source development
 
 Source development requires Node.js 22.12.0 or newer and pnpm 10:
