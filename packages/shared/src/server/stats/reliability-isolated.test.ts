@@ -11,7 +11,13 @@ vi.mock("../logger", () => ({
 }));
 
 import { processEventBatchLite } from "../ingestion/processEventBatchLite";
-import { loadMaterializedDays, recomputeDay } from "./daily-stats";
+import {
+  computeRangeModelStats,
+  computeRangeStats,
+  loadMaterializedDays,
+  recomputeDay,
+} from "./daily-stats";
+import { LATENCY_BUCKET_BOUNDS_MS, LATENCY_BUCKET_COUNT, latencyBucketCaseSql } from "./histogram";
 import { purgeOlderThan } from "./retention";
 
 const base = process.env.LANGFUSE_SQLITE_DB_PATH;
@@ -60,6 +66,52 @@ beforeEach(async () => {
 afterAll(async () => {
   await db.close();
   await peer.close();
+});
+
+it("range and model histograms match the original bucket CASE at latency boundaries", async () => {
+  const origin = Date.parse("2026-01-01T00:00:00.000Z");
+  const durations = [-10, 0, ...LATENCY_BUCKET_BOUNDS_MS, 60_001];
+  for (const [index, duration] of durations.entries()) {
+    await db.insert({
+      table: "observations",
+      records: [
+        {
+          project_id: "p",
+          id: `lat-${index}`,
+          type: "GENERATION",
+          model: "m",
+          start_time: new Date(origin).toISOString(),
+          end_time: new Date(origin + duration).toISOString(),
+        },
+      ],
+    });
+  }
+  await db.insert({
+    table: "observations",
+    records: [
+      {
+        project_id: "p",
+        id: "lat-null",
+        type: "GENERATION",
+        model: "m",
+        start_time: new Date(origin).toISOString(),
+        end_time: null,
+      },
+    ],
+  });
+  const original = latencyBucketCaseSql(
+    "(julianday(end_time) - julianday(start_time)) * 86400000.0",
+  );
+  const rows = await sql.all(
+    `SELECT ${original} AS bucket FROM observations WHERE end_time IS NOT NULL`,
+  );
+  const expected = new Array<number>(LATENCY_BUCKET_COUNT).fill(0);
+  for (const row of rows as Array<{ bucket: number }>) expected[row.bucket]++;
+  const day = await computeRangeStats("p", "2026-01-01", "2026-01-02");
+  const models = await computeRangeModelStats("p", "2026-01-01", "2026-01-02");
+  expect(day.latHist).toEqual(expected);
+  expect(models[0]?.latHist).toEqual(expected);
+  expect(day.latCount).toBe(durations.length);
 });
 
 it.each(["", "null", '""'])("迟到继承不能覆盖显式正文 %j 或其版本，重试保持一致", async (input) => {

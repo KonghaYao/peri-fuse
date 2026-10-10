@@ -38,8 +38,8 @@ Open the dashboard at `http://localhost:23332`. Port `23332` is used when
 changes the container listener and published port together. `docker compose down` leaves the
 bind-mounted `./data` directory intact.
 
-The production Docker image uses Bun 1.4.2 on Debian for the server and health
-checks. Dependency installation and compilation remain on Node.js/pnpm build
+The production Docker image uses Node.js 22 on Debian for the server and health
+checks. Dependency installation and compilation use Node.js/pnpm build
 stages; the runtime image only receives production dependencies and built assets.
 The release workflow builds both `linux/amd64` and `linux/arm64` (Apple Silicon).
 

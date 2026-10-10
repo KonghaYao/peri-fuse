@@ -45,11 +45,11 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --prod --frozen-lockfile --filter @peri-fuse/server...
 
 # ---------- runtime ----------
-FROM oven/bun:1.4.2-debian AS runtime
+FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     LITE_SERVER_PORT=23332 \
     PERIFUSE_HOME=/app/data \
-    NODE_BINARY=bun
+    NODE_BINARY=node
 WORKDIR /app
 COPY --from=production-deps /app /app
 
@@ -71,6 +71,6 @@ EXPOSE 23332
 VOLUME ["/app/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["bun", "-e", "const { resolveLiteServerPort } = require('./packages/server/dist/port.js'); const port = resolveLiteServerPort(process.env.LITE_SERVER_PORT); fetch('http://127.0.0.1:' + port + '/api/public/health').then(r => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1));"]
+    CMD ["node", "-e", "const { resolveLiteServerPort } = require('./packages/server/dist/port.js'); const port = resolveLiteServerPort(process.env.LITE_SERVER_PORT); fetch('http://127.0.0.1:' + port + '/api/public/health').then(r => { if (!r.ok) process.exit(1); }).catch(() => process.exit(1));"]
 
-CMD ["bun", "packages/server/dist/index.js"]
+CMD ["node", "packages/server/dist/index.js"]

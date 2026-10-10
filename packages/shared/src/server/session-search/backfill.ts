@@ -1,6 +1,14 @@
 import { type LocalExecutor, withLocalTransaction } from "../../db/local";
 import { SessionSearchStorage } from "./storage";
 export async function enqueueBackfill(db: LocalExecutor): Promise<number> {
+  // Backfill is a one-time migration. New writes are queued by markDirty, so
+  // repeating the cursor scan after completion only burns CPU and writes WAL.
+  if (
+    await db.get(
+      "SELECT 1 FROM search_index_state WHERE project_id='__backfill__' AND coverage='ready'",
+    )
+  )
+    return 0;
   if (await db.get("SELECT 1 FROM search_dirty LIMIT 1")) return 0;
   return withLocalTransaction(db, async (tx) => {
     const db = tx;

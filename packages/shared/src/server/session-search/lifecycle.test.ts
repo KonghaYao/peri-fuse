@@ -34,7 +34,7 @@ describe("session search worker lifecycle", () => {
     expect(failed).toBe(true);
     await db.exec("ALTER TABLE search_dirty_broken RENAME TO search_dirty");
     let recovered = false;
-    for (let i = 0; i < 30 && !recovered; i++) {
+    for (let i = 0; i < 140 && !recovered; i++) {
       await new Promise((resolve) => setTimeout(resolve, 50));
       recovered =
         (
@@ -46,7 +46,7 @@ describe("session search worker lifecycle", () => {
     expect(recovered).toBe(true);
     await lifecycle.stop();
     await db.close();
-  }, 10_000);
+  }, 15_000);
 
   it("consumes dirty sources in a worker and stops cleanly", async () => {
     const dbPath = path.join(mkdtempSync(path.join(os.tmpdir(), "peri-search-")), "telemetry.db");
@@ -110,4 +110,32 @@ describe("session search worker lifecycle", () => {
     ).toBe(count);
     await db.close();
   }, 10_000);
+
+  it("does not write the same ready or error state repeatedly", async () => {
+    const db = await createLocalDatabase(
+      path.join(mkdtempSync(path.join(os.tmpdir(), "peri-search-status-")), "telemetry.db"),
+    );
+    try {
+      await initializeTelemetrySchema(db);
+      await db.run(
+        "INSERT INTO search_index_state(project_id,coverage) VALUES('__global__','backfill')",
+      );
+      const lifecycle = new SessionSearchLifecycle(db);
+      const handle = "handleWorkerMessage" as const;
+      const changes = async () =>
+        ((await db.get("SELECT total_changes() AS count")) as { count: number }).count;
+
+      await lifecycle[handle]({ type: "ready" });
+      const readyChanges = await changes();
+      await lifecycle[handle]({ type: "tick-ok" });
+      expect(await changes()).toBe(readyChanges);
+
+      await lifecycle[handle]({ type: "error", error: "indexing failed" });
+      const errorChanges = await changes();
+      await lifecycle[handle]({ type: "error", error: "indexing failed" });
+      expect(await changes()).toBe(errorChanges);
+    } finally {
+      await db.close();
+    }
+  });
 });

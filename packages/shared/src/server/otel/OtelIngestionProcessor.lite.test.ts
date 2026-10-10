@@ -6,6 +6,7 @@
  * processEventBatchLite → SQLite.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { logger } from "../logger";
 
 // Mock isLiteMode before importing the processor
 const { isLiteModeMock } = vi.hoisted(() => ({
@@ -44,10 +45,10 @@ vi.mock("../s3", async (importOriginal) => {
   };
 });
 
-// Mock redis to prevent connection issues
+// Lite mode has no Redis client.
 vi.mock("../redis/redis", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../redis/redis")>()),
-  redis: { set: vi.fn().mockResolvedValue("OK") },
+  redis: null,
 }));
 
 // Mock OtelIngestionQueue
@@ -221,6 +222,20 @@ describe("OtelIngestionProcessor - Lite Mode", () => {
   });
 
   describe("processToIngestionEvents conversion", () => {
+    it("converts repeated lite requests without warning about missing Redis", async () => {
+      isLiteModeMock.mockReturnValue(true);
+      const warn = vi.spyOn(logger, "warn");
+
+      await createProcessor().publishToOtelIngestionQueue(buildTestResourceSpans());
+      await createProcessor().publishToOtelIngestionQueue(buildTestResourceSpans());
+
+      expect(processEventBatchLiteMock).toHaveBeenCalledTimes(2);
+      for (const [events] of processEventBatchLiteMock.mock.calls as [Array<{ type: string }>][]) {
+        expect(events.filter((event) => event.type === "trace-create")).toHaveLength(1);
+      }
+      expect(warn).not.toHaveBeenCalledWith("Redis client not available");
+    });
+
     it("should convert OTel spans to trace-create and observation events", async () => {
       isLiteModeMock.mockReturnValue(true);
 

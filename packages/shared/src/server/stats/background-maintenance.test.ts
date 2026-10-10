@@ -9,7 +9,12 @@ vi.mock("../adapters", () => ({ getTelemetryDB: () => ({ query, command }) }));
 vi.mock("./daily-stats", () => ({ recomputeDay }));
 vi.mock("../logger", () => ({ logger: { info: vi.fn(), error: vi.fn() } }));
 
-import { backfillMissingDays, startDailyStatsMaintenance } from "./daily-stats-maintenance";
+import { repairDirtyDays } from "./daily-stats-dirty";
+import {
+  backfillMissingDays,
+  refreshRecentDays,
+  startDailyStatsMaintenance,
+} from "./daily-stats-maintenance";
 import { startRetentionJob } from "./retention";
 
 const stops: Array<() => void> = [];
@@ -59,8 +64,66 @@ it("backfill holds a page of missing days and advances its cursor across pages",
   const completion = backfillMissingDays();
   await vi.runAllTimersAsync();
   expect(await completion).toBe(201);
-  expect(query.mock.calls[1][0].params).toEqual({ projectCursor: "p199", dayCursor: "2026-09-01" });
+  expect(query.mock.calls[1][0].params).toEqual({
+    projectCursor: "p199",
+    dayCursor: "2026-09-01",
+    limit: 200,
+  });
   expect(recomputeDay).toHaveBeenCalledTimes(201);
+});
+
+it("repairs only dirty project days, including late historical writes", async () => {
+  query.mockResolvedValueOnce([
+    { project_id: "p", day: "2020-01-01" },
+    { project_id: "q", day: "2026-10-10" },
+  ]);
+  const pass = refreshRecentDays();
+  await vi.runAllTimersAsync();
+  await pass;
+  expect(recomputeDay.mock.calls).toEqual([
+    ["p", "2020-01-01"],
+    ["q", "2026-10-10"],
+  ]);
+  expect(query.mock.calls[0][0].query).toContain("FROM daily_stats_dirty");
+  expect(query.mock.calls[0][0].query).not.toContain("FROM traces");
+  await refreshRecentDays();
+  expect(recomputeDay).toHaveBeenCalledTimes(2);
+});
+
+it("a continuously changed dirty day receives one on-demand repair attempt", async () => {
+  query.mockImplementation(({ query: sql }: { query: string }) =>
+    Promise.resolve(sql.startsWith("SELECT dirty") ? [{ dirty: 1 }] : [{ day: "2026-10-10" }]),
+  );
+  await repairDirtyDays("p", recomputeDay, "2026-10-01", "2026-10-31");
+  await repairDirtyDays("p", recomputeDay, "2026-10-01", "2026-10-31");
+  expect(query).toHaveBeenCalledTimes(3);
+  expect(recomputeDay).toHaveBeenCalledOnce();
+  await vi.advanceTimersByTimeAsync(30_001);
+  await repairDirtyDays("p", recomputeDay, "2026-10-01", "2026-10-31");
+  expect(recomputeDay).toHaveBeenCalledTimes(2);
+  expect(query).toHaveBeenCalledTimes(5);
+  expect(query.mock.calls[0][0].params).toEqual({
+    projectId: "p",
+    fromDay: "2026-10-01",
+    toDay: "2026-10-31",
+  });
+  expect(recomputeDay).toHaveBeenLastCalledWith("p", "2026-10-10");
+});
+
+it("limits startup backfill to one bounded page", async () => {
+  const cursor = { projectId: null as string | null, day: "" };
+  query.mockResolvedValueOnce(
+    Array.from({ length: 10 }, (_, i) => ({
+      project_id: "p",
+      day: `2026-09-${String(i + 1).padStart(2, "0")}`,
+    })),
+  );
+  const page = backfillMissingDays(undefined, 10, cursor);
+  await vi.runAllTimersAsync();
+  expect(await page).toBe(10);
+  expect(query).toHaveBeenCalledOnce();
+  expect(query.mock.calls[0][0].params.limit).toBe(10);
+  expect(cursor).toEqual({ projectId: "p", day: "2026-09-10" });
 });
 
 it("retention does not overlap slow passes and stop prevents further delete chunks", async () => {

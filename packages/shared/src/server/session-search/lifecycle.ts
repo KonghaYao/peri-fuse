@@ -16,7 +16,7 @@ export class SessionSearchLifecycle {
     if (event.type === "error") {
       try {
         await this.db.run(
-          "INSERT INTO search_index_state(project_id,coverage,last_error,updated_at) VALUES('__global__','error',?,datetime('now')) ON CONFLICT(project_id) DO UPDATE SET coverage='error',last_error=excluded.last_error,updated_at=excluded.updated_at",
+          "INSERT INTO search_index_state(project_id,coverage,last_error,updated_at) VALUES('__global__','error',?,datetime('now')) ON CONFLICT(project_id) DO UPDATE SET coverage='error',last_error=excluded.last_error,updated_at=excluded.updated_at WHERE coverage IS NOT 'error' OR last_error IS NOT excluded.last_error",
           String(event.error),
         );
       } catch {
@@ -25,7 +25,7 @@ export class SessionSearchLifecycle {
     } else if (event.type === "tick-ok" || event.type === "ready") {
       try {
         await this.db.run(
-          "UPDATE search_index_state SET last_error=NULL,coverage='ready',updated_at=datetime('now') WHERE project_id='__global__'",
+          "UPDATE search_index_state SET last_error=NULL,coverage='ready',updated_at=datetime('now') WHERE project_id='__global__' AND (coverage IS NOT 'ready' OR last_error IS NOT NULL)",
         );
       } catch {
         /* database may already be closed */

@@ -551,7 +551,9 @@ export class OtelIngestionProcessor {
   /**
    * Process resource spans and convert them to Langfuse ingestion events.
    * Handles trace deduplication automatically using internal state.
-   * Initializes seen traces from Redis automatically on first call.
+   * Initializes seen traces from Redis on the queued ingestion path.
+   * Lite mode deduplicates within this processor; SQLite handles repeated
+   * trace events across requests with its idempotent UPSERT.
    * Filters out shallow trace events if full trace events exist for the same traceId.
    */
   async processToIngestionEvents(resourceSpans: ResourceSpan[]): Promise<IngestionEventType[]> {
@@ -560,8 +562,8 @@ export class OtelIngestionProcessor {
       span.setAttribute("total_span_count", this.getTotalSpanCount(resourceSpans));
 
       try {
-        // Lazy initialization - load seen traces from Redis if not already done
-        // Seen traces are traces that went through the ingestion pipeline within last 10 minutes
+        // Lazy initialization. Lite mode has no Redis; its trace events are
+        // safely upserted by the SQLite ingestion path.
         if (!this.isInitialized) {
           this.seenTraces = await this.getSeenTracesSet(resourceSpans);
           this.isInitialized = true;
@@ -2905,6 +2907,10 @@ export class OtelIngestionProcessor {
    * Returns a Set of trace IDs that should not trigger new trace creation.
    */
   private async getSeenTracesSet(resourceSpans: unknown): Promise<Set<string>> {
+    if (isLiteMode()) {
+      return new Set();
+    }
+
     if (!redis) {
       logger.warn("Redis client not available");
       return new Set();

@@ -2,43 +2,52 @@ import { getTelemetryDB } from "../adapters";
 import { withTelemetryQuerySignal } from "../adapters/telemetry-query-context";
 import { logger } from "../logger";
 import { recomputeDay } from "./daily-stats";
-import { repairDirtyDays } from "./daily-stats-dirty";
 import { startMaintenanceLoop } from "./maintenance-loop";
 
 /** Yield to the event loop so chunked maintenance never starves HTTP traffic. */
 const yieldLoop = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-/** Recompute today + yesterday for every project (late-arriving events). */
-export async function refreshRecentDays(signal?: AbortSignal): Promise<void> {
+const DIRTY_BATCH_SIZE = 20;
+const BACKFILL_BATCH_SIZE = 10;
+type DayCursor = { projectId: string | null; day: string; hadFailure?: boolean };
+
+/** Repair a bounded page of changed days, including late arrivals on older days. */
+export async function refreshRecentDays(
+  signal?: AbortSignal,
+  cursor: DayCursor = { projectId: null, day: "" },
+): Promise<void> {
   const db = getTelemetryDB();
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterdayDate = new Date(`${today}T00:00:00Z`);
-  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
-  const days = [today, yesterdayDate.toISOString().slice(0, 10)];
-  let cursor: string | null = null;
-  for (;;) {
-    signal?.throwIfAborted();
-    const projects: Array<{ project_id: string }> = await db.query({
-      query: `SELECT project_id FROM (
-        SELECT project_id FROM traces UNION SELECT project_id FROM daily_stats_dirty WHERE dirty=1
-      ) WHERE (@cursor IS NULL OR project_id > @cursor) ORDER BY project_id LIMIT 200`,
-      params: { cursor },
+  const getPage = () =>
+    db.query<{ project_id: string; day: string }>({
+      query: `SELECT project_id, day FROM daily_stats_dirty
+        WHERE dirty=1 AND (@projectId IS NULL OR (project_id,day) > (@projectId,@day))
+          AND NOT EXISTS (SELECT 1 FROM telemetry_retention_state WHERE day < cutoff_day)
+        ORDER BY project_id,day LIMIT @limit`,
+      params: { projectId: cursor.projectId, day: cursor.day, limit: DIRTY_BATCH_SIZE },
       signal,
     });
-    for (const p of projects) {
-      await repairDirtyDays(p.project_id, recomputeDay);
-      for (const day of days) {
-        signal?.throwIfAborted();
-        try {
-          await recomputeDay(p.project_id, day);
-        } catch (error) {
-          if (!signal?.aborted) logger.error("[daily-stats] refresh failed", error);
-        }
-      }
+  signal?.throwIfAborted();
+  let pending = await getPage();
+  if (!pending.length && cursor.projectId !== null) {
+    cursor.projectId = null;
+    cursor.day = "";
+    pending = await getPage();
+  }
+  for (const { project_id, day } of pending) {
+    signal?.throwIfAborted();
+    try {
+      await recomputeDay(project_id, day);
+    } catch (error) {
+      if (!signal?.aborted)
+        logger.error(`[daily-stats] refresh failed for ${project_id} ${day}`, error);
     }
-    if (projects.length < 200) break;
-    cursor = projects[projects.length - 1].project_id;
+    cursor.projectId = project_id;
+    cursor.day = day;
     await yieldLoop();
+  }
+  if (pending.length < DIRTY_BATCH_SIZE) {
+    cursor.projectId = null;
+    cursor.day = "";
   }
 }
 
@@ -46,13 +55,18 @@ export async function refreshRecentDays(signal?: AbortSignal): Promise<void> {
  * One-time backfill: recompute every (project, day) present in the raw tables
  * but missing from daily_stats. Runs chunked so startup never blocks.
  */
-export async function backfillMissingDays(signal?: AbortSignal): Promise<number> {
+export async function backfillMissingDays(
+  signal?: AbortSignal,
+  maxDays = Number.MAX_SAFE_INTEGER,
+  cursor: DayCursor = { projectId: null, day: "" },
+): Promise<number> {
   const db = getTelemetryDB();
-  let projectCursor: string | null = null;
-  let dayCursor = "";
   let done = 0;
+  let examined = 0;
   for (;;) {
     signal?.throwIfAborted();
+    const limit = Math.min(200, maxDays - examined);
+    if (limit <= 0) break;
     // Filter already materialized days in SQLite and hold only one bounded page.
     // Advance past failures too, so a malformed day cannot trap startup in a loop.
     const missing: Array<{ project_id: string; day: string }> = await db.query({
@@ -64,25 +78,31 @@ export async function backfillMissingDays(signal?: AbortSignal): Promise<number>
       WHERE day IS NOT NULL
         AND (@projectCursor IS NULL OR (project_id, day) > (@projectCursor, @dayCursor))
         AND NOT EXISTS (SELECT 1 FROM daily_stats s WHERE s.project_id = d.project_id AND s.day = d.day)
-      ORDER BY project_id, day LIMIT 200`,
-      params: { projectCursor, dayCursor },
+      ORDER BY project_id, day LIMIT @limit`,
+      params: { projectCursor: cursor.projectId, dayCursor: cursor.day, limit },
       signal,
     });
     for (const c of missing) {
       signal?.throwIfAborted();
+      examined++;
       try {
         await recomputeDay(c.project_id, c.day);
         done++;
       } catch (error) {
+        cursor.hadFailure = true;
         if (!signal?.aborted)
           logger.error(`[daily-stats] Backfill failed for ${c.project_id} ${c.day}`, error);
       }
       await yieldLoop();
     }
-    if (missing.length < 200) break;
+    if (missing.length < limit) {
+      cursor.projectId = null;
+      cursor.day = "";
+      break;
+    }
     const last = missing[missing.length - 1];
-    projectCursor = last.project_id;
-    dayCursor = last.day;
+    cursor.projectId = last.project_id;
+    cursor.day = last.day;
   }
   if (done > 0) logger.info(`[daily-stats] Backfill complete (${done} day(s))`);
   return done;
@@ -95,9 +115,22 @@ const REFRESH_INTERVAL_MS = 30_000;
  * Returns a stop function (used for graceful shutdown / tests).
  */
 export function startDailyStatsMaintenance(intervalMs = REFRESH_INTERVAL_MS): () => Promise<void> {
+  const backfillCursor: DayCursor = { projectId: null, day: "" };
+  const dirtyCursor: DayCursor = { projectId: null, day: "" };
+  let backfillComplete = false;
+  const backfillPage = async (signal: AbortSignal) => {
+    if (backfillComplete) return;
+    const count = await backfillMissingDays(signal, BACKFILL_BATCH_SIZE, backfillCursor);
+    backfillComplete = count < BACKFILL_BATCH_SIZE && !backfillCursor.hadFailure;
+    if (backfillCursor.projectId === null) backfillCursor.hadFailure = false;
+  };
   return startMaintenanceLoop(
-    (signal) => withTelemetryQuerySignal(signal, () => backfillMissingDays(signal)),
-    (signal) => withTelemetryQuerySignal(signal, () => refreshRecentDays(signal)),
+    (signal) => withTelemetryQuerySignal(signal, () => backfillPage(signal)),
+    (signal) =>
+      withTelemetryQuerySignal(signal, async () => {
+        await backfillPage(signal);
+        await refreshRecentDays(signal, dirtyCursor);
+      }),
     intervalMs,
     (error) => logger.error("[daily-stats] maintenance failed", error),
   );

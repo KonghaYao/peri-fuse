@@ -1,10 +1,7 @@
 /**
  * Materialized per-day dashboard stats.
  *
- * The dashboard used to run ~12 full-scan aggregates over observations on
- * every cache miss; with 30d windows covering the whole history that cost
- * grows linearly with data volume. Instead we maintain two small rollup
- * tables:
+ * The dashboard uses two rollup tables rather than full raw scans:
  *
  *   daily_stats(project_id, day)        — trace/observation/score counts,
  *                                         token sums, latency histogram,
@@ -16,8 +13,8 @@
  * merge-inserts and re-sent events must never double-count):
  *   - backfill: on boot, every (project, day) present in the raw tables but
  *     missing from daily_stats is recomputed once, yielding between days;
- *   - refresh: every REFRESH_INTERVAL_MS the last two days are recomputed to
- *     absorb late-arriving events;
+ *   - refresh: a bounded page of dirty (project, day) pairs is repaired each
+ *     interval, including historical late-arriving events;
  *   - on demand: recomputeDay()/recomputeRange() are exported for tests.
  *
  * Dashboard queries then read ~30 rollup rows per 30d window and only fall
@@ -31,14 +28,21 @@ import {
 } from "../adapters/sqlite-telemetry-adapter";
 import type { TelemetryQueryOpts } from "../adapters/types";
 import { repairDirtyDays } from "./daily-stats-dirty";
-import { LATENCY_BUCKET_COUNT, latencyBucketCaseSql } from "./histogram";
+import { LATENCY_BUCKET_BOUNDS_MS, LATENCY_BUCKET_COUNT } from "./histogram";
 
 /** Generation latency in ms (NULL when either endpoint is missing). */
 const LATENCY_MS_SQL = `(julianday(o.end_time) - julianday(o.start_time)) * 86400000.0`;
 
-/** Bucket index for a generation latency, NULL for non-generation rows. */
-const GUARDED_BUCKET_SQL = `(CASE WHEN o.type = 'GENERATION' AND o.end_time IS NOT NULL
-  THEN ${latencyBucketCaseSql(LATENCY_MS_SQL)} END)`;
+/** One range comparison per bucket avoids evaluating a full CASE tree for every SUM. */
+function bucketPredicate(index: number): string {
+  const lower =
+    index === 0 ? "" : ` AND ${LATENCY_MS_SQL} >= ${LATENCY_BUCKET_BOUNDS_MS[index - 1]}`;
+  const upper =
+    index === LATENCY_BUCKET_BOUNDS_MS.length
+      ? ""
+      : ` AND ${LATENCY_MS_SQL} < ${LATENCY_BUCKET_BOUNDS_MS[index]}`;
+  return `o.end_time IS NOT NULL${lower}${upper}`;
+}
 
 /**
  * Aggregate select-list shared by day recompute and edge-range scans.
@@ -49,7 +53,8 @@ const GUARDED_BUCKET_SQL = `(CASE WHEN o.type = 'GENERATION' AND o.end_time IS N
 function obsAggSelect(): string {
   const buckets = Array.from(
     { length: LATENCY_BUCKET_COUNT },
-    (_, i) => `COALESCE(SUM(CASE WHEN ${GUARDED_BUCKET_SQL} = ${i} THEN 1 ELSE 0 END), 0) AS b${i}`,
+    (_, i) =>
+      `COALESCE(SUM(CASE WHEN o.type = 'GENERATION' AND ${bucketPredicate(i)} THEN 1 ELSE 0 END), 0) AS b${i}`,
   ).join(",\n    ");
   return `
     COUNT(*) AS observations,
@@ -266,7 +271,7 @@ export async function computeRangeModelStats(
              ${Array.from(
                { length: LATENCY_BUCKET_COUNT },
                (_, i) =>
-                 `COALESCE(SUM(CASE WHEN ${latencyBucketCaseSql(LATENCY_MS_SQL)} = ${i} AND o.end_time IS NOT NULL THEN 1 ELSE 0 END), 0) AS b${i}`,
+                 `COALESCE(SUM(CASE WHEN ${bucketPredicate(i)} THEN 1 ELSE 0 END), 0) AS b${i}`,
              ).join(",\n             ")}
       FROM observations o
       WHERE ${where.join(" AND ")}
@@ -403,7 +408,7 @@ export async function loadMaterializedDays(
   toDay: string | null,
 ): Promise<{ days: DayStats[]; models: Map<string, ModelDayStats[]> }> {
   const db = getTelemetryDB();
-  await repairDirtyDays(projectId, recomputeDay);
+  await repairDirtyDays(projectId, recomputeDay, fromDay, toDay);
   const where = ["project_id = @projectId"];
   const params: Record<string, unknown> = { projectId };
   if (fromDay) {

@@ -117,6 +117,10 @@ describe("bounded persistent session search backfill", () => {
         )) as { coverage: string }
       ).coverage,
     ).toBe("ready");
+    const before = (await db.get("SELECT total_changes() AS count")) as { count: number };
+    expect(await enqueueBackfill(db)).toBe(0);
+    const after = (await db.get("SELECT total_changes() AS count")) as { count: number };
+    expect(after.count).toBe(before.count);
     await db.close();
   });
 });
