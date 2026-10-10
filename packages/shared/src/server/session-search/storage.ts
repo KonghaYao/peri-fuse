@@ -47,7 +47,7 @@ export class SessionSearchStorage {
       await tx.run(
         `INSERT INTO search_dirty(project_id,source_kind,source_id,revision,event_time,next_attempt_at)
         VALUES(?,?,?,?,?,datetime('now')) ON CONFLICT(project_id,source_kind,source_id)
-        DO UPDATE SET revision=excluded.revision,event_time=COALESCE(excluded.event_time,event_time),next_attempt_at=datetime('now'),last_error=NULL`,
+        DO UPDATE SET revision=excluded.revision,event_time=COALESCE(excluded.event_time,event_time),attempts=0,next_attempt_at=datetime('now'),last_error=NULL`,
         source.projectId,
         source.kind,
         source.id,
@@ -176,15 +176,26 @@ export class SessionSearchStorage {
   }
 
   async markFailed(source: SearchSource, error: unknown): Promise<void> {
+    const detail = error instanceof Error ? error.message : "Indexing failed";
+    // A corrupt source cannot heal on a timer. Remove its dirty row so it
+    // cannot block one-time backfill; a new source revision queues it again.
+    if (/^IO_COMPRESSION_(INVALID|LENGTH|VERSION|LIMIT|CORRUPT)$/.test(detail)) {
+      await this.markLimited(source, `permanent: ${detail}`);
+      return;
+    }
     await withLocalTransaction(this.db, async (tx) => {
-      const message = error instanceof Error ? error.name : "Indexing failed";
-      await tx.run(
-        "UPDATE search_dirty SET attempts=attempts+1,last_error=?,next_attempt_at=datetime('now','+5 seconds') WHERE project_id=? AND source_kind=? AND source_id=?",
+      const message = `retryable: ${detail.slice(0, 160)}`;
+      const changed = await tx.run(
+        `UPDATE search_dirty SET attempts=attempts+1,last_error=?,
+          next_attempt_at=datetime('now', '+' || min(3600, 5 * (1 << min(attempts, 10))) || ' seconds')
+          WHERE project_id=? AND source_kind=? AND source_id=? AND revision=?`,
         message,
         source.projectId,
         source.kind,
         source.id,
+        source.revision,
       );
+      if (!Number(changed.changes)) return;
       await tx.run(
         `INSERT INTO search_index_state(project_id,coverage,last_error) VALUES(?,'error',?)
         ON CONFLICT(project_id) DO UPDATE SET coverage=CASE WHEN coverage='limited' THEN 'limited' ELSE 'error' END,last_error=excluded.last_error`,
@@ -204,6 +215,7 @@ export class SessionSearchStorage {
         source.id,
         source.revision,
       );
+      if (!Number(removed.changes)) return;
       await tx.run(
         "INSERT INTO search_index_state(project_id,coverage,last_error) VALUES(?,'limited',?) ON CONFLICT(project_id) DO UPDATE SET coverage='limited',last_error=excluded.last_error",
         source.projectId,

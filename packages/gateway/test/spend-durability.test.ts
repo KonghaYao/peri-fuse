@@ -117,6 +117,30 @@ describe("durable bounded spend accounting", () => {
     expect(await db.select().from(spendLog).all()).toHaveLength(0);
   });
 
+  it("shares only concurrent admission probes and checks the next burst again", async () => {
+    const db = database.getDb();
+    const transaction = vi.spyOn(db, "transaction");
+    const flusher = new SpendFlusher();
+    await Promise.all(Array.from({ length: 50 }, () => flusher.assertWritable()));
+    expect(transaction).toHaveBeenCalledTimes(1);
+    await flusher.assertWritable();
+    expect(transaction).toHaveBeenCalledTimes(2);
+
+    await db.run(sql.raw("PRAGMA query_only = 1"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const results = await Promise.allSettled(
+        Array.from({ length: 50 }, () => flusher.assertWritable()),
+      );
+      expect(results.every((result) => result.status === "rejected")).toBe(true);
+      expect(transaction).toHaveBeenCalledTimes(3);
+    } finally {
+      await db.run(sql.raw("PRAGMA query_only = 0"));
+    }
+    await flusher.assertWritable();
+    expect(transaction).toHaveBeenCalledTimes(4);
+  });
+
   it("keeps empty and identical imported keys isolated by project, including key budgets", async () => {
     const db = database.getDb();
     await db

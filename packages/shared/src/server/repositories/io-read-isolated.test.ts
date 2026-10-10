@@ -107,7 +107,7 @@ it.each(["0", "1"])("真实 SQLite repository 解码、批量与预算 workers=%
   expect((await liteGetTraceById("other", "t"))?.input).toBe(input);
 });
 
-it("search 按原正文体积标记 limited，损坏标记 failed，不静默成功", async () => {
+it("search 按原正文体积标记 limited，损坏源隔离且报告错误", async () => {
   const base = process.env.LANGFUSE_SQLITE_DB_PATH;
   if (!base?.includes("peri-ingestion-test-")) throw new Error("必须通过隔离入口运行");
   vi.stubEnv("PERIFUSE_IO_COMPRESSION_WRITE", "on");
@@ -164,8 +164,11 @@ it("search 按原正文体积标记 limited，损坏标记 failed，不静默成
     }),
   ).rejects.toThrow("CONTEXT_UNAVAILABLE");
   const state = await sql.get("SELECT * FROM search_index_state WHERE project_id='p'");
-  expect(state).toMatchObject({ coverage: "limited" });
+  expect(state).toMatchObject({ coverage: "limited", pending: 0 });
+  expect((state as { last_error: string }).last_error).toContain(
+    "permanent: IO_COMPRESSION_VERSION",
+  );
   expect(
     await sql.get("SELECT COUNT(*) AS n FROM search_dirty WHERE source_id='bad'"),
-  ).toMatchObject({ n: 1 });
+  ).toMatchObject({ n: 0 });
 });

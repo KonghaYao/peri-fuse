@@ -52,9 +52,46 @@ function extractBasicAuthCredentials(basicAuthHeader: string): {
 }
 
 const apiKeyWith = {
-  project: { with: { organization: true } },
-  organization: true,
+  project: {
+    columns: { id: true },
+    with: { organization: { columns: { id: true, cloudConfig: true } } },
+  },
+  organization: { columns: { cloudConfig: true } },
 } as const;
+
+const apiKeyColumns = {
+  id: true,
+  publicKey: true,
+  hashedSecretKey: true,
+  fastHashedSecretKey: true,
+  expiresAt: true,
+  scope: true,
+  projectId: true,
+  organizationId: true,
+  isInAppAgentKey: true,
+} as const;
+
+// Auth rows are checked on every request so revocation and scope changes stay
+// immediate. Only the pure cloud config parse is reused by raw DB value.
+type RateLimitOverrides = ReturnType<typeof CloudConfigRateLimit.parse>;
+const rateLimitCache = new Map<string, RateLimitOverrides>();
+function rateLimitOverrides(raw: string | null): RateLimitOverrides {
+  if (!raw) return [];
+  const cacheable = raw.length <= 16 * 1024;
+  const cached = cacheable ? rateLimitCache.get(raw) : undefined;
+  if (cached) return cached.map((entry) => ({ ...entry }));
+  const config = parseJsonPrioritised(raw);
+  const parsed = CloudConfigRateLimit.safeParse(
+    (config as { rateLimitOverrides?: unknown } | null)?.rateLimitOverrides,
+  );
+  const value = parsed.success ? parsed.data : [];
+  if (cacheable) {
+    if (rateLimitCache.size >= 64)
+      rateLimitCache.delete(rateLimitCache.keys().next().value as string);
+    rateLimitCache.set(raw, value);
+  }
+  return value.map((entry) => ({ ...entry }));
+}
 
 /**
  * Verifies an `Authorization` header against the API keys stored in the
@@ -85,6 +122,7 @@ export async function verifyAuthHeader(
             where: relationalFilter(
               eq(apiKeys.fastHashedSecretKey, createShaHash(secretKey, salt)),
             ),
+            columns: apiKeyColumns,
             with: apiKeyWith,
           })
         : null;
@@ -93,6 +131,7 @@ export async function verifyAuthHeader(
     if (!apiKey) {
       const slowKey = await prisma.query.apiKeys.findFirst({
         where: relationalFilter(eq(apiKeys.publicKey, publicKey)),
+        columns: apiKeyColumns,
         with: apiKeyWith,
       });
 
@@ -135,11 +174,6 @@ export async function verifyAuthHeader(
     // cloudConfig is stored as a JSON string in SQLite — parse before reading.
     const rawCloudConfig =
       apiKey.project?.organization?.cloudConfig ?? apiKey.organization?.cloudConfig ?? null;
-    const orgCloudConfig = rawCloudConfig ? parseJsonPrioritised(rawCloudConfig) : null;
-
-    const parsedRateLimitOverrides = CloudConfigRateLimit.safeParse(
-      (orgCloudConfig as { rateLimitOverrides?: unknown } | null)?.rateLimitOverrides,
-    );
 
     return {
       validKey: true,
@@ -148,7 +182,7 @@ export async function verifyAuthHeader(
         accessLevel,
         orgId: apiKey.organizationId ?? apiKey.project?.organization?.id ?? "",
         plan: "oss",
-        rateLimitOverrides: parsedRateLimitOverrides.success ? parsedRateLimitOverrides.data : [],
+        rateLimitOverrides: rateLimitOverrides(rawCloudConfig),
         apiKeyId: apiKey.id,
         publicKey: apiKey.publicKey,
         isIngestionSuspended: false,

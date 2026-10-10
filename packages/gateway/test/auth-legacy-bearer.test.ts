@@ -11,6 +11,7 @@ interface SlowScanGate {
   entered: (() => void) | null;
   waitForRelease: Promise<void> | null;
   failIfComparedSecret: string | null;
+  comparisons: number;
 }
 
 const slowScanGate = vi.hoisted<SlowScanGate>(() => ({
@@ -18,6 +19,7 @@ const slowScanGate = vi.hoisted<SlowScanGate>(() => ({
   entered: null,
   waitForRelease: null,
   failIfComparedSecret: null,
+  comparisons: 0,
 }));
 
 vi.mock("bcryptjs", async (importOriginal) => {
@@ -25,6 +27,7 @@ vi.mock("bcryptjs", async (importOriginal) => {
   return {
     ...actual,
     compare: async (secret: string, hash: string) => {
+      slowScanGate.comparisons++;
       if (slowScanGate.failIfComparedSecret === secret) {
         throw new Error("Basic auth unexpectedly entered the legacy bcrypt scan");
       }
@@ -46,7 +49,9 @@ const GATEWAY_DB = "/tmp/peri-gateway-legacy-bearer.db";
 const SHARED_DB = "/tmp/peri-gateway-legacy-bearer-shared.db";
 const TEST_SALT = "legacy-bearer-test-salt";
 const PROJECT_ID = "project-legacy-bearer";
+const PROJECT_B_ID = "project-legacy-bearer-b";
 const PROJECT_SECRET = "sk-legacy-project-target";
+const PROJECT_B_SECRET = "sk-legacy-project-b-000";
 const ORGANIZATION_SECRET = "sk-legacy-organization-target";
 const EXPIRED_SECRET = "sk-legacy-expired-target";
 const MODERN_BCRYPT_ONLY_SECRET = "sk-modern-bcrypt-only";
@@ -65,6 +70,10 @@ function fastHash(secretKey: string): string {
     .digest("hex");
 }
 
+function displaySecret(secretKey: string): string {
+  return `${secretKey.slice(0, 6)}...${secretKey.slice(-4)}`;
+}
+
 async function seedSharedApiKeys(): Promise<void> {
   const db = await createLocalDatabase(SHARED_DB);
   await db.exec(`
@@ -73,6 +82,7 @@ async function seedSharedApiKeys(): Promise<void> {
       public_key TEXT NOT NULL UNIQUE,
       hashed_secret_key TEXT NOT NULL UNIQUE,
       fast_hashed_secret_key TEXT UNIQUE,
+      display_secret_key TEXT,
       project_id TEXT,
       organization_id TEXT,
       scope TEXT NOT NULL DEFAULT 'PROJECT',
@@ -81,9 +91,9 @@ async function seedSharedApiKeys(): Promise<void> {
   `);
   const insert = await db.prepare(`
     INSERT INTO api_keys (
-      id, public_key, hashed_secret_key, fast_hashed_secret_key,
+      id, public_key, hashed_secret_key, fast_hashed_secret_key, display_secret_key,
       project_id, organization_id, scope, expires_at
-    ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)
   `);
 
   await db.run(
@@ -107,6 +117,36 @@ async function seedSharedApiKeys(): Promise<void> {
       `legacy-${suffix}`,
       `pk-legacy-${suffix}`,
       bcrypt.hashSync(`sk-legacy-decoy-${suffix}`, 4),
+      displaySecret(`sk-legacy-decoy-${suffix}`),
+      PROJECT_ID,
+      "org-legacy-bearer",
+      "PROJECT",
+      null,
+    );
+  }
+
+  for (let index = 0; index < 150; index += 1) {
+    const suffix = index.toString().padStart(3, "0");
+    await insert.run(
+      `zzz-legacy-${suffix}`,
+      `pk-zzz-legacy-${suffix}`,
+      bcrypt.hashSync(`sk-zzz-legacy-${suffix}`, 4),
+      displaySecret(`sk-zzz-legacy-${suffix}`),
+      PROJECT_ID,
+      "org-legacy-bearer",
+      "PROJECT",
+      null,
+    );
+  }
+
+  for (let index = 0; index < 129; index += 1) {
+    const suffix = index.toString().padStart(3, "0");
+    const secret = `sk-legacy-collision-${suffix}-same`;
+    await insert.run(
+      `zz-collision-${suffix}`,
+      `pk-collision-${suffix}`,
+      bcrypt.hashSync(secret, 4),
+      displaySecret(secret),
       PROJECT_ID,
       "org-legacy-bearer",
       "PROJECT",
@@ -118,6 +158,7 @@ async function seedSharedApiKeys(): Promise<void> {
     "legacy-target-expired",
     "pk-legacy-expired-target",
     bcrypt.hashSync(EXPIRED_SECRET, 4),
+    displaySecret(EXPIRED_SECRET),
     PROJECT_ID,
     "org-legacy-bearer",
     "PROJECT",
@@ -127,6 +168,7 @@ async function seedSharedApiKeys(): Promise<void> {
     "legacy-target-organization",
     "pk-legacy-organization-target",
     bcrypt.hashSync(ORGANIZATION_SECRET, 4),
+    displaySecret(ORGANIZATION_SECRET),
     null,
     "org-legacy-bearer",
     "ORGANIZATION",
@@ -136,8 +178,19 @@ async function seedSharedApiKeys(): Promise<void> {
     "legacy-target-project",
     "pk-legacy-project-target",
     bcrypt.hashSync(PROJECT_SECRET, 4),
+    displaySecret(PROJECT_SECRET),
     PROJECT_ID,
     "org-legacy-bearer",
+    "PROJECT",
+    null,
+  );
+  await insert.run(
+    "legacy-target-project-b",
+    "pk-legacy-project-b",
+    bcrypt.hashSync(PROJECT_B_SECRET, 4),
+    displaySecret(PROJECT_B_SECRET),
+    PROJECT_B_ID,
+    "org-legacy-bearer-b",
     "PROJECT",
     null,
   );
@@ -185,12 +238,12 @@ describe("Gateway legacy Bearer authentication", () => {
     const released = new Promise<void>((resolve) => {
       releaseScan = resolve;
     });
-    slowScanGate.secret = "sk-controlled-slow-scan";
+    slowScanGate.secret = "sk-legacy-fake-000";
     slowScanGate.entered = notifyEntered;
     slowScanGate.waitForRelease = released;
 
     const firstRequest = probe.request("/probe", {
-      headers: { Authorization: "Bearer sk-controlled-slow-scan" },
+      headers: { Authorization: "Bearer sk-legacy-fake-000" },
     });
     await entered;
     const saturated = await probe.request("/probe", {
@@ -208,6 +261,14 @@ describe("Gateway legacy Bearer authentication", () => {
       },
     });
     expect(firstResponse.status).toBe(401);
+    const otherProject = await probe.request("/probe", {
+      headers: { Authorization: `Bearer ${PROJECT_B_SECRET}` },
+    });
+    expect(otherProject.status).toBe(200);
+    expect(await otherProject.json()).toEqual({
+      projectId: PROJECT_B_ID,
+      publicKey: "pk-legacy-project-b",
+    });
   });
 
   it("rejects a missing Basic public key without entering a busy legacy scan", async () => {
@@ -219,12 +280,12 @@ describe("Gateway legacy Bearer authentication", () => {
     const released = new Promise<void>((resolve) => {
       releaseScan = resolve;
     });
-    slowScanGate.secret = "sk-controlled-basic-isolation-scan";
+    slowScanGate.secret = "sk-legacy-fake-001";
     slowScanGate.entered = notifyEntered;
     slowScanGate.waitForRelease = released;
 
     const firstRequest = probe.request("/probe", {
-      headers: { Authorization: "Bearer sk-controlled-basic-isolation-scan" },
+      headers: { Authorization: "Bearer sk-legacy-fake-001" },
     });
     await entered;
 
@@ -285,13 +346,14 @@ describe("Gateway legacy Bearer authentication", () => {
     expect(fastPathResponse.status).toBe(200);
   });
 
-  it("rejects an invalid Bearer secret after exhausting legacy candidates", async () => {
+  it("rejects an invalid Bearer secret without comparing unrelated legacy hashes", async () => {
     const shared = await createLocalDatabase(SHARED_DB);
     const before = (await shared.get(
       "SELECT COUNT(*) AS count FROM api_keys WHERE fast_hashed_secret_key IS NOT NULL",
     )) as { count: number };
     await shared.close();
 
+    const comparisonsBefore = slowScanGate.comparisons;
     const response = await probe.request("/probe", {
       headers: { Authorization: "Bearer sk-not-a-real-legacy-key" },
     });
@@ -300,6 +362,7 @@ describe("Gateway legacy Bearer authentication", () => {
     expect(await response.json()).toEqual({
       error: { message: "Invalid secret key", type: "authentication_error" },
     });
+    expect(slowScanGate.comparisons - comparisonsBefore).toBe(0);
 
     const reread = await createLocalDatabase(SHARED_DB);
     const after = (await reread.get(
@@ -307,6 +370,37 @@ describe("Gateway legacy Bearer authentication", () => {
     )) as { count: number };
     await reread.close();
     expect(after.count).toBe(before.count);
+  });
+
+  it("reports an incomplete crowded display-key scan and supports direct Basic lookup", async () => {
+    const secret = "sk-legacy-collision-invalid-same";
+    const comparisonsBefore = slowScanGate.comparisons;
+    const bearer = await probe.request("/probe", {
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    expect(bearer.status).toBe(503);
+    expect(slowScanGate.comparisons - comparisonsBefore).toBe(128);
+    expect(bearer.headers.get("Retry-After")).toBe("1");
+
+    const cooledBefore = slowScanGate.comparisons;
+    const cooled = await probe.request("/probe", {
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    expect(cooled.status).toBe(503);
+    expect(slowScanGate.comparisons).toBe(cooledBefore);
+
+    const differentCandidate = await probe.request("/probe", {
+      headers: { Authorization: "Bearer sk-legacy-fake-002" },
+    });
+    expect(differentCandidate.status).toBe(401);
+    expect(slowScanGate.comparisons - cooledBefore).toBe(1);
+
+    const basic = await probe.request("/probe", {
+      headers: {
+        Authorization: `Basic ${Buffer.from("pk-collision-128:sk-legacy-collision-128-same").toString("base64")}`,
+      },
+    });
+    expect(basic.status).toBe(200);
   });
 
   it("does not bcrypt-scan a modern key whose fast hash does not match", async () => {

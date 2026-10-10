@@ -56,11 +56,7 @@ describe("真实 SQLite ingestion 可靠性", () => {
   it("版本状态与实体回滚一致，失败的新版本不能阻止旧字段补写", async () => {
     await run([event("a", { id: "o", traceId: "t", name: "old" })]);
     const before = await sql.all("SELECT * FROM ingestion_field_versions");
-    const fault_fail_metrics = rejectSql(
-      sql,
-      /INSERT(?: OR REPLACE)?(?: INTO)?[\s"\x60]+trace_metrics/i,
-      vi,
-    );
+    const fault_fail_metrics = rejectSql(sql, /UPDATE trace_metrics/i, vi);
     expect(
       (
         await run([
@@ -230,7 +226,7 @@ describe("真实 SQLite ingestion 可靠性", () => {
       /INSERT(?: OR REPLACE)?(?: INTO)?[\s"\x60]+search_dirty/i,
       vi,
     );
-    const result = await run([event("b", { id: "o", name: "lost" })]);
+    const result = await run([event("b", { id: "o", name: "lost", input: "new searchable text" })]);
     expect(result.successes).toEqual([]);
     expect(result.errors[0]?.status).toBe(500);
     expect((await row()).name).toBe("keep");
@@ -347,6 +343,37 @@ describe("真实 SQLite ingestion 可靠性", () => {
       event("o3", { id: "o", traceId: "t", input: "ignored" }),
     ]);
     expect(await get()).toEqual({ input: "", output: "out" });
+  });
+
+  it("多 trace 批次仅从各自 observation 继承，优先 root 并保留显式 IO", async () => {
+    const result = await run([
+      event("ta", { id: "ta" }, "trace-create"),
+      event("tb", { id: "tb", input: "explicit" }, "trace-create"),
+      event("tc", { id: "tc" }, "trace-create"),
+      event("a-child", {
+        id: "a-child",
+        traceId: "ta",
+        parentObservationId: "a-root",
+        input: "child-in",
+        output: "child-out",
+      }),
+      event("b-root", { id: "b-root", traceId: "tb", input: "wrong-in", output: "b-out" }),
+      event("a-root", { id: "a-root", traceId: "ta", output: "root-out" }),
+      event("c-first", {
+        id: "c-first",
+        traceId: "tc",
+        parentObservationId: "unknown",
+        input: "c-in",
+      }),
+    ]);
+    expect(result.errors).toEqual([]);
+    expect(
+      await sql.all("SELECT id,input,output FROM traces WHERE project_id='p' ORDER BY id"),
+    ).toEqual([
+      { id: "ta", input: "child-in", output: "root-out" },
+      { id: "tb", input: "explicit", output: "b-out" },
+      { id: "tc", input: "c-in", output: null },
+    ]);
   });
 
   it("legacy 显式类型可更新，现代事件缺失类型不覆盖", async () => {

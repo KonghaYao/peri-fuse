@@ -16,6 +16,103 @@ async function open(file: string) {
   return db;
 }
 describe("bounded persistent session search backfill", () => {
+  it("quarantines corrupt source data and resumes when a new revision arrives", async () => {
+    const db = await open(
+      path.join(mkdtempSync(path.join(os.tmpdir(), "peri-search-retry-")), "telemetry.db"),
+    );
+    try {
+      const storage = new SessionSearchStorage(db);
+      const source = { projectId: "p", kind: "trace" as const, id: "damaged", revision: 1 };
+      await storage.markDirty(source);
+      await storage.markFailed(source, new Error("IO_COMPRESSION_CORRUPT"));
+      expect(await storage.listDirty()).toEqual([]);
+      expect(await db.get("SELECT * FROM search_dirty")).toBeUndefined();
+      expect(
+        await db.get(
+          "SELECT coverage,pending,last_error FROM search_index_state WHERE project_id='p'",
+        ),
+      ).toEqual({
+        coverage: "limited",
+        pending: 0,
+        last_error: "permanent: IO_COMPRESSION_CORRUPT",
+      });
+      await storage.markDirty(source);
+      expect((await storage.listDirty()).map((row) => row.id)).toEqual(["damaged"]);
+      expect(await db.get("SELECT attempts,last_error FROM search_dirty")).toEqual({
+        attempts: 0,
+        last_error: null,
+      });
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("backs off retryable errors and does not overwrite a newer revision", async () => {
+    const db = await open(
+      path.join(mkdtempSync(path.join(os.tmpdir(), "peri-search-backoff-")), "telemetry.db"),
+    );
+    try {
+      const storage = new SessionSearchStorage(db);
+      const source = { projectId: "p", kind: "trace" as const, id: "busy", revision: 1 };
+      await storage.markDirty(source);
+      await storage.markFailed(source, new Error("database is locked"));
+      expect(await storage.listDirty()).toEqual([]);
+      expect(await db.get("SELECT attempts,last_error FROM search_dirty")).toEqual({
+        attempts: 1,
+        last_error: "retryable: database is locked",
+      });
+      await db.run("UPDATE search_dirty SET attempts=20 WHERE project_id='p' AND source_id='busy'");
+      await storage.markFailed(source, new Error("database is locked"));
+      const delay = await db.get(
+        "SELECT CAST(strftime('%s',next_attempt_at)-strftime('%s','now') AS INTEGER) AS seconds FROM search_dirty WHERE project_id='p' AND source_id='busy'",
+      );
+      expect((delay as { seconds: number }).seconds).toBeGreaterThanOrEqual(3599);
+      expect((delay as { seconds: number }).seconds).toBeLessThanOrEqual(3600);
+      await storage.markDirty(source);
+      await storage.markFailed(source, new Error("stale failure"));
+      expect(await db.get("SELECT attempts,last_error FROM search_dirty")).toEqual({
+        attempts: 0,
+        last_error: null,
+      });
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("continues bounded backfill while one source waits for retry", async () => {
+    const db = await open(
+      path.join(mkdtempSync(path.join(os.tmpdir(), "peri-search-cursor-")), "telemetry.db"),
+    );
+    try {
+      const insert = await db.prepare(
+        "INSERT INTO traces(id,project_id,timestamp,input) VALUES(?,?,?,?)",
+      );
+      for (let index = 0; index < 105; index++) {
+        await insert.run(`t-${index}`, "p", "2026-01-01T00:00:00Z", `input-${index}`);
+      }
+      expect(await enqueueBackfill(db)).toBe(100);
+      const storage = new SessionSearchStorage(db);
+      const source = (await db.get(
+        "SELECT project_id AS projectId,source_kind AS kind,source_id AS id,revision FROM search_dirty WHERE source_id='t-0'",
+      )) as { projectId: string; kind: "trace"; id: string; revision: number };
+      await storage.markFailed(source, new Error("database is locked"));
+      expect(await processDirty(db)).toBe(99);
+      expect(await enqueueBackfill(db)).toBe(5);
+      expect(await db.get("SELECT attempts FROM search_dirty WHERE source_id='t-0'")).toEqual({
+        attempts: 1,
+      });
+      expect(await processDirty(db)).toBe(5);
+      expect(await enqueueBackfill(db)).toBe(0);
+      expect(
+        await db.get("SELECT coverage FROM search_index_state WHERE project_id='__backfill__'"),
+      ).toEqual({
+        coverage: "ready",
+      });
+    } finally {
+      await db.close();
+    }
+  });
+
   it("maintains O(1) pending counts across duplicate, complete, and limited work", async () => {
     const db = await open(
       path.join(mkdtempSync(path.join(os.tmpdir(), "peri-pending-")), "telemetry.db"),

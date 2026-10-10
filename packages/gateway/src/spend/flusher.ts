@@ -57,6 +57,7 @@ export class SpendFlusher {
   private accepted = 0;
   private failures = 0;
   private readonly inflight = new Set<Promise<void>>();
+  private writableProbe: Promise<void> | null = null;
 
   constructor(private readonly options: SpendOptions = {}) {}
 
@@ -71,6 +72,19 @@ export class SpendFlusher {
 
   /** Fail admission before contacting an upstream if SQLite cannot accept a writer. */
   async assertWritable(): Promise<void> {
+    // Concurrent admissions can share one in-flight probe. Never retain a
+    // successful result: a later request must observe a newly read-only DB.
+    if (this.writableProbe) return this.writableProbe;
+    const probe = this.probeWritable();
+    this.writableProbe = probe;
+    try {
+      await probe;
+    } finally {
+      if (this.writableProbe === probe) this.writableProbe = null;
+    }
+  }
+
+  private async probeWritable(): Promise<void> {
     try {
       await getDb().transaction(
         async (tx) => {

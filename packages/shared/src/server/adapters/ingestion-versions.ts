@@ -28,7 +28,9 @@ export async function selectVersionedColumns(
   )) as { versions: string } | undefined;
   const versions: Record<string, Version> = stored ? JSON.parse(stored.versions) : {};
   const previous = (await db.get(
-    `SELECT * FROM ${table} WHERE project_id=? AND id=?`,
+    stored
+      ? `SELECT event_ts${table === "traces" || table === "observations" ? ",input IS NOT NULL AS input,output IS NOT NULL AS output" : ""} FROM ${table} WHERE project_id=? AND id=?`
+      : `SELECT * FROM ${table} WHERE project_id=? AND id=?`,
     row.project_id,
     row.id,
   )) as Record<string, unknown> | undefined;
@@ -44,7 +46,7 @@ export async function selectVersionedColumns(
       (column === "input" || column === "output") &&
       !columns.includes(column) &&
       !versions[column] &&
-      previous?.[column] == null,
+      (previous?.[column] == null || (stored !== undefined && previous[column] === 0)),
   );
   const accepted = [...columns, ...inheritedColumns].filter((column) => {
     if (column === "updated_at" || column === "event_ts") return false;

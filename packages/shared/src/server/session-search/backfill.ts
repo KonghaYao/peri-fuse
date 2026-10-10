@@ -9,7 +9,14 @@ export async function enqueueBackfill(db: LocalExecutor): Promise<number> {
     )
   )
     return 0;
-  if (await db.get("SELECT 1 FROM search_dirty LIMIT 1")) return 0;
+  // A delayed retry must not stall the historical cursor. Ready work still
+  // runs first, while backfill can advance past a failed source's rowid.
+  if (
+    await db.get(
+      "SELECT 1 FROM search_dirty WHERE next_attempt_at IS NULL OR next_attempt_at<=datetime('now') LIMIT 1",
+    )
+  )
+    return 0;
   return withLocalTransaction(db, async (tx) => {
     const db = tx;
     const storage = new SessionSearchStorage(tx);

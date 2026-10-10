@@ -332,6 +332,14 @@ export const processEventBatchLite = async (
   // This makes traces appear "half-recorded" in the UI. We fix this by
   // inheriting IO from the root observation or its nearest children.
   const hasIO = (v: unknown): boolean => v != null;
+  const observationsByTrace = new Map<unknown, Record<string, unknown>[]>();
+  for (const observation of rowsByTable.observations) {
+    const traceId = observation.trace_id;
+    if (traceId == null) continue;
+    const group = observationsByTrace.get(traceId);
+    if (group) group.push(observation);
+    else observationsByTrace.set(traceId, [observation]);
+  }
   const inherited = rowsByTable.traces.map(() => [] as string[]);
   for (const [index, trace] of rowsByTable.traces.entries()) {
     const explicit = updates.traces[index];
@@ -344,7 +352,7 @@ export const processEventBatchLite = async (
       }
     };
     if (hasIO(trace.input) && hasIO(trace.output)) continue;
-    const traceObs = rowsByTable.observations.filter((o) => o.trace_id === trace.id);
+    const traceObs = observationsByTrace.get(trace.id) ?? [];
     if (traceObs.length === 0) continue;
     // Prefer the root observation (no parent)
     const root = traceObs.find((o) => !o.parent_observation_id || o.parent_observation_id === "");

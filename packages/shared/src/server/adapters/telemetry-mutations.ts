@@ -1,9 +1,31 @@
 import type { LocalExecutor } from "../../db/local";
 import { SessionSearchStorage } from "../session-search/storage";
-import { refreshIngestionMetrics } from "./ingestion-metrics";
+import {
+  addIngestionMetrics,
+  type ObservationMetric,
+  readObservationMetric,
+  refreshIngestionMetrics,
+  removeIngestionMetrics,
+  updateIngestionMetricsDelta,
+} from "./ingestion-metrics";
 import type { TelemetryQueryOpts } from "./types";
 
 const entityTables = new Set(["traces", "observations", "scores"]);
+export type MetricsToRefresh = Map<string, [string, string]>;
+
+export async function flushIngestionMetrics(
+  tx: LocalExecutor,
+  pending: MetricsToRefresh,
+): Promise<void> {
+  for (const [projectId, traceId] of pending.values())
+    await refreshIngestionMetrics(tx, projectId, traceId);
+}
+
+export function mutationSnapshotColumns(table: string): string {
+  if (table === "traces") return "id,project_id,timestamp,user_id,session_id,is_deleted";
+  if (table === "observations") return "id,project_id,trace_id,start_time,type,is_deleted";
+  return "id,project_id,trace_id,timestamp";
+}
 export function isTelemetryEntity(table: string): boolean {
   return entityTables.has(table);
 }
@@ -13,28 +35,34 @@ export async function recordTelemetryMutation(
   table: string,
   before?: Record<string, unknown>,
   after?: Record<string, unknown>,
+  pendingMetrics?: MetricsToRefresh,
+  searchChanged = true,
+  beforeMetric?: ObservationMetric,
 ): Promise<void> {
   if (!isTelemetryEntity(table)) return;
   const affected = new Map<string, Record<string, unknown>>();
+  const dirtyDays = new Map<string, [string, string]>();
   for (const row of [before, after]) {
     if (!row) continue;
     const projectId = String(row.project_id);
     const time = row[table === "observations" ? "start_time" : "timestamp"];
     if (typeof time === "string") {
       const day = time.slice(0, 10);
-      await tx.run(
-        `INSERT INTO daily_stats_dirty(project_id,day)
-        SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM telemetry_retention_state WHERE ?<cutoff_day)
-        ON CONFLICT(project_id,day) DO UPDATE SET revision=revision+1,dirty=1`,
-        projectId,
-        day,
-        day,
-      );
+      dirtyDays.set(JSON.stringify([projectId, day]), [projectId, day]);
     }
-    affected.set(`${projectId}:${row.id}`, row);
+    affected.set(JSON.stringify([projectId, row.id]), row);
   }
+  for (const [projectId, day] of dirtyDays.values())
+    await tx.run(
+      `INSERT INTO daily_stats_dirty(project_id,day)
+      SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM telemetry_retention_state WHERE ?<cutoff_day)
+      ON CONFLICT(project_id,day) DO UPDATE SET revision=revision+1,dirty=1`,
+      projectId,
+      day,
+      day,
+    );
   for (const row of affected.values()) {
-    if (table !== "scores")
+    if (table !== "scores" && searchChanged)
       await new SessionSearchStorage(tx).markDirty({
         projectId: String(row.project_id),
         kind: table === "traces" ? "trace" : "observation",
@@ -54,15 +82,99 @@ export async function recordTelemetryMutation(
   for (const row of [before, after]) {
     const traceId = table === "traces" ? row?.id : row?.trace_id;
     if (row && typeof traceId === "string" && table !== "scores")
-      traceKeys.set(`${row.project_id}:${traceId}`, [String(row.project_id), traceId]);
+      traceKeys.set(JSON.stringify([row.project_id, traceId]), [String(row.project_id), traceId]);
   }
-  for (const [projectId, traceId] of traceKeys.values())
-    await refreshIngestionMetrics(tx, projectId, traceId);
+  for (const [key, pair] of traceKeys) {
+    if (
+      pendingMetrics &&
+      table === "observations" &&
+      after &&
+      after.is_deleted !== 1 &&
+      pair[0] === String(after.project_id) &&
+      pair[1] === String(after.trace_id) &&
+      (!before || before.is_deleted === 1 || before.trace_id !== after.trace_id) &&
+      !pendingMetrics.has(key)
+    ) {
+      const materialized = await tx.get(
+        "SELECT 1 FROM trace_metrics WHERE project_id=? AND trace_id=?",
+        ...pair,
+      );
+      const unmaterialized =
+        !materialized &&
+        (await tx.get(
+          "SELECT 1 FROM observations WHERE project_id=? AND trace_id=? AND id<>? AND is_deleted=0 LIMIT 1",
+          ...pair,
+          after.id,
+        ));
+      if (unmaterialized) pendingMetrics.set(key, pair);
+      else await addIngestionMetrics(tx, pair[0], pair[1], String(after.id));
+    } else if (
+      pendingMetrics &&
+      table === "observations" &&
+      before &&
+      beforeMetric &&
+      before.is_deleted !== 1 &&
+      pair[0] === String(before.project_id) &&
+      pair[1] === String(before.trace_id) &&
+      (!after || after.is_deleted === 1 || before.trace_id !== after.trace_id) &&
+      !pendingMetrics.has(key)
+    ) {
+      if (!(await removeIngestionMetrics(tx, pair[0], pair[1], beforeMetric)))
+        pendingMetrics.set(key, pair);
+    } else if (
+      pendingMetrics &&
+      table === "observations" &&
+      before &&
+      after &&
+      before.trace_id === after.trace_id &&
+      before.is_deleted !== 1 &&
+      after.is_deleted !== 1 &&
+      beforeMetric &&
+      !pendingMetrics.has(key)
+    ) {
+      const afterMetric = await readObservationMetric(tx, pair[0], pair[1], String(after.id));
+      if (
+        !afterMetric ||
+        !(await updateIngestionMetricsDelta(tx, pair[0], pair[1], beforeMetric, afterMetric))
+      )
+        pendingMetrics.set(key, pair);
+    } else if (
+      pendingMetrics &&
+      table === "traces" &&
+      after &&
+      pair[0] === String(after.project_id) &&
+      pair[1] === String(after.id) &&
+      !pendingMetrics.has(key)
+    ) {
+      const materialized = await tx.get(
+        "SELECT 1 FROM trace_metrics WHERE project_id=? AND trace_id=?",
+        ...pair,
+      );
+      const unmaterialized =
+        !materialized &&
+        (await tx.get(
+          "SELECT 1 FROM observations WHERE project_id=? AND trace_id=? AND is_deleted=0 LIMIT 1",
+          ...pair,
+        ));
+      if (unmaterialized) pendingMetrics.set(key, pair);
+      else if (materialized)
+        await tx.run(
+          `UPDATE trace_metrics SET user_id=?,session_id=?,timestamp=?
+         WHERE project_id=? AND trace_id=?`,
+          after.user_id ?? null,
+          after.session_id ?? null,
+          after.timestamp ?? null,
+          ...pair,
+        );
+    } else if (pendingMetrics) pendingMetrics.set(key, pair);
+    else await refreshIngestionMetrics(tx, ...pair);
+  }
 }
 
 export async function executeTelemetryCommand(
   tx: LocalExecutor,
   opts: TelemetryQueryOpts,
+  pendingMetrics?: MetricsToRefresh,
 ): Promise<{ changes: number }> {
   const mutation = /^\s*(UPDATE|DELETE\s+FROM)\s+(traces|observations|scores)\b/i.exec(opts.query);
   if (!mutation) {
@@ -70,12 +182,7 @@ export async function executeTelemetryCommand(
     return { changes: Number(result.changes) };
   }
   const table = mutation[2].toLowerCase();
-  const columns =
-    table === "traces"
-      ? "id,project_id,timestamp"
-      : table === "observations"
-        ? "id,project_id,trace_id,start_time"
-        : "id,project_id,trace_id,timestamp";
+  const columns = mutationSnapshotColumns(table);
   const where = opts.query
     .slice(mutation[0].length)
     .match(/\bWHERE\b([\s\S]*)/i)?.[1]
@@ -94,7 +201,7 @@ export async function executeTelemetryCommand(
             row.id,
           )
         : undefined;
-    await recordTelemetryMutation(tx, table, row, after);
+    await recordTelemetryMutation(tx, table, row, after, pendingMetrics);
   }
   return { changes: Number(result.changes) };
 }

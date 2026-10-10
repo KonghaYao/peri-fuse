@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import { openLocalDatabase } from "../../db/local";
 import { rejectSql } from "../../db/testing";
 import { readSource } from "../session-search/indexer";
+import { refreshIngestionMetrics } from "./ingestion-metrics";
 import { decodeIoRow, encodeIoRow, IO_MAX_BYTES, initializeIoSchema } from "./io-compression";
 import { SQLiteTelemetryAdapter } from "./sqlite-telemetry-adapter";
 
@@ -202,4 +203,231 @@ it("keeps unprofitable compression as text and never compresses usage or cost", 
     usage_details: input,
     cost_details: input,
   });
+});
+
+it("appends observations without trace-wide rebuild and rebuilds affected traces on moves", async () => {
+  const adapter = new SQLiteTelemetryAdapter(file("incremental-metrics"));
+  await adapter.initialize();
+  const db = adapter.getDatabase();
+  try {
+    const forbidRebuild = rejectSql(
+      db,
+      /DELETE FROM trace_metrics WHERE project_id=@projectId/i,
+      vi,
+    );
+    try {
+      for (let index = 0; index < 30; index++) {
+        await adapter.insert({
+          table: "observations",
+          records: [
+            {
+              project_id: "p",
+              id: `o-${index}`,
+              trace_id: "t",
+              usage_details:
+                index === 1
+                  ? '{"input":2,"output":1,"input_cached_tokens":1,"input_cache_creation":1}'
+                  : '{"input":2}',
+              ...(index === 1
+                ? {
+                    cost_details: '{"input":0.1,"output":0.2}',
+                    total_cost: 0.3,
+                  }
+                : {}),
+            },
+          ],
+        });
+      }
+      await adapter.insert({
+        table: "observations",
+        records: [{ project_id: "p", id: "o-0", usage_details: '{"input":5,"cached_tokens":1}' }],
+        updateColumns: [["usage_details"]],
+      });
+      await adapter.insert({
+        table: "observations",
+        records: [
+          {
+            project_id: "p",
+            id: "o-1",
+            usage_details:
+              '{"input":2,"output":1,"input_cached_tokens":2,"input_cache_creation":1}',
+            cost_details: '{"input":0.4,"output":0.6}',
+            total_cost: 1,
+          },
+        ],
+        updateColumns: [["usage_details", "cost_details", "total_cost"]],
+      });
+    } finally {
+      forbidRebuild.mockRestore();
+    }
+    expect(
+      await db.get(
+        "SELECT obs_count,input_tokens FROM trace_metrics WHERE project_id='p' AND trace_id='t'",
+      ),
+    ).toEqual({ obs_count: 30, input_tokens: 63 });
+    await adapter.insert({
+      table: "observations",
+      records: [{ project_id: "q", id: "o-0", trace_id: "t", usage_details: '{"input":7}' }],
+    });
+    const forbidMoveRebuild = rejectSql(
+      db,
+      /DELETE FROM trace_metrics WHERE project_id=@projectId/i,
+      vi,
+    );
+    try {
+      await adapter.insert({
+        table: "observations",
+        records: [{ project_id: "p", id: "o-0", trace_id: "moved" }],
+        updateColumns: [["trace_id"]],
+      });
+    } finally {
+      forbidMoveRebuild.mockRestore();
+    }
+    expect(
+      await db.all(
+        "SELECT project_id,trace_id,obs_count,input_tokens FROM trace_metrics ORDER BY project_id,trace_id",
+      ),
+    ).toEqual([
+      { project_id: "p", trace_id: "moved", obs_count: 1, input_tokens: 5 },
+      { project_id: "p", trace_id: "t", obs_count: 29, input_tokens: 58 },
+      { project_id: "q", trace_id: "t", obs_count: 1, input_tokens: 7 },
+    ]);
+    await adapter.insert({
+      table: "observations",
+      records: [{ project_id: "p", id: "o-0", is_deleted: 1 }],
+      updateColumns: [["is_deleted"]],
+    });
+    expect(
+      await db.get("SELECT 1 FROM trace_metrics WHERE project_id='p' AND trace_id='moved'"),
+    ).toBeUndefined();
+    const optimized = await db.all("SELECT * FROM trace_metrics ORDER BY project_id,trace_id");
+    expect(
+      optimized.find((metric) => metric.project_id === "p" && metric.trace_id === "t"),
+    ).toMatchObject({
+      total_cost: 1,
+      input_cost: 0.4,
+      output_cost: 0.6,
+      cached_tokens: 2,
+      cache_creation_tokens: 1,
+      gross_input_tokens: 61,
+    });
+    for (const [projectId, traceId] of [
+      ["p", "t"],
+      ["p", "moved"],
+      ["q", "t"],
+    ])
+      await refreshIngestionMetrics(db, projectId, traceId);
+    expect(await db.all("SELECT * FROM trace_metrics ORDER BY project_id,trace_id")).toEqual(
+      optimized,
+    );
+  } finally {
+    await adapter.close();
+  }
+});
+
+it("queues search only for indexed observation fields", async () => {
+  const adapter = new SQLiteTelemetryAdapter(file("search-dirty-fields"));
+  await adapter.initialize();
+  const db = adapter.getDatabase();
+  try {
+    await adapter.insert({
+      table: "observations",
+      records: [{ project_id: "p", id: "o", trace_id: "t", name: "first", input: "body" }],
+    });
+    const revision = () =>
+      db.get(
+        "SELECT revision FROM search_source_revisions WHERE project_id='p' AND source_kind='observation' AND source_id='o'",
+      );
+    const first = await revision();
+    const firstDay = (await db.get(
+      "SELECT revision FROM daily_stats_dirty WHERE project_id='p'",
+    )) as { revision: number };
+    await adapter.insert({
+      table: "observations",
+      records: [{ project_id: "p", id: "o", name: "second" }],
+      updateColumns: [["name"]],
+    });
+    expect(await revision()).toEqual(first);
+    expect(await db.get("SELECT revision FROM daily_stats_dirty WHERE project_id='p'")).toEqual({
+      revision: firstDay.revision + 1,
+    });
+    const searchablePatch = {
+      table: "observations",
+      records: [{ project_id: "p", id: "o", output: "new body", event_ts: "2026-01-01" }],
+      updateColumns: [["output"]],
+      eventIds: ["same-event"],
+    };
+    await adapter.insert(searchablePatch);
+    const changed = await revision();
+    const dirtyRevision = await db.get(
+      "SELECT revision FROM daily_stats_dirty WHERE project_id='p'",
+    );
+    expect(changed).not.toEqual(first);
+    await adapter.insert(searchablePatch);
+    expect(await revision()).toEqual(changed);
+    expect(await db.get("SELECT revision FROM daily_stats_dirty WHERE project_id='p'")).toEqual(
+      dirtyRevision,
+    );
+  } finally {
+    await adapter.close();
+  }
+});
+
+it("rebuilds missing legacy metrics and coalesces mixed updates before commit", async () => {
+  const adapter = new SQLiteTelemetryAdapter(file("legacy-metrics"));
+  await adapter.initialize();
+  const db = adapter.getDatabase();
+  try {
+    await db.run(
+      "INSERT INTO observations(project_id,id,trace_id,usage_details) VALUES(?,?,?,?)",
+      "p",
+      "legacy",
+      "t",
+      '{"input":3}',
+    );
+    await adapter.insert({
+      table: "observations",
+      records: [{ project_id: "p", id: "new", trace_id: "t", usage_details: '{"input":2}' }],
+    });
+    expect(
+      await db.get(
+        "SELECT obs_count,input_tokens FROM trace_metrics WHERE project_id='p' AND trace_id='t'",
+      ),
+    ).toEqual({ obs_count: 2, input_tokens: 5 });
+    await adapter.insert({
+      table: "observations",
+      records: [
+        { project_id: "p", id: "new", usage_details: '{"input":4}' },
+        { project_id: "p", id: "newest", trace_id: "t", usage_details: '{"input":6}' },
+      ],
+      updateColumns: [["usage_details"], ["trace_id", "usage_details"]],
+    });
+    expect(
+      await db.get(
+        "SELECT obs_count,input_tokens FROM trace_metrics WHERE project_id='p' AND trace_id='t'",
+      ),
+    ).toEqual({ obs_count: 3, input_tokens: 13 });
+    const forbidTraceRebuild = rejectSql(
+      db,
+      /DELETE FROM trace_metrics WHERE project_id=@projectId/i,
+      vi,
+    );
+    try {
+      await adapter.insert({
+        table: "traces",
+        records: [
+          { project_id: "p", id: "t", user_id: "u", session_id: "s", timestamp: "2026-01-01" },
+        ],
+      });
+    } finally {
+      forbidTraceRebuild.mockRestore();
+    }
+    expect(
+      await db.get(
+        "SELECT user_id,session_id,timestamp FROM trace_metrics WHERE project_id='p' AND trace_id='t'",
+      ),
+    ).toEqual({ user_id: "u", session_id: "s", timestamp: "2026-01-01" });
+  } finally {
+    await adapter.close();
+  }
 });

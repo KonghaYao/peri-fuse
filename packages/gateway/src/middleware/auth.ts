@@ -45,6 +45,9 @@ interface CachedAuth {
 const AUTH_CACHE_TTL_MS = 30_000;
 const authCache = new BoundedTtlMap<CachedAuth>(4096, AUTH_CACHE_TTL_MS);
 const LEGACY_KEY_BATCH_SIZE = 25;
+// A single unknown Bearer token must never trigger an unbounded bcrypt walk.
+const LEGACY_BEARER_MAX_COMPARISONS = 128;
+const legacyTokenCooldown = new BoundedTtlMap<true>(4096, 1_000);
 let legacyBearerScanInProgress = false;
 
 interface LegacyApiKeyRow {
@@ -86,28 +89,37 @@ function extractBasicCredentials(header: string): { publicKey: string; secretKey
 async function findLegacyApiKeyBySecret(
   db: Awaited<ReturnType<typeof getSharedApiKeyDb>>,
   secretKey: string,
-): Promise<LegacyApiKeyRow | null> {
+): Promise<{ row: LegacyApiKeyRow | null; incomplete: boolean; compared: number }> {
   let cursor = "";
+  let compared = 0;
+  const columns = (await db.all("PRAGMA table_info(api_keys)")) as { name: string }[];
+  const hasDisplaySecret = columns.some((column) => column.name === "display_secret_key");
+  const displaySecret = `${secretKey.slice(0, 6)}...${secretKey.slice(-4)}`;
 
-  while (true) {
+  while (compared < LEGACY_BEARER_MAX_COMPARISONS) {
+    const limit = Math.min(LEGACY_KEY_BATCH_SIZE, LEGACY_BEARER_MAX_COMPARISONS - compared);
     const rows = (await db.all(
       `SELECT id, public_key, hashed_secret_key, fast_hashed_secret_key,
                 project_id, organization_id, scope, expires_at
          FROM api_keys
          WHERE fast_hashed_secret_key IS NULL AND id > ?
+         ${hasDisplaySecret ? "AND (display_secret_key = ? OR display_secret_key IS NULL)" : ""}
          ORDER BY id
          LIMIT ?`,
-      cursor,
-      LEGACY_KEY_BATCH_SIZE,
+      ...(hasDisplaySecret ? [cursor, displaySecret, limit] : [cursor, limit]),
     )) as LegacyApiKeyRow[];
 
     for (const row of rows) {
-      if (await compare(secretKey, row.hashed_secret_key)) return row;
+      compared++;
+      if (await compare(secretKey, row.hashed_secret_key)) {
+        return { row, incomplete: false, compared };
+      }
     }
 
-    if (rows.length < LEGACY_KEY_BATCH_SIZE) return null;
+    if (rows.length < limit) return { row: null, incomplete: false, compared };
     cursor = rows[rows.length - 1].id;
   }
+  return { row: null, incomplete: true, compared };
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +244,20 @@ export async function unifiedAuth(
   // Slow path: bcrypt comparison across all keys (fallback)
   if (!apiKeyRow) {
     const isLegacyBearerScan = bearerToken !== null;
+    // A display fragment may belong to keys in several projects. Cool only the
+    // failed full token, so a collision cannot delay another project's key.
+    if (isLegacyBearerScan && legacyTokenCooldown.get(cacheKey)) {
+      c.header("Retry-After", "1");
+      return c.json(
+        {
+          error: {
+            message: "Legacy API key verification is cooling down. Retry shortly.",
+            type: "service_unavailable_error",
+          },
+        },
+        503,
+      );
+    }
     if (isLegacyBearerScan && legacyBearerScanInProgress) {
       c.header("Retry-After", "1");
       return c.json(
@@ -247,7 +273,27 @@ export async function unifiedAuth(
 
     if (isLegacyBearerScan) legacyBearerScanInProgress = true;
     try {
-      const legacyRow = await findLegacyApiKeyBySecret(db, secretKey);
+      const {
+        row: legacyRow,
+        incomplete,
+        compared,
+      } = await findLegacyApiKeyBySecret(db, secretKey);
+      if (!legacyRow && compared > 0 && isLegacyBearerScan) {
+        legacyTokenCooldown.set(cacheKey, true);
+      }
+      if (incomplete) {
+        c.header("Retry-After", "1");
+        return c.json(
+          {
+            error: {
+              message:
+                "Legacy Bearer verification limit reached. Use Basic authentication with the public key.",
+              type: "service_unavailable_error",
+            },
+          },
+          503,
+        );
+      }
       if (legacyRow) {
         // Backfill fast hash for future requests
         if (salt) {
