@@ -1,4 +1,5 @@
 import { getTelemetryDB } from "../adapters";
+import { readIoText } from "../adapters/io-read";
 import { logger } from "../logger";
 import type { FilterList } from "../queries/clickhouse-sql/clickhouse-filter";
 import type { ObservationRecordReadType } from "./definitions";
@@ -40,6 +41,8 @@ export async function liteGetObservationsForTrace(
         ORDER BY start_time ASC
       `,
       params: { projectId, traceId },
+      // 不选正文的调用无需进入读快照（ioRead 是内部开关，不改变 SQL 语义）。
+      ioRead: includeIO ? "auto" : "none",
     });
 
     return rows.map((row) => ({
@@ -54,8 +57,8 @@ export async function liteGetObservationsForTrace(
       level: row.level ? String(row.level) : null,
       status_message: row.status_message ? String(row.status_message) : null,
       version: row.version ? String(row.version) : null,
-      input: includeIO && row.input != null ? String(row.input) : null,
-      output: includeIO && row.output != null ? String(row.output) : null,
+      input: includeIO ? readIoText(row, "input") : null,
+      output: includeIO ? readIoText(row, "output") : null,
       provided_model_name: row.provided_model_name ? String(row.provided_model_name) : null,
       internal_model_id: null,
       model_parameters: row.model_parameters ? String(row.model_parameters) : null,
@@ -133,6 +136,7 @@ export async function liteGetObservationsForTraces(
         ORDER BY start_time ASC
       `,
       params,
+      ioRead: includeIO ? "auto" : "none",
     });
 
     for (const row of rows) {
@@ -148,8 +152,8 @@ export async function liteGetObservationsForTraces(
         level: row.level ? String(row.level) : null,
         status_message: row.status_message ? String(row.status_message) : null,
         version: row.version ? String(row.version) : null,
-        input: includeIO && row.input != null ? String(row.input) : null,
-        output: includeIO && row.output != null ? String(row.output) : null,
+        input: includeIO ? readIoText(row, "input") : null,
+        output: includeIO ? readIoText(row, "output") : null,
         provided_model_name: row.provided_model_name ? String(row.provided_model_name) : null,
         internal_model_id: null,
         model_parameters: row.model_parameters ? String(row.model_parameters) : null,
@@ -203,6 +207,7 @@ export async function liteGetObservationById(
     const rows = await db.query<Record<string, unknown>>({
       query: `SELECT * FROM observations WHERE project_id = @projectId AND id = @observationId AND is_deleted = 0 LIMIT 1`,
       params: { projectId, observationId },
+      ioRead: "auto",
     });
 
     if (rows.length === 0) return undefined;
@@ -220,8 +225,8 @@ export async function liteGetObservationById(
       level: row.level ? String(row.level) : null,
       status_message: row.status_message ? String(row.status_message) : null,
       version: row.version ? String(row.version) : null,
-      input: row.input != null ? String(row.input) : null,
-      output: row.output != null ? String(row.output) : null,
+      input: readIoText(row, "input"),
+      output: readIoText(row, "output"),
       provided_model_name: row.provided_model_name ? String(row.provided_model_name) : null,
       internal_model_id: null,
       model_parameters: row.model_parameters ? String(row.model_parameters) : null,
@@ -283,6 +288,7 @@ export async function liteGetObservationsTable(
         LIMIT @limit OFFSET @offset
       `,
       params: { projectId, limit, offset, ...filterParams },
+      ioRead: includeIO ? "auto" : "none",
     });
 
     return rows.map((row) => ({
@@ -297,8 +303,8 @@ export async function liteGetObservationsTable(
       level: row.level ? String(row.level) : null,
       status_message: row.status_message ? String(row.status_message) : null,
       version: row.version ? String(row.version) : null,
-      input: row.input != null ? String(row.input) : null,
-      output: row.output != null ? String(row.output) : null,
+      input: readIoText(row, "input"),
+      output: readIoText(row, "output"),
       provided_model_name: row.model ? String(row.model) : null,
       internal_model_id: null,
       model_parameters: row.model_parameters ? String(row.model_parameters) : null,

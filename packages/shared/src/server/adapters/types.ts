@@ -38,6 +38,15 @@ export interface TelemetryQueryOpts {
   /** Optional tighter result limits; excessive results fail without truncation. */
   maxResultRows?: number;
   maxResultBytes?: number;
+  /**
+   * Internal read switch, never surfaced to SDK callers.
+   *
+   * `auto` (default): the read enters the read snapshot before its first SELECT and
+   * hydrates codec 2 (CAS) rows inside that snapshot; a NO-GO engine rejects instead
+   * of returning undecoded BLOBs. `none` is only for queries verified to select no
+   * `input` / `output` column (summary and aggregate reads).
+   */
+  ioRead?: "auto" | "none";
 }
 
 /**

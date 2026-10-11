@@ -121,9 +121,9 @@ app.get("/api/public/traces/metrics", authMiddleware, responseCache(2_000), asyn
   const includeIo = fieldsParam === undefined || fields.has("io");
   const includeIoPreview = !includeIo && fields.has("io_preview");
   const traceProjection = includeIo
-    ? "id, input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata"
+    ? "id, project_id, input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata"
     : includeIoPreview
-      ? "id, input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata"
+      ? "id, project_id, input, input_codec, input_raw_size, output, output_codec, output_raw_size, metadata"
       : "id";
 
   const db = getTelemetryDB();

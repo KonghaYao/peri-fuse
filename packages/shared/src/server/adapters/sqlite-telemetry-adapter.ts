@@ -13,7 +13,8 @@ import { startQueryStatisticsMaintenance } from "../../db/query-statistics";
 import { logger } from "../logger";
 import { readObservationMetric } from "./ingestion-metrics";
 import { selectVersionedColumns } from "./ingestion-versions";
-import { decodeIoRow, encodeIoRow, ioColumns } from "./io-compression";
+import { encodeIoRow, ioColumns } from "./io-compression";
+import { readTelemetryRows } from "./io-read";
 import {
   DEFAULT_MAX_RESULT_BYTES,
   DEFAULT_MAX_RESULT_ROWS,
@@ -31,11 +32,7 @@ import {
   mutationSnapshotColumns,
   recordTelemetryMutation,
 } from "./telemetry-mutations";
-import {
-  currentTelemetryQuerySignal,
-  recordTelemetryQueryError,
-  TelemetryQueryError,
-} from "./telemetry-query-context";
+import { currentTelemetryQuerySignal, recordTelemetryQueryError } from "./telemetry-query-context";
 import { withTransactionStatementCache } from "./tx-statement-cache";
 import type { TelemetryDBAdapter, TelemetryInsertOpts, TelemetryQueryOpts } from "./types";
 
@@ -133,8 +130,6 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         if (pool) return await pool.query<T>(opts.query, opts.params ?? {}, opts);
       }
       const deadline = Date.now() + (opts.timeoutMs ?? 30_000);
-      const rows: T[] = [];
-      let bytes = 0;
       const maxRows = Math.min(
         opts.maxResultRows ?? DEFAULT_MAX_RESULT_ROWS,
         DEFAULT_MAX_RESULT_ROWS,
@@ -143,32 +138,9 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
         opts.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES,
         DEFAULT_MAX_RESULT_BYTES,
       );
-      for await (const source of this.db.iterate(opts.query, opts.params ?? {}, {
-        queryTimeout: opts.timeoutMs ?? 30_000,
-      })) {
-        opts.signal?.throwIfAborted();
-        if (Date.now() >= deadline)
-          throw new TelemetryQueryError("TIMEOUT", "Telemetry query timed out");
-        const row = decodeIoRow(source);
-        bytes += 64;
-        for (const [key, value] of Object.entries(row)) {
-          bytes +=
-            key.length * 2 +
-            32 +
-            (typeof value === "string"
-              ? value.length * 2
-              : value instanceof Uint8Array
-                ? value.byteLength
-                : 8);
-        }
-        if (rows.length >= maxRows || bytes > maxBytes)
-          throw new TelemetryQueryError(
-            "RESULT_LIMIT",
-            "Telemetry query result limit exceeded; paginate or narrow the query",
-          );
-        rows.push(row as T);
-      }
-      return rows;
+      // 正文读取（ioRead=auto）在 DECODE 前于同一读快照内 hydrate；NO-GO 引擎被守卫拒绝。
+      const rows = await readTelemetryRows(this.db, opts, { maxRows, maxBytes, deadline });
+      return rows as T[];
     } catch (error) {
       recordTelemetryQueryError(error);
       logger.error("[SQLiteTelemetryAdapter] Query failed", error);

@@ -2,6 +2,7 @@
 import { availableParallelism } from "node:os";
 import { Worker } from "node:worker_threads";
 import { resolveDatabaseWorkerModule } from "../../db/local";
+import { IO_CAS_READ_BUDGET } from "../io-cas/reader-source";
 import { logger } from "../logger";
 import { decodeOwnedSnapshot, encodeOwnedSnapshot } from "../utils/owned-snapshot";
 import { SQLITE_READ_WORKER_SOURCE } from "./sqlite-read-worker-source";
@@ -13,7 +14,7 @@ export const DEFAULT_MAX_RESULT_BYTES = 64 * 1024 * 1024;
 
 type ReadOptions = Pick<
   TelemetryQueryOpts,
-  "timeoutMs" | "signal" | "maxResultRows" | "maxResultBytes"
+  "timeoutMs" | "signal" | "maxResultRows" | "maxResultBytes" | "ioRead"
 >;
 type Request = {
   id: number;
@@ -97,6 +98,7 @@ export class SqliteReadPool {
       timeoutMs: options.timeoutMs,
       maxResultRows: options.maxResultRows,
       maxResultBytes: options.maxResultBytes,
+      ioRead: options.ioRead,
     };
     if (this.closed)
       return Promise.reject(new TelemetryQueryError("UNAVAILABLE", "SQLite read pool is closed"));
@@ -198,6 +200,8 @@ export class SqliteReadPool {
           dbPath: this.dbPath,
           connectionPath: this.connectionPath,
           authToken: this.authToken,
+          hydrateBudgetBytes: IO_CAS_READ_BUDGET.maxBytes,
+          hydrateWindowBytes: IO_CAS_READ_BUDGET.windowBytes,
         },
       });
       slot.worker = worker;
@@ -296,6 +300,7 @@ export class SqliteReadPool {
             request.options.maxResultBytes ?? DEFAULT_MAX_RESULT_BYTES,
             DEFAULT_MAX_RESULT_BYTES,
           ),
+          ioRead: request.options.ioRead ?? "auto",
         });
       } catch (error) {
         this.retire(

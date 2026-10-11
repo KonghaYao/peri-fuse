@@ -1,5 +1,6 @@
 import type { MetadataDomain, TraceDomain } from "../../domain";
 import { getTelemetryDB } from "../adapters";
+import { readIoText } from "../adapters/io-read";
 import { logger } from "../logger";
 import type { FilterList } from "../queries/clickhouse-sql/clickhouse-filter";
 import { liteBuildFilterWhere } from "./lite-query-filters";
@@ -84,7 +85,12 @@ export async function liteGetTracesTable(opts: LiteTracesTableOpts): Promise<Lit
   `;
 
   try {
-    const rows = await db.query<Record<string, unknown>>({ query, params });
+    const rows = await db.query<Record<string, unknown>>({
+      query,
+      params,
+      // 不选正文的列表页无需进入读快照（ioRead 是内部开关，不改变 SQL 语义）。
+      ioRead: opts.includeIO ? "auto" : "none",
+    });
     return rows.map((row) => ({
       id: String(row.id),
       projectId: String(row.project_id),
@@ -98,8 +104,8 @@ export async function liteGetTracesTable(opts: LiteTracesTableOpts): Promise<Lit
       environment: row.environment ? String(row.environment) : null,
       sessionId: row.session_id ? String(row.session_id) : null,
       public: toBool(row.public),
-      input: row.input == null ? null : String(row.input),
-      output: row.output == null ? null : String(row.output),
+      input: readIoText(row, "input"),
+      output: readIoText(row, "output"),
       metadata: safeJsonParse<MetadataDomain>(row.metadata, {} as MetadataDomain),
     }));
   } catch (error) {
@@ -136,6 +142,7 @@ export async function liteGetTracesTableCount(
     const rows = await db.query<{ count: number }>({
       query: `SELECT COUNT(*) as count FROM traces ${whereClause}`,
       params,
+      ioRead: "none",
     });
     return rows.length > 0 ? Number(rows[0].count) : 0;
   } catch (error) {
@@ -163,6 +170,7 @@ export async function liteGetTraceById(
         ${excludeMetadata ? "NULL AS metadata" : "metadata"}
         FROM traces WHERE project_id = @projectId AND id = @traceId AND is_deleted = 0 LIMIT 1`,
       params: { projectId, traceId },
+      ioRead: excludeInputOutput ? "none" : "auto",
     });
 
     if (rows.length === 0) return undefined;
@@ -181,8 +189,8 @@ export async function liteGetTraceById(
       userId: row.user_id ? String(row.user_id) : null,
       sessionId: row.session_id ? String(row.session_id) : null,
       public: toBool(row.public),
-      input: row.input != null ? String(row.input) : null,
-      output: row.output != null ? String(row.output) : null,
+      input: readIoText(row, "input"),
+      output: readIoText(row, "output"),
       metadata: safeJsonParse<MetadataDomain>(row.metadata, {} as MetadataDomain),
       createdAt: new Date(`${String(row.created_at).replace(" ", "T")}Z`),
       updatedAt: new Date(`${String(row.updated_at).replace(" ", "T")}Z`),
@@ -217,6 +225,7 @@ export async function liteGetTracesIdentifierForSession(
         ORDER BY timestamp ASC
       `,
       params: { projectId, sessionId },
+      ioRead: "none",
     });
 
     return rows.map((row) => ({
@@ -241,6 +250,7 @@ export async function liteHasAnyTrace(projectId: string): Promise<boolean> {
     const rows = await db.query<{ count: number }>({
       query: `SELECT COUNT(*) as count FROM traces WHERE project_id = @projectId AND is_deleted = 0 LIMIT 1`,
       params: { projectId },
+      ioRead: "none",
     });
     return rows.length > 0 && Number(rows[0].count) > 0;
   } catch {
@@ -291,6 +301,7 @@ export async function liteGetTraceInfoByIds(
         WHERE project_id = @projectId AND id IN (${placeholders}) AND is_deleted = 0
       `,
       params,
+      ioRead: "none",
     });
 
     for (const row of rows) {
@@ -328,6 +339,7 @@ export async function liteGetSessionsTable(
         LIMIT @limit OFFSET @offset
       `,
       params: { projectId, limit, offset },
+      ioRead: "none",
     });
 
     return rows.map((row) => ({

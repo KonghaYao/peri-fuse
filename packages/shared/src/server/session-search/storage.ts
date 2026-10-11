@@ -179,7 +179,13 @@ export class SessionSearchStorage {
     const detail = error instanceof Error ? error.message : "Indexing failed";
     // A corrupt source cannot heal on a timer. Remove its dirty row so it
     // cannot block one-time backfill; a new source revision queues it again.
-    if (/^IO_COMPRESSION_(INVALID|LENGTH|VERSION|LIMIT|CORRUPT)$/.test(detail)) {
+    // CAS 损坏（IO_CAS_*）同样不可恢复：manifest 或池内容一旦对不上，重试只会再次失败，
+    // 因此与 IO_COMPRESSION_* 一起记为 limited，而不是留在重试队列里空转。
+    if (
+      /^IO_(COMPRESSION_(INVALID|LENGTH|VERSION|LIMIT|CORRUPT)|CAS_(INVALID|VERSION|LIMIT|MISSING|CORRUPT|PROJECT_REQUIRED|PARSER_REQUIRED))$/.test(
+        detail,
+      )
+    ) {
       await this.markLimited(source, `permanent: ${detail}`);
       return;
     }

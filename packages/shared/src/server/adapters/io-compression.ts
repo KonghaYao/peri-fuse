@@ -10,12 +10,22 @@ function makeIoDecoder(inflate: typeof inflateSync) {
     for (const field of ["input", "output"]) {
       const codec = row[`${field}_codec`];
       const size = row[`${field}_raw_size`];
-      if (!(field in row) || codec === undefined) continue;
+      if (!(field in row)) continue;
+      if (codec === undefined) {
+        // 缺 codec 投影是内部错误（设计 §7.2 步骤 2，D-3）：编码 BLOB 静默跳过会让下游
+        // `String(row.input)` 产出 "1,2,3,…" 形态的垃圾；字符串/null 仍按无 codec 旧数据通过。
+        if (row[field] instanceof Uint8Array) throw new Error("IO_CAS_INVALID");
+        continue;
+      }
       const value = row[field];
       if (codec === 0) {
         if (value !== null && typeof value !== "string") throw new Error("IO_COMPRESSION_INVALID");
         const length = value === null ? 0 : Buffer.byteLength(value as string, "utf8");
         if (size != null && size !== length) throw new Error("IO_COMPRESSION_LENGTH");
+      } else if (codec === 2) {
+        // codec 2 是 CAS manifest：必须先经 io-cas/read.ts 的快照内 hydrate 装配。
+        // 与 codec 99 的 `IO_COMPRESSION_VERSION` 区分，避免把"需要解析器"报成"版本不支持"。
+        throw new Error("IO_CAS_PARSER_REQUIRED");
       } else {
         if (codec !== 1) throw new Error("IO_COMPRESSION_VERSION");
         if (!(value instanceof Uint8Array) || !Number.isSafeInteger(size) || Number(size) < 0)

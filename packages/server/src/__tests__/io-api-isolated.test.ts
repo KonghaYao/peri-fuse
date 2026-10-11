@@ -104,6 +104,7 @@ it("公开 trace 完整详情、列表、preview 与 session 批量正文", asyn
 
 it.each([
   "input_codec=99",
+  "input_codec=2, input=x'000102'",
   "input_codec=1, input=x'000102', input_raw_size=2000",
   "input_codec=1, input_raw_size=33554433",
 ])("损坏正文在 API 显式失败；不请求 IO 的路径不解压：%s", async (damage) => {
@@ -129,6 +130,24 @@ it.each([
   expect((await observations.request("/api/public/observations")).status).toBe(500);
   const query = buildObservationsV2Select(new Set(["basic"]));
   expect(await db.query({ query: `${query} WHERE o.project_id='p'` })).toHaveLength(1);
+});
+
+it("codec 2（CAS）在 NO-GO 引擎上按门禁失败，而不是返回未解码正文", async () => {
+  await db
+    .getDatabase()
+    .run("UPDATE traces SET input=x'000102', input_codec=2, input_raw_size=2 WHERE project_id='p'");
+  // 适配器层的显式错误：NO-GO 引擎没有可验证的读快照，拒绝 hydrate 而不是猜。
+  await expect(
+    db.query({ query: "SELECT input,input_codec,input_raw_size FROM traces WHERE project_id='p'" }),
+  ).rejects.toThrow("verified read snapshot");
+  // API 层与既有 IO_COMPRESSION 行为一致：请求正文 500，不请求正文 200。
+  expect((await traces.request("/api/public/traces/t?fields=core")).status).toBe(200);
+  expect((await traces.request("/api/public/traces/t?fields=core,io")).status).toBe(500);
+  expect((await traces.request("/api/public/traces?fields=core,io")).status).toBe(500);
+  await db
+    .getDatabase()
+    .run("UPDATE traces SET input='{}', input_codec=0, input_raw_size=2 WHERE project_id='p'");
+  expect((await traces.request("/api/public/traces/t?fields=core,io")).status).toBe(200);
 });
 
 it("本地真实 Langfuse SDK 序列化、摄入与公开 API 往返", async () => {
