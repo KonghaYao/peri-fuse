@@ -28,6 +28,7 @@ import {
 } from "../adapters/sqlite-telemetry-adapter";
 import type { TelemetryQueryOpts } from "../adapters/types";
 import { repairDirtyDays } from "./daily-stats-dirty";
+import { emptyDayStats } from "./day-stats-accumulator";
 import { LATENCY_BUCKET_BOUNDS_MS, LATENCY_BUCKET_COUNT } from "./histogram";
 
 /** Generation latency in ms (NULL when either endpoint is missing). */
@@ -128,47 +129,21 @@ function histFromRow(row: Record<string, unknown>): number[] {
   return Array.from({ length: LATENCY_BUCKET_COUNT }, (_, i) => Number(row[`b${i}`] ?? 0));
 }
 
-function emptyDayStats(day: string): DayStats {
-  return {
-    day,
-    traces: 0,
-    userIds: [],
-    observations: 0,
-    generations: 0,
-    errors: 0,
-    warnings: 0,
-    debugs: 0,
-    tokens: 0,
-    cachedTokens: 0,
-    grossInputTokens: 0,
-    scoresCount: 0,
-    scoresValCount: 0,
-    scoreSum: 0,
-    latCount: 0,
-    latSumMs: 0,
-    latHist: new Array<number>(LATENCY_BUCKET_COUNT).fill(0),
-  };
-}
-
-/** Merge another day's (or range's) stats into `acc` in place. */
-export function accumulateDayStats(acc: DayStats, part: DayStats): void {
-  acc.traces += part.traces;
-  for (const u of part.userIds) if (!acc.userIds.includes(u)) acc.userIds.push(u);
-  acc.observations += part.observations;
-  acc.generations += part.generations;
-  acc.errors += part.errors;
-  acc.warnings += part.warnings;
-  acc.debugs += part.debugs;
-  acc.tokens += part.tokens;
-  acc.cachedTokens += part.cachedTokens;
-  acc.grossInputTokens += part.grossInputTokens;
-  acc.scoresCount += part.scoresCount;
-  acc.scoresValCount += part.scoresValCount;
-  acc.scoreSum += part.scoreSum;
-  acc.latCount += part.latCount;
-  acc.latSumMs += part.latSumMs;
-  for (let i = 0; i < acc.latHist.length; i++) acc.latHist[i] += part.latHist[i] ?? 0;
-}
+/**
+ * Merge another day's (or range's) stats into `acc` in place.
+ *
+ * Accumulator targets (see ./day-stats-accumulator.ts) dedupe users through a
+ * set that is reused by every merge, which is what keeps a whole-window
+ * aggregation linear; plain `DayStats` targets keep the original array scan.
+ */
+export {
+  accumulateDayStats,
+  createDayStatsAccumulator,
+  type DayStatsAccumulator,
+  type DayStatsPart,
+  finalizeDayStats,
+  toDayStatsAccumulator,
+} from "./day-stats-accumulator";
 
 /**
  * Compute stats for an arbitrary time range (half-open `[from, to)` in SQLite

@@ -17,9 +17,12 @@ import {
   accumulateDayStats,
   computeRangeModelStats,
   computeRangeStats,
+  createDayStatsAccumulator,
   type DayStats,
+  type DayStatsAccumulator,
   loadMaterializedDays,
   type ModelDayStats,
+  toDayStatsAccumulator,
 } from "@peri-fuse/shared/src/server/stats/daily-stats";
 import {
   LATENCY_BUCKET_COUNT,
@@ -235,10 +238,12 @@ export async function buildDashboard(
   );
 
   // ---- Merge into per-day buckets ------------------------------------------
-  const byDay = new Map<string, DayStats>();
+  // Days hold their users in a set instead of an array, so merging the live
+  // edge part into a materialized day never rescans the user list (§7.1).
+  const byDay = new Map<string, DayStatsAccumulator>();
   const modelsByDay = new Map<string, ModelDayStats[]>();
   for (const d of materialized.days) {
-    byDay.set(d.day, d);
+    byDay.set(d.day, toDayStatsAccumulator(d));
   }
   for (const [day, models] of materialized.models) {
     modelsByDay.set(day, models);
@@ -246,31 +251,15 @@ export async function buildDashboard(
   for (const d of edgeDays) {
     const existing = byDay.get(d.day);
     if (existing) accumulateDayStats(existing, d);
-    else byDay.set(d.day, d);
+    else byDay.set(d.day, toDayStatsAccumulator(d));
     const models = edgeModelsByDay.get(d.day) ?? [];
     modelsByDay.set(d.day, [...(modelsByDay.get(d.day) ?? []), ...models]);
   }
 
   // ---- Window-wide accumulator ----------------------------------------------
-  const acc: DayStats = {
-    day: "",
-    traces: 0,
-    userIds: [],
-    observations: 0,
-    generations: 0,
-    errors: 0,
-    warnings: 0,
-    debugs: 0,
-    tokens: 0,
-    cachedTokens: 0,
-    grossInputTokens: 0,
-    scoresCount: 0,
-    scoresValCount: 0,
-    scoreSum: 0,
-    latCount: 0,
-    latSumMs: 0,
-    latHist: new Array<number>(LATENCY_BUCKET_COUNT).fill(0),
-  };
+  // One shared user set for every day and edge range; the summary only needs
+  // the distinct count, so the set is never materialized back into an array.
+  const acc = createDayStatsAccumulator();
   for (const d of byDay.values()) accumulateDayStats(acc, d);
 
   // Model rollup across the whole window.
@@ -423,7 +412,7 @@ export async function buildDashboard(
       outputTokens: Number(metrics?.outputTokens ?? 0),
       totalCachedTokens,
       cacheHitRate,
-      totalUsers: acc.userIds.length,
+      totalUsers: acc.userIds.size,
       avgLatencyMs: acc.latCount > 0 ? Math.round(acc.latSumMs / acc.latCount) : 0,
       p50LatencyMs: Math.round(percentileFromHistogram(acc.latHist, acc.latCount, 0.5) ?? 0),
       p95LatencyMs: Math.round(percentileFromHistogram(acc.latHist, acc.latCount, 0.95) ?? 0),
