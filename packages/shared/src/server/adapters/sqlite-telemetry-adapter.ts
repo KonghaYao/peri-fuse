@@ -36,6 +36,7 @@ import {
   recordTelemetryQueryError,
   TelemetryQueryError,
 } from "./telemetry-query-context";
+import { withTransactionStatementCache } from "./tx-statement-cache";
 import type { TelemetryDBAdapter, TelemetryInsertOpts, TelemetryQueryOpts } from "./types";
 
 export {
@@ -178,25 +179,29 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   async command(opts: TelemetryQueryOpts): Promise<{ changes: number }> {
     await this.initialize();
     return this.db
-      .transactionAsync(async (tx) => {
-        const pending: MetricsToRefresh = createMutationContext();
-        const result = await executeTelemetryCommand(tx, opts, pending);
-        await flushIngestionMetrics(tx, pending);
-        return result;
-      })
+      .transactionAsync(async (tx) =>
+        withTransactionStatementCache(tx, async (cachedTx) => {
+          const pending: MetricsToRefresh = createMutationContext();
+          const result = await executeTelemetryCommand(cachedTx, opts, pending);
+          await flushIngestionMetrics(cachedTx, pending);
+          return result;
+        }),
+      )
       .immediate();
   }
 
   async commandBatch(commands: TelemetryQueryOpts[], guard?: TelemetryQueryOpts): Promise<boolean> {
     await this.initialize();
     return this.db
-      .transactionAsync(async (tx) => {
-        if (guard && !(await tx.get(guard.query, guard.params ?? {}))) return false;
-        const pending: MetricsToRefresh = createMutationContext();
-        for (const opts of commands) await executeTelemetryCommand(tx, opts, pending);
-        await flushIngestionMetrics(tx, pending);
-        return true;
-      })
+      .transactionAsync(async (tx) =>
+        withTransactionStatementCache(tx, async (cachedTx) => {
+          if (guard && !(await cachedTx.get(guard.query, guard.params ?? {}))) return false;
+          const pending: MetricsToRefresh = createMutationContext();
+          for (const opts of commands) await executeTelemetryCommand(cachedTx, opts, pending);
+          await flushIngestionMetrics(cachedTx, pending);
+          return true;
+        }),
+      )
       .immediate();
   }
 
@@ -204,101 +209,103 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     if (!opts.records.length) return;
     await this.initialize();
     await this.db
-      .transactionAsync(async (tx) => {
-        const pending: MetricsToRefresh = createMutationContext();
-        for (const [index, record] of opts.records.entries()) {
-          const row = record as Record<string, unknown>;
-          const encoded = encodeIoRow(opts.table, row, this.compressIo);
-          const columns = Object.keys(encoded);
-          const requested = opts.updateColumns?.[index].filter((column) =>
-            columns.includes(column),
-          );
-          const decision =
-            requested && opts.eventIds
-              ? await selectVersionedColumns(
-                  tx,
-                  opts.table,
-                  row,
-                  requested,
-                  opts.eventIds[index],
-                  opts.inheritColumns?.[index],
-                  isTelemetryEntity(opts.table) ? mutationSnapshotColumns(opts.table) : "id",
-                )
-              : undefined;
-          if (decision && !decision.entityChanged) continue;
-          const before = decision
-            ? decision.before
-            : isTelemetryEntity(opts.table)
-              ? await tx.get(
+      .transactionAsync(async (tx) =>
+        withTransactionStatementCache(tx, async (cachedTx) => {
+          const pending: MetricsToRefresh = createMutationContext();
+          for (const [index, record] of opts.records.entries()) {
+            const row = record as Record<string, unknown>;
+            const encoded = encodeIoRow(opts.table, row, this.compressIo);
+            const columns = Object.keys(encoded);
+            const requested = opts.updateColumns?.[index].filter((column) =>
+              columns.includes(column),
+            );
+            const decision =
+              requested && opts.eventIds
+                ? await selectVersionedColumns(
+                    cachedTx,
+                    opts.table,
+                    row,
+                    requested,
+                    opts.eventIds[index],
+                    opts.inheritColumns?.[index],
+                    isTelemetryEntity(opts.table) ? mutationSnapshotColumns(opts.table) : "id",
+                  )
+                : undefined;
+            if (decision && !decision.entityChanged) continue;
+            const before = decision
+              ? decision.before
+              : isTelemetryEntity(opts.table)
+                ? await cachedTx.get(
+                    `SELECT ${mutationSnapshotColumns(opts.table)} FROM ${opts.table} WHERE project_id=? AND id=?`,
+                    row.project_id,
+                    row.id,
+                  )
+                : undefined;
+            const beforeMetric =
+              opts.table === "observations" && before && typeof before.trace_id === "string"
+                ? await readObservationMetric(
+                    cachedTx,
+                    String(before.project_id),
+                    before.trace_id,
+                    String(before.id),
+                  )
+                : undefined;
+            let conflict = "";
+            let searchColumns: string[] = [];
+            if (requested) {
+              const updates = decision?.acceptedColumns ?? requested;
+              searchColumns = [...updates];
+              const clauses = [
+                ...new Set(updates.flatMap((column) => ioColumns(opts.table, column))),
+              ].map((column) => `${column}=excluded.${column}`);
+              for (const column of opts.inheritColumns?.[index] ?? []) {
+                if (
+                  !opts.eventIds &&
+                  !requested.includes(column) &&
+                  (column === "input" || column === "output")
+                ) {
+                  searchColumns.push(column);
+                  for (const companion of ioColumns(opts.table, column))
+                    clauses.push(
+                      `${companion}=CASE WHEN ${opts.table}.${column}_codec=0 AND ${opts.table}.${column} IS NULL THEN excluded.${companion} ELSE ${opts.table}.${companion} END`,
+                    );
+                }
+              }
+              conflict = ` ON CONFLICT(project_id,id) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`;
+            }
+            const result = await cachedTx.run(
+              `INSERT ${opts.updateColumns ? "" : "OR REPLACE "}INTO ${opts.table} (${columns.join(",")}) VALUES (${columns.map((column) => `@${column}`).join(",")})${conflict}`,
+              encoded,
+            );
+            if (!Number(result.changes)) continue;
+            const after = isTelemetryEntity(opts.table)
+              ? await cachedTx.get(
                   `SELECT ${mutationSnapshotColumns(opts.table)} FROM ${opts.table} WHERE project_id=? AND id=?`,
                   row.project_id,
                   row.id,
                 )
               : undefined;
-          const beforeMetric =
-            opts.table === "observations" && before && typeof before.trace_id === "string"
-              ? await readObservationMetric(
-                  tx,
-                  String(before.project_id),
-                  before.trace_id,
-                  String(before.id),
-                )
-              : undefined;
-          let conflict = "";
-          let searchColumns: string[] = [];
-          if (requested) {
-            const updates = decision?.acceptedColumns ?? requested;
-            searchColumns = [...updates];
-            const clauses = [
-              ...new Set(updates.flatMap((column) => ioColumns(opts.table, column))),
-            ].map((column) => `${column}=excluded.${column}`);
-            for (const column of opts.inheritColumns?.[index] ?? []) {
-              if (
-                !opts.eventIds &&
-                !requested.includes(column) &&
-                (column === "input" || column === "output")
-              ) {
-                searchColumns.push(column);
-                for (const companion of ioColumns(opts.table, column))
-                  clauses.push(
-                    `${companion}=CASE WHEN ${opts.table}.${column}_codec=0 AND ${opts.table}.${column} IS NULL THEN excluded.${companion} ELSE ${opts.table}.${companion} END`,
-                  );
-              }
-            }
-            conflict = ` ON CONFLICT(project_id,id) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`;
+            const searchChanged =
+              !before ||
+              !after ||
+              ["input", "output"].some((column) => searchColumns.includes(column)) ||
+              ["trace_id", "type", "timestamp", "start_time", "is_deleted"].some(
+                (column) => before[column] !== after[column],
+              ) ||
+              !opts.updateColumns;
+            await recordTelemetryMutation(
+              cachedTx,
+              opts.table,
+              before,
+              after,
+              pending,
+              searchChanged,
+              beforeMetric,
+            );
           }
-          const result = await tx.run(
-            `INSERT ${opts.updateColumns ? "" : "OR REPLACE "}INTO ${opts.table} (${columns.join(",")}) VALUES (${columns.map((column) => `@${column}`).join(",")})${conflict}`,
-            encoded,
-          );
-          if (!Number(result.changes)) continue;
-          const after = isTelemetryEntity(opts.table)
-            ? await tx.get(
-                `SELECT ${mutationSnapshotColumns(opts.table)} FROM ${opts.table} WHERE project_id=? AND id=?`,
-                row.project_id,
-                row.id,
-              )
-            : undefined;
-          const searchChanged =
-            !before ||
-            !after ||
-            ["input", "output"].some((column) => searchColumns.includes(column)) ||
-            ["trace_id", "type", "timestamp", "start_time", "is_deleted"].some(
-              (column) => before[column] !== after[column],
-            ) ||
-            !opts.updateColumns;
-          await recordTelemetryMutation(
-            tx,
-            opts.table,
-            before,
-            after,
-            pending,
-            searchChanged,
-            beforeMetric,
-          );
-        }
-        await flushIngestionMetrics(tx, pending);
-      })
+          await flushIngestionMetrics(cachedTx, pending);
+        }),
+      )
       .immediate();
   }
 
@@ -306,71 +313,73 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     if (!opts.records.length) return;
     await this.initialize();
     await this.db
-      .transactionAsync(async (tx) => {
-        const pending: MetricsToRefresh = createMutationContext();
-        for (const record of opts.records) {
-          const row = record as Record<string, unknown>;
-          const encoded = encodeIoRow(opts.table, row, this.compressIo);
-          const columns = Object.keys(encoded);
-          const keys =
-            isTelemetryEntity(opts.table) || opts.table === "dataset_run_items"
-              ? ["project_id", "id"]
-              : ["id"];
-          const clauses = Object.keys(row)
-            .filter((column) => !keys.includes(column))
-            .flatMap((column) =>
-              ioColumns(opts.table, column).map(
-                (companion) =>
-                  `${companion}=CASE WHEN excluded.${column} IS NOT NULL THEN excluded.${companion} ELSE ${opts.table}.${companion} END`,
-              ),
-            );
-          const before = isTelemetryEntity(opts.table)
-            ? await tx.get(
-                `SELECT ${mutationSnapshotColumns(opts.table)} FROM ${opts.table} WHERE project_id=? AND id=?`,
-                row.project_id,
-                row.id,
-              )
-            : undefined;
-          const beforeMetric =
-            opts.table === "observations" && before && typeof before.trace_id === "string"
-              ? await readObservationMetric(
-                  tx,
-                  String(before.project_id),
-                  before.trace_id,
-                  String(before.id),
+      .transactionAsync(async (tx) =>
+        withTransactionStatementCache(tx, async (cachedTx) => {
+          const pending: MetricsToRefresh = createMutationContext();
+          for (const record of opts.records) {
+            const row = record as Record<string, unknown>;
+            const encoded = encodeIoRow(opts.table, row, this.compressIo);
+            const columns = Object.keys(encoded);
+            const keys =
+              isTelemetryEntity(opts.table) || opts.table === "dataset_run_items"
+                ? ["project_id", "id"]
+                : ["id"];
+            const clauses = Object.keys(row)
+              .filter((column) => !keys.includes(column))
+              .flatMap((column) =>
+                ioColumns(opts.table, column).map(
+                  (companion) =>
+                    `${companion}=CASE WHEN excluded.${column} IS NOT NULL THEN excluded.${companion} ELSE ${opts.table}.${companion} END`,
+                ),
+              );
+            const before = isTelemetryEntity(opts.table)
+              ? await cachedTx.get(
+                  `SELECT ${mutationSnapshotColumns(opts.table)} FROM ${opts.table} WHERE project_id=? AND id=?`,
+                  row.project_id,
+                  row.id,
                 )
               : undefined;
-          const result = await tx.run(
-            `INSERT INTO ${opts.table} (${columns.join(",")}) VALUES (${columns.map((column) => `@${column}`).join(",")}) ON CONFLICT(${keys.join(",")}) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`,
-            encoded,
-          );
-          if (!Number(result.changes)) continue;
-          const after = isTelemetryEntity(opts.table)
-            ? await tx.get(
-                `SELECT ${mutationSnapshotColumns(opts.table)} FROM ${opts.table} WHERE project_id=? AND id=?`,
-                row.project_id,
-                row.id,
-              )
-            : undefined;
-          const searchChanged =
-            !before ||
-            !after ||
-            ["input", "output"].some((column) => columns.includes(column)) ||
-            ["trace_id", "type", "timestamp", "start_time", "is_deleted"].some(
-              (column) => before[column] !== after[column],
+            const beforeMetric =
+              opts.table === "observations" && before && typeof before.trace_id === "string"
+                ? await readObservationMetric(
+                    cachedTx,
+                    String(before.project_id),
+                    before.trace_id,
+                    String(before.id),
+                  )
+                : undefined;
+            const result = await cachedTx.run(
+              `INSERT INTO ${opts.table} (${columns.join(",")}) VALUES (${columns.map((column) => `@${column}`).join(",")}) ON CONFLICT(${keys.join(",")}) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`,
+              encoded,
             );
-          await recordTelemetryMutation(
-            tx,
-            opts.table,
-            before,
-            after,
-            pending,
-            searchChanged,
-            beforeMetric,
-          );
-        }
-        await flushIngestionMetrics(tx, pending);
-      })
+            if (!Number(result.changes)) continue;
+            const after = isTelemetryEntity(opts.table)
+              ? await cachedTx.get(
+                  `SELECT ${mutationSnapshotColumns(opts.table)} FROM ${opts.table} WHERE project_id=? AND id=?`,
+                  row.project_id,
+                  row.id,
+                )
+              : undefined;
+            const searchChanged =
+              !before ||
+              !after ||
+              ["input", "output"].some((column) => columns.includes(column)) ||
+              ["trace_id", "type", "timestamp", "start_time", "is_deleted"].some(
+                (column) => before[column] !== after[column],
+              );
+            await recordTelemetryMutation(
+              cachedTx,
+              opts.table,
+              before,
+              after,
+              pending,
+              searchChanged,
+              beforeMetric,
+            );
+          }
+          await flushIngestionMetrics(cachedTx, pending);
+        }),
+      )
       .immediate();
   }
 
