@@ -170,6 +170,66 @@ Peri-Fuse is optimized to handle production-scale workloads on a single SQLite f
 | Trace detail | 1 ms | PK lookup |
 | Session detail | 26 ms | Batched observation fetch |
 
+Provenance: the table above was recorded at commit
+[`66bc32b`](https://github.com/KonghaYao/peri-fuse/commit/66bc32b) (2026-07-30) without a documented
+host, corpus, or measurement method, and the 1.6 GB dataset behind it is not checked in. Treat the
+numbers as historical orientation, not as a reproducible result: they cannot be re-measured from
+this repository, and the session list has since been rewritten. The harness-backed numbers below
+are the ones to keep current.
+
+### Reproducible session-list benchmark
+
+`packages/server/src/__tests__/sessions-query-plan.test.ts` validates the session list against a
+frozen pre-rewrite baseline on a 1,000-trace corpus (row-for-row equivalence plus query plans and
+cache-miss latency). `packages/server/src/__tests__/sessions-scale-bench.test.ts` reuses the same
+route capture on 100K/1M traces, and `sessions-scale-diagnostic.test.ts` measures the raw statement
+cost beyond the read pool's 30s budget. The scale harnesses are opt-in, so the default test run
+stays fast:
+
+```bash
+cd packages/server
+npx vitest run src/__tests__/sessions-query-plan.test.ts                          # 1K equivalence + plan + latency
+PERIFUSE_BENCH_TRACES=100000 npx vitest run src/__tests__/sessions-scale-bench.test.ts
+PERIFUSE_BENCH_TRACES=1000000 npx vitest run src/__tests__/sessions-scale-bench.test.ts
+# deep measurement (bypasses the 30s read-pool budget; prints full SQL, plans, raw statement ms):
+PERIFUSE_READ_WORKERS=0 PERIFUSE_BENCH_TRACES=1000000 npx vitest run src/__tests__/sessions-scale-diagnostic.test.ts
+```
+
+The harnesses seed a dedicated project through the public ingestion API (1K) or a direct bulk loader
+(100K/1M), run `ANALYZE`, and the benchmark samples 50 cache-miss requests of the default 50-row
+page plus the underlying list/count statements. Measured 2026-10-11 on macOS, Apple silicon (18
+cores, 48 GiB RAM), Node 26.9.0, default embedded Turso engine, throwaway `.test` database,
+`X-Cache: MISS`, n=50 after 5 warmups (review §12 targets: request p95 ≤ 100 ms, p99 ≤ 250 ms).
+Request figures are percentiles over the measured samples; statement figures are p50, except the 1M
+entries, which are single deep-diagnostic measurements:
+
+| Corpus | Scenario | Request p50 | Request p95 | Request p99 | list stmt | count stmt | §12 budget |
+|--------|----------|-------------|-------------|-------------|---------------|----------------|------------|
+| 1K traces / 200 sessions | default order | 3.39 ms | 23.23 ms | 44.42 ms | 2.69 ms | — | met |
+| 1K traces / 200 sessions | `orderBy=totalCost.desc` | 3.76 ms | 9.52 ms | 23.23 ms | 2.59 ms | — | met |
+| 100K traces / 20K sessions | default order | 46.03 ms | 57.91 ms | 78.14 ms | 29.92 ms | 14.06 ms | met |
+| 100K traces / 20K sessions | `orderBy=totalCost.desc` | 134.75 ms | 152.74 ms | 155.51 ms | 115.15 ms | 15.46 ms | request p95 missed |
+| 1M traces / 200K sessions | default order | route 503 | — | — | 214,020 ms | 1,469 ms | list statement exceeds the 30s read-pool budget |
+| 1M traces / 200K sessions | `orderBy=totalCost.desc` | route 503 | — | — | >300 s, interrupted | — | list statement does not finish |
+
+Notes:
+
+- The metric-ranked sort aggregates every session's metrics before it can rank a page, so at 100K it
+  already exceeds the p95 budget. That is the design tradeoff recorded in review §3.3; the planned
+  `session_summary` projection is the follow-up if the budget must hold. The miss is not a
+  single-run artifact: a repeat run landed p95 = 175.13 ms (the table quotes the faster run).
+- At 1M traces the Turso planner flips the `trace_metrics` join from the `(project_id, trace_id)`
+  primary-key index to `idx_trace_metrics_ts (project_id=?)`, so every outer row scans the project's
+  whole metrics prefix (~900K entries): the default page statement needs ~214 s for 50 rows — 30 ms
+  at 100K — and the route answers 503 once the read pool's 30 s statement budget expires. System
+  SQLite 3.51.0 (CLI) plans the same SQL on the same database file with the primary-key index and
+  executes it in ~3.8 s, so the flip costs roughly 56x here; fixing it removes the planner penalty
+  but not the seconds-scale 1M aggregation, so the §12 budget still needs the materialized session
+  projection. The flip reproduces across runs (both scenarios, `sqlite_stat1` populated), and system
+  SQLite picks the primary-key index for both scenario queries.
+- The 1K frozen-baseline (pre-rewrite) statement measures p50 ≈ 182–186 ms at 1K traces versus
+  2.6–2.7 ms for the current page statement.
+
 ### Optimization techniques
 
 - **Materialized `trace_metrics` table** — per-trace cost/token aggregates maintained incrementally on ingestion, eliminating full-table `GROUP BY` over millions of observation rows.
