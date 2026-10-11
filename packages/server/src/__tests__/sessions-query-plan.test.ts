@@ -89,6 +89,19 @@ async function explain(sql: string, params: Record<string, unknown>): Promise<st
   return rows.map((row) => String(row.detail ?? ""));
 }
 
+/**
+ * `GROUP_CONCAT` output (\u001f-joined) has no documented row order: both the
+ * current and the frozen baseline statement aggregate the same set, but the
+ * concat order follows each plan's scan order. The API contract sorts (and
+ * dedupes) users/tags in the shaping layer before responding
+ * (`sessions-concat-order.test.ts`), so the equivalence claim here is the value
+ * multiset, not the incidental intermediate order.
+ */
+function sortedConcatValues(value: unknown): string[] | null {
+  if (value === null || value === undefined) return null;
+  return String(value).split("\u001f").sort();
+}
+
 /** numeric fields are compared with a relative epsilon (SUM order may vary). */
 function expectEquivalentRows(actual: Row[], expected: Row[], label: string): void {
   expect(actual.length, `${label}: row count`).toBe(expected.length);
@@ -105,7 +118,11 @@ function expectEquivalentRows(actual: Row[], expected: Row[], label: string): vo
     );
     for (const [key, left] of Object.entries(actualRow)) {
       const right = expectedRow[key];
-      if (typeof left === "number" && typeof right === "number") {
+      if (key === "tags_concat" || key === "users_concat") {
+        expect(sortedConcatValues(left), `${label}: ${id}.${key}`).toEqual(
+          sortedConcatValues(right),
+        );
+      } else if (typeof left === "number" && typeof right === "number") {
         const tolerance = 1e-9 * Math.max(1, Math.abs(left), Math.abs(right));
         expect(Math.abs(left - right) <= tolerance, `${label}: ${id}.${key}`).toBe(true);
       } else {
