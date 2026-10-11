@@ -104,4 +104,47 @@ describe("serial maintenance", () => {
     expect(onError).toHaveBeenCalledWith(failed);
     expect(refresh).toHaveBeenCalledOnce();
   });
+
+  it("request 打断等待：不等到下一个 interval 就补跑一轮", async () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn(async () => {});
+    const stop = startMaintenanceLoop(refresh, refresh, 3_600_000, vi.fn());
+    stops.push(stop);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(refresh).toHaveBeenCalledOnce(); // initial
+    stop.request();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    // 补跑之后仍回到常规 interval，而不是每 tick 都跑。
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("pass 进行中的多个 request 合并成结束后的一轮，stop 后请求无效", async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const stop = startMaintenanceLoop(refresh, refresh, 10, vi.fn());
+    stops.push(stop);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(refresh).toHaveBeenCalledOnce();
+    stop.request();
+    stop.request();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(refresh).toHaveBeenCalledOnce(); // 进行中的 pass 不允许重叠
+    finish();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(refresh).toHaveBeenCalledTimes(2); // 两次请求合并成一轮
+    const stopping = stop();
+    finish();
+    await stopping;
+    stop.request();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
 });

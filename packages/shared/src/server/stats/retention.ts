@@ -5,17 +5,23 @@
  * older than the cutoff are purged from the telemetry store (observations,
  * scores, traces, trace_metrics and the daily rollups). Disabled by default.
  *
- * Deletes run in chunks so a large purge never holds the write lock (or the
- * event loop) for long; the job yields between chunks. File size is not
- * reclaimed until VACUUM — run scripts/prune-telemetry.mjs --vacuum for that.
+ * Deletes run **per project** in bounded chunks (500 rows per transaction,
+ * mirroring scripts/prune-telemetry.mjs) so a large purge never holds the write
+ * lock (or the event loop) for long; the job yields between chunks. Deleting
+ * rows does not shrink the file: an in-place VACUUM is **not supported** by this
+ * Turso configuration, reclaiming space needs an offline export/rebuild (see
+ * scripts/prune-telemetry.mjs). CAS pool content that loses its last root is
+ * reclaimed by the GC pass requested after each retention pass.
  */
 
 import { getTelemetryDB } from "../adapters";
+import { requestCasGcPass, startCasGcJob } from "../io-cas/gc-job";
 import { logger } from "../logger";
 import { startMaintenanceLoop } from "./maintenance-loop";
 
 const ENV_RETENTION_DAYS = "PERIFUSE_TELEMETRY_RETENTION_DAYS";
-const CHUNK_SIZE = 50_000;
+/** 每个项目、每个事务最多删除的行数（原 50,000 行单批改为有界小批）。 */
+export const RETENTION_CHUNK_ROWS = 500;
 const RETENTION_CHECK_INTERVAL_MS = 6 * 3600_000;
 
 export function resolveRetentionDays(): number {
@@ -25,6 +31,54 @@ export function resolveRetentionDays(): number {
 }
 
 const yieldLoop = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+interface RetentionTarget {
+  table: string;
+  where: string;
+}
+
+/**
+ * Distinct 项目列表（按 project_id 升序）。所有保留目标表的 project_id 都是索引前缀，
+ * `DISTINCT ... ORDER BY` 走 index skip-scan，不是全表扫描。
+ */
+async function listProjects(table: string): Promise<string[]> {
+  const rows = await getTelemetryDB().query<{ project_id: unknown }>({
+    query: `SELECT DISTINCT project_id FROM ${table} ORDER BY project_id`,
+  });
+  return rows.map((row) => String(row.project_id)).filter((projectId) => projectId.length > 0);
+}
+
+/**
+ * 按项目有界删除：每个事务只删一个项目的一批（≤`RETENTION_CHUNK_ROWS` 行），
+ * 批间让出事件循环；项目间互不阻塞，单个大项目也不会独占用一次 purges 的全部写锁时间。
+ */
+async function purgeTable(
+  target: RetentionTarget,
+  cutoff: string,
+  cutoffDay: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  const db = getTelemetryDB();
+  const projects = await listProjects(target.table);
+  let total = 0;
+  for (const projectId of projects) {
+    for (;;) {
+      signal?.throwIfAborted();
+      const res = await db.command({
+        query: `DELETE FROM ${target.table} WHERE rowid IN (
+                  SELECT rowid FROM ${target.table}
+                  WHERE project_id = @projectId AND ${target.where}
+                  LIMIT ${RETENTION_CHUNK_ROWS}
+                )`,
+        params: { projectId, cutoff, cutoffDay },
+      });
+      total += res.changes;
+      if (res.changes < RETENTION_CHUNK_ROWS) break;
+      await yieldLoop();
+    }
+  }
+  return total;
+}
 
 /**
  * Delete rows older than `cutoff` (SQLite TEXT timestamp) across all
@@ -43,7 +97,7 @@ export async function purgeOlderThan(
       ON CONFLICT(id) DO UPDATE SET cutoff_day=MAX(cutoff_day, excluded.cutoff_day)`,
     params: { cutoffDay },
   });
-  const targets: Array<{ table: string; where: string }> = [
+  const targets: RetentionTarget[] = [
     { table: "observations", where: "start_time < @cutoff" },
     { table: "scores", where: "timestamp < @cutoff" },
     { table: "traces", where: "timestamp < @cutoff" },
@@ -65,22 +119,8 @@ export async function purgeOlderThan(
   ];
 
   const deleted: Record<string, number> = {};
-  for (const t of targets) {
-    let total = 0;
-    for (;;) {
-      signal?.throwIfAborted();
-      const res = await db.command({
-        query: `DELETE FROM ${t.table} WHERE rowid IN (
-                  SELECT rowid FROM ${t.table} WHERE ${t.where} LIMIT ${CHUNK_SIZE}
-                )`,
-        params: { cutoff, cutoffDay },
-      });
-      const changes = res.changes;
-      total += changes;
-      if (changes < CHUNK_SIZE) break;
-      await yieldLoop();
-    }
-    deleted[t.table] = total;
+  for (const target of targets) {
+    deleted[target.table] = await purgeTable(target, cutoff, cutoffDay, signal);
   }
   return deleted;
 }
@@ -102,15 +142,31 @@ export async function runRetentionOnce(signal?: AbortSignal): Promise<void> {
   } catch (error) {
     if (!signal?.aborted) logger.error("[retention] Purge failed", error);
   }
+  // 行删除后失去根的池内容由 GC 回收（GC 关闭时该请求是 no-op）。
+  requestCasGcPass();
 }
 
-/** Start the retention job (immediate pass + periodic re-check). */
+/**
+ * Start the maintenance jobs: retention (immediate pass + periodic re-check) and
+ * the CAS GC job (default 6h, enabled by `PERIFUSE_IO_CAS_GC=on` only; it does
+ * not depend on retention being enabled). Returns a stop function for both.
+ */
 export function startRetentionJob(intervalMs = RETENTION_CHECK_INTERVAL_MS): () => Promise<void> {
-  if (resolveRetentionDays() <= 0) return async () => {};
+  const stopCasGc = startCasGcJob();
+  if (resolveRetentionDays() <= 0)
+    return async () => {
+      await stopCasGc();
+    };
   logger.info(
     `[retention] Enabled with PERIFUSE_TELEMETRY_RETENTION_DAYS=${resolveRetentionDays()}`,
   );
-  return startMaintenanceLoop(runRetentionOnce, runRetentionOnce, intervalMs, (error) =>
-    logger.error("[retention] Maintenance failed", error),
+  const stopRetention = startMaintenanceLoop(
+    runRetentionOnce,
+    runRetentionOnce,
+    intervalMs,
+    (error) => logger.error("[retention] Maintenance failed", error),
   );
+  return async () => {
+    await Promise.all([stopRetention(), stopCasGc()]);
+  };
 }

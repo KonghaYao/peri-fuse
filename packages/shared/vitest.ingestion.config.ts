@@ -22,6 +22,8 @@ export default defineConfig({
       "src/server/adapters/io-compression.test.ts",
       "src/server/adapters/io-cas-write-isolated.test.ts",
       "src/server/adapters/io-cas-write-publish-isolated.test.ts",
+      "src/server/io-cas/gc-isolated.test.ts",
+      "src/server/io-cas/gc-maintenance-isolated.test.ts",
       "src/server/ingestion/lite-reliability.test.ts",
       "src/server/ingestion/processEventBatchLite.test.ts",
       "../server/src/__tests__/io-api-isolated.test.ts",
