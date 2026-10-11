@@ -33,6 +33,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { CommandPalette, openCommandPalette } from "@/shared/components/command-palette";
 import { ProjectSwitcher } from "@/shared/components/project-switcher";
 import { ShortcutsDialog } from "@/shared/components/shortcuts-dialog";
+import { Badge } from "@/shared/components/ui/badge";
 import { cn } from "@/shared/lib/utils";
 import { useProjectContext } from "@/shared/store/project";
 import { toggleTheme, useTheme } from "@/shared/store/theme";
@@ -206,8 +207,11 @@ function SidebarContent({
           </>
         )}
         {!collapsed && (
-          <p className="px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
+          <p className="flex items-center gap-1.5 px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-[0.06em] text-fg-tertiary">
             Gateway
+            <Badge variant="secondary" className="shrink-0 text-[9px]">
+              Beta
+            </Badge>
           </p>
         )}
         {collapsed && <div className="my-2 border-t border-border" />}
