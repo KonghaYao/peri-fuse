@@ -2,22 +2,63 @@ import type { Transaction } from "@tursodatabase/database";
 import { createDatabaseError } from "./errors";
 import type { ReadSnapshotOptions } from "./read-snapshot";
 
-/** 保守的查询子集：仅 SELECT/WITH，拒绝控制语句及多语句；不替代引擎 readonly。 */
+const STRIP_NON_SQL =
+  /'(?:''|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`|\[[^\]]*\]|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\//g;
+/** `WITH` 可前导的写语句关键字；其余控制词只能在语句首，由首 token 规则覆盖。 */
+const WRITE_KEYWORDS = new Set(["INSERT", "UPDATE", "DELETE", "REPLACE"]);
+
+function readonlyError() {
+  return createDatabaseError("SQLITE_READONLY", "Read snapshot accepts read-only queries only");
+}
+
+/**
+ * 顶层（括号深度 0）出现裸写关键字即判定为 `WITH ... AS (...) DELETE FROM ...`。
+ * 函数调用形态（词后紧跟 `(`，如 `replace(a, b, c)`）不算写语句。
+ */
+function hasTopLevelWriteKeyword(text: string): boolean {
+  let depth = 0;
+  for (let index = 0; index < text.length; ) {
+    const char = text[index]!;
+    if (char === "(") {
+      depth += 1;
+      index += 1;
+      continue;
+    }
+    if (char === ")") {
+      depth = Math.max(0, depth - 1);
+      index += 1;
+      continue;
+    }
+    if (!/[A-Za-z_]/.test(char)) {
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (end < text.length && /[A-Za-z0-9_$]/.test(text[end]!)) end += 1;
+    if (depth === 0 && WRITE_KEYWORDS.has(text.slice(index, end).toUpperCase())) {
+      let lookahead = end;
+      while (lookahead < text.length && /\s/.test(text[lookahead]!)) lookahead += 1;
+      if (text[lookahead] !== "(") return true;
+    }
+    index = end;
+  }
+  return false;
+}
+
+/**
+ * 保守的查询子集：仅 SELECT/WITH，拒绝控制语句及多语句；不替代引擎 readonly。
+ *
+ * 判定只针对**语句位置**，不做全文关键字扫描：PRAGMA / BEGIN / COMMIT / RELEASE /
+ * VACUUM / REINDEX / ANALYZE / ATTACH / CREATE … 都只能作为语句首 token（分号已被拒绝），
+ * 全文匹配会把合法列名（`traces.release`）误判为控制关键字。`WITH` 是唯一例外——
+ * 它可前导 INSERT/UPDATE/DELETE/REPLACE，因此单独检查顶层写关键字。
+ */
 export function assertSnapshotSql(sql: string): void {
-  const tokens = sql
-    .replace(
-      /'(?:''|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`|\[[^\]]*\]|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\//g,
-      " ",
-    )
-    .trim()
-    .replace(/;\s*$/, "");
-  if (
-    !/^(SELECT|WITH)\b/i.test(tokens) ||
-    /;|\b(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|ATTACH|DETACH|PRAGMA|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|VACUUM|REINDEX|ANALYZE|load_extension)\b/i.test(
-      tokens,
-    )
-  )
-    throw createDatabaseError("SQLITE_READONLY", "Read snapshot accepts read-only queries only");
+  const tokens = sql.replace(STRIP_NON_SQL, " ").trim().replace(/;\s*$/, "");
+  if (!/^(SELECT|WITH)\b/i.test(tokens) || /;/.test(tokens)) throw readonlyError();
+  // `load_extension()` 是唯一可在 SELECT 内触发引擎副作用的函数。
+  if (/\bload_extension\b/i.test(tokens)) throw readonlyError();
+  if (/^WITH\b/i.test(tokens) && hasTopLevelWriteKeyword(tokens)) throw readonlyError();
 }
 
 /** 取消先撤销句柄，再排空已接受的 SQL；绝不把活跃 SQL 留给下一位 gate owner。 */

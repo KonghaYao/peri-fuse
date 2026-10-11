@@ -179,13 +179,22 @@ describe("read snapshot", () => {
       "SELECT 1",
       "WITH x AS (SELECT 1) SELECT * FROM x",
       "SELECT ';DELETE' AS value;",
+      // 回归：traces.release 是合法列名，不得被当作 RELEASE 控制语句。
+      "SELECT id, release, version, is_deleted FROM traces WHERE id = 't' LIMIT 1",
+      // 回归：REPLACE 作函数名时不得被当作写语句。
+      "SELECT replace(name, 'a', 'b') AS name FROM traces",
+      "WITH x AS (SELECT 1) SELECT replace('ab', 'a', 'b') AS value FROM x",
     ])
       expect(() => assertSnapshotSql(sql)).not.toThrow();
     for (const sql of [
       "COMMIT",
       "PRAGMA query_only=OFF",
       "SELECT 1; DELETE FROM chunks",
+      "SELECT 1; RELEASE SAVEPOINT s",
       "WITH x AS (SELECT 1) DELETE FROM chunks RETURNING hash",
+      "WITH x AS (SELECT 1) UPDATE chunks SET body = 'x'",
+      "WITH x AS (SELECT 1) INSERT INTO chunks VALUES ('p', 1, 'x')",
+      "SELECT load_extension('evil')",
     ])
       expect(() => assertSnapshotSql(sql)).toThrow("read-only");
   });
