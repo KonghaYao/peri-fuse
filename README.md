@@ -183,8 +183,10 @@ are the ones to keep current.
 frozen pre-rewrite baseline on a 1,000-trace corpus (row-for-row equivalence plus query plans and
 cache-miss latency). `packages/server/src/__tests__/sessions-scale-bench.test.ts` reuses the same
 route capture on 100K/1M traces, and `sessions-scale-diagnostic.test.ts` measures the raw statement
-cost beyond the read pool's 30s budget. The scale harnesses are opt-in, so the default test run
-stays fast:
+cost beyond the read pool's 30s budget. The optional standard-SQLite engine (`PERIFUSE_ENGINE=sqlite`)
+only runs under Bun, outside the Node vitest suite, so `sessions-scale-bun-driver.ts` repeats the same
+corpus/route/percentile measurement there (engine contrast below). The scale harnesses are opt-in, so
+the default test run stays fast:
 
 ```bash
 cd packages/server
@@ -230,6 +232,40 @@ Notes:
   SQLite picks the primary-key index for both scenario queries.
 - The 1K frozen-baseline (pre-rewrite) statement measures p50 ≈ 182–186 ms at 1K traces versus
   2.6–2.7 ms for the current page statement.
+
+### Standard SQLite engine (`PERIFUSE_ENGINE=sqlite`)
+
+Swapping embedded Turso for Bun's built-in `bun:sqlite` removes the 1M planner problem but not the
+aggregation cost. Same corpora and host, Bun 1.4.2, default read pool, same capture and percentile
+logic through the Bun driver:
+
+```bash
+cd packages/server
+PERIFUSE_ENGINE=sqlite PERIFUSE_BENCH_TRACES=100000 bun --bun src/__tests__/sessions-scale-bun-driver.ts
+PERIFUSE_ENGINE=sqlite PERIFUSE_BENCH_TRACES=1000000 bun --bun src/__tests__/sessions-scale-bun-driver.ts
+```
+
+| Corpus | Scenario | Request p50 | Request p95 | Request p99 | list stmt p50 | count stmt p50 | §12 budget |
+|--------|----------|-------------|-------------|-------------|---------------|----------------|------------|
+| 100K traces / 20K sessions | default order | 30.50 ms | 33.61 ms | 35.28 ms | 20.82 ms | 8.96 ms | met |
+| 100K traces / 20K sessions | `orderBy=totalCost.desc` | 81.99 ms | 96.25 ms | 100.24 ms | 77.10 ms | 9.66 ms | request p95 on the line |
+| 1M traces / 200K sessions | default order | 263.07 ms | 272.01 ms | 275.56 ms | 176.62 ms | 84.32 ms | request p95 missed |
+| 1M traces / 200K sessions | `orderBy=totalCost.desc` | 795.25 ms | 814.59 ms | 905.25 ms | 710.17 ms | 84.85 ms | request p95 missed |
+
+Notes:
+
+- The Turso planner flip does not occur: with `sqlite_stat1` populated, both 1M scenarios keep
+  `SEARCH tm USING INDEX sqlite_autoindex_trace_metrics_1 (project_id=? AND trace_id=?)`, both routes
+  answer 200 instead of 503, and the default-order list statement drops from 214,020 ms (Turso) to
+  176.62 ms (~1,200x). The flip disappears; the seconds-scale 1M aggregation does not.
+- 100K default order met the budget in all three runs (p95 = 30.59, 33.61, 36.88 ms; the table quotes
+  the middle run). The metric-ranked sort sat on the line: p95 = 83.32 (pass), 96.25 (pass),
+  109.40 (miss) ms versus 152.74–188.70 ms on Turso — the swap removes most of the flip-driven cost
+  at 100K too, but the §3.3 design gap remains.
+- The 1M rows quote the clean rerun; the first run, with leftover benchmark processes on the host,
+  measured default p95 760.76 / p99 2,270.04 ms and metric p95 1,077.30 ms, i.e. the budget miss is
+  robust to host noise while the margin is not. §12 at 1M still needs the materialized
+  `session_summary` projection.
 
 ### Optimization techniques
 
