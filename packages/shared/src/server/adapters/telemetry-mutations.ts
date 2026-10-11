@@ -1,5 +1,5 @@
 import type { LocalExecutor } from "../../db/local";
-import { SessionSearchStorage } from "../session-search/storage";
+import { type SearchSource, SessionSearchStorage } from "../session-search/storage";
 import {
   addIngestionMetrics,
   type ObservationMetric,
@@ -11,14 +11,24 @@ import {
 import type { TelemetryQueryOpts } from "./types";
 
 const entityTables = new Set(["traces", "observations", "scores"]);
-export type MetricsToRefresh = Map<string, [string, string]>;
+export type MetricsToRefresh = {
+  metrics: Map<string, [string, string]>;
+  daily: Set<string>;
+  search: Map<string, SearchSource>;
+};
+
+export function createMutationContext(): MetricsToRefresh {
+  return { metrics: new Map(), daily: new Set(), search: new Map() };
+}
 
 export async function flushIngestionMetrics(
   tx: LocalExecutor,
   pending: MetricsToRefresh,
 ): Promise<void> {
-  for (const [projectId, traceId] of pending.values())
+  for (const [projectId, traceId] of pending.metrics.values())
     await refreshIngestionMetrics(tx, projectId, traceId);
+  const search = new SessionSearchStorage(tx);
+  for (const source of pending.search.values()) await search.markDirty(source);
 }
 
 export function mutationSnapshotColumns(table: string): string {
@@ -52,7 +62,8 @@ export async function recordTelemetryMutation(
     }
     affected.set(JSON.stringify([projectId, row.id]), row);
   }
-  for (const [projectId, day] of dirtyDays.values())
+  for (const [key, [projectId, day]] of dirtyDays) {
+    if (pendingMetrics?.daily.has(key)) continue;
     await tx.run(
       `INSERT INTO daily_stats_dirty(project_id,day)
       SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM telemetry_retention_state WHERE ?<cutoff_day)
@@ -61,15 +72,24 @@ export async function recordTelemetryMutation(
       day,
       day,
     );
+    pendingMetrics?.daily.add(key);
+  }
   for (const row of affected.values()) {
-    if (table !== "scores" && searchChanged)
-      await new SessionSearchStorage(tx).markDirty({
+    if (table !== "scores" && searchChanged) {
+      const source: SearchSource = {
         projectId: String(row.project_id),
         kind: table === "traces" ? "trace" : "observation",
         id: String(row.id),
         revision: 0,
         eventTime: String(row[table === "observations" ? "start_time" : "timestamp"] ?? ""),
-      });
+      };
+      if (pendingMetrics)
+        pendingMetrics.search.set(
+          JSON.stringify([source.projectId, source.kind, source.id]),
+          source,
+        );
+      else await new SessionSearchStorage(tx).markDirty(source);
+    }
     if (!after)
       await tx.run(
         "DELETE FROM ingestion_field_versions WHERE project_id=? AND entity_type=? AND entity_id=?",
@@ -93,7 +113,7 @@ export async function recordTelemetryMutation(
       pair[0] === String(after.project_id) &&
       pair[1] === String(after.trace_id) &&
       (!before || before.is_deleted === 1 || before.trace_id !== after.trace_id) &&
-      !pendingMetrics.has(key)
+      !pendingMetrics.metrics.has(key)
     ) {
       const materialized = await tx.get(
         "SELECT 1 FROM trace_metrics WHERE project_id=? AND trace_id=?",
@@ -106,7 +126,7 @@ export async function recordTelemetryMutation(
           ...pair,
           after.id,
         ));
-      if (unmaterialized) pendingMetrics.set(key, pair);
+      if (unmaterialized) pendingMetrics.metrics.set(key, pair);
       else await addIngestionMetrics(tx, pair[0], pair[1], String(after.id));
     } else if (
       pendingMetrics &&
@@ -117,10 +137,10 @@ export async function recordTelemetryMutation(
       pair[0] === String(before.project_id) &&
       pair[1] === String(before.trace_id) &&
       (!after || after.is_deleted === 1 || before.trace_id !== after.trace_id) &&
-      !pendingMetrics.has(key)
+      !pendingMetrics.metrics.has(key)
     ) {
       if (!(await removeIngestionMetrics(tx, pair[0], pair[1], beforeMetric)))
-        pendingMetrics.set(key, pair);
+        pendingMetrics.metrics.set(key, pair);
     } else if (
       pendingMetrics &&
       table === "observations" &&
@@ -130,21 +150,21 @@ export async function recordTelemetryMutation(
       before.is_deleted !== 1 &&
       after.is_deleted !== 1 &&
       beforeMetric &&
-      !pendingMetrics.has(key)
+      !pendingMetrics.metrics.has(key)
     ) {
       const afterMetric = await readObservationMetric(tx, pair[0], pair[1], String(after.id));
       if (
         !afterMetric ||
         !(await updateIngestionMetricsDelta(tx, pair[0], pair[1], beforeMetric, afterMetric))
       )
-        pendingMetrics.set(key, pair);
+        pendingMetrics.metrics.set(key, pair);
     } else if (
       pendingMetrics &&
       table === "traces" &&
       after &&
       pair[0] === String(after.project_id) &&
       pair[1] === String(after.id) &&
-      !pendingMetrics.has(key)
+      !pendingMetrics.metrics.has(key)
     ) {
       const materialized = await tx.get(
         "SELECT 1 FROM trace_metrics WHERE project_id=? AND trace_id=?",
@@ -156,7 +176,7 @@ export async function recordTelemetryMutation(
           "SELECT 1 FROM observations WHERE project_id=? AND trace_id=? AND is_deleted=0 LIMIT 1",
           ...pair,
         ));
-      if (unmaterialized) pendingMetrics.set(key, pair);
+      if (unmaterialized) pendingMetrics.metrics.set(key, pair);
       else if (materialized)
         await tx.run(
           `UPDATE trace_metrics SET user_id=?,session_id=?,timestamp=?
@@ -166,7 +186,7 @@ export async function recordTelemetryMutation(
           after.timestamp ?? null,
           ...pair,
         );
-    } else if (pendingMetrics) pendingMetrics.set(key, pair);
+    } else if (pendingMetrics) pendingMetrics.metrics.set(key, pair);
     else await refreshIngestionMetrics(tx, ...pair);
   }
 }

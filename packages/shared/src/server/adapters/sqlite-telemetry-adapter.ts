@@ -23,6 +23,7 @@ import {
 } from "./sqlite-read-pool";
 import { readTelemetryMigrations } from "./sqlite-telemetry-schema";
 import {
+  createMutationContext,
   executeTelemetryCommand,
   flushIngestionMetrics,
   isTelemetryEntity,
@@ -178,7 +179,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     await this.initialize();
     return this.db
       .transactionAsync(async (tx) => {
-        const pending: MetricsToRefresh = new Map();
+        const pending: MetricsToRefresh = createMutationContext();
         const result = await executeTelemetryCommand(tx, opts, pending);
         await flushIngestionMetrics(tx, pending);
         return result;
@@ -191,7 +192,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     return this.db
       .transactionAsync(async (tx) => {
         if (guard && !(await tx.get(guard.query, guard.params ?? {}))) return false;
-        const pending: MetricsToRefresh = new Map();
+        const pending: MetricsToRefresh = createMutationContext();
         for (const opts of commands) await executeTelemetryCommand(tx, opts, pending);
         await flushIngestionMetrics(tx, pending);
         return true;
@@ -204,18 +205,36 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     await this.initialize();
     await this.db
       .transactionAsync(async (tx) => {
-        const pending: MetricsToRefresh = new Map();
+        const pending: MetricsToRefresh = createMutationContext();
         for (const [index, record] of opts.records.entries()) {
           const row = record as Record<string, unknown>;
           const encoded = encodeIoRow(opts.table, row, this.compressIo);
           const columns = Object.keys(encoded);
-          const before = isTelemetryEntity(opts.table)
-            ? await tx.get(
-                `SELECT ${mutationSnapshotColumns(opts.table)} FROM ${opts.table} WHERE project_id=? AND id=?`,
-                row.project_id,
-                row.id,
-              )
-            : undefined;
+          const requested = opts.updateColumns?.[index].filter((column) =>
+            columns.includes(column),
+          );
+          const decision =
+            requested && opts.eventIds
+              ? await selectVersionedColumns(
+                  tx,
+                  opts.table,
+                  row,
+                  requested,
+                  opts.eventIds[index],
+                  opts.inheritColumns?.[index],
+                  isTelemetryEntity(opts.table) ? mutationSnapshotColumns(opts.table) : "id",
+                )
+              : undefined;
+          if (decision && !decision.entityChanged) continue;
+          const before = decision
+            ? decision.before
+            : isTelemetryEntity(opts.table)
+              ? await tx.get(
+                  `SELECT ${mutationSnapshotColumns(opts.table)} FROM ${opts.table} WHERE project_id=? AND id=?`,
+                  row.project_id,
+                  row.id,
+                )
+              : undefined;
           const beforeMetric =
             opts.table === "observations" && before && typeof before.trace_id === "string"
               ? await readObservationMetric(
@@ -227,20 +246,8 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
               : undefined;
           let conflict = "";
           let searchColumns: string[] = [];
-          if (opts.updateColumns) {
-            const requested = opts.updateColumns[index].filter((column) =>
-              columns.includes(column),
-            );
-            const updates = opts.eventIds
-              ? await selectVersionedColumns(
-                  tx,
-                  opts.table,
-                  row,
-                  requested,
-                  opts.eventIds[index],
-                  opts.inheritColumns?.[index],
-                )
-              : requested;
+          if (requested) {
+            const updates = decision?.acceptedColumns ?? requested;
             searchColumns = [...updates];
             const clauses = [
               ...new Set(updates.flatMap((column) => ioColumns(opts.table, column))),
@@ -300,7 +307,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     await this.initialize();
     await this.db
       .transactionAsync(async (tx) => {
-        const pending: MetricsToRefresh = new Map();
+        const pending: MetricsToRefresh = createMutationContext();
         for (const record of opts.records) {
           const row = record as Record<string, unknown>;
           const encoded = encodeIoRow(opts.table, row, this.compressIo);

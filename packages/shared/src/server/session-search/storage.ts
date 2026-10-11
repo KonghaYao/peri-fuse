@@ -54,7 +54,7 @@ export class SessionSearchStorage {
         next.revision,
         source.eventTime ?? null,
       );
-      await syncPending(tx, source.projectId, existing ? 0 : 1);
+      if (!existing) await syncPending(tx, source.projectId, 1);
     });
   }
 

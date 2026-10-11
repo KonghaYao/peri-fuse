@@ -11,6 +11,13 @@ export async function initializeIngestionVersions(db: LocalExecutor): Promise<vo
 // metadata/usage 等 JSON 列以整个字段为冲突单位，不递归合并内部键。
 type Version = [string, string];
 
+export type MutationDecision = {
+  acceptedColumns: string[];
+  versionChanged: boolean;
+  entityChanged: boolean;
+  before: Record<string, unknown> | undefined;
+};
+
 /** 必须在实体事务内调用，失败时版本与实体一起回滚。 */
 export async function selectVersionedColumns(
   db: LocalExecutor,
@@ -19,7 +26,8 @@ export async function selectVersionedColumns(
   columns: string[],
   eventId: string,
   inherited: string[] = [],
-): Promise<string[]> {
+  snapshotColumns = "id",
+): Promise<MutationDecision> {
   const key = [row.project_id, table, row.id];
   const stored = (await db.get(
     `SELECT versions FROM ingestion_field_versions
@@ -29,7 +37,7 @@ export async function selectVersionedColumns(
   const versions: Record<string, Version> = stored ? JSON.parse(stored.versions) : {};
   const previous = (await db.get(
     stored
-      ? `SELECT event_ts${table === "traces" || table === "observations" ? ",input IS NOT NULL AS input,output IS NOT NULL AS output" : ""} FROM ${table} WHERE project_id=? AND id=?`
+      ? `SELECT ${snapshotColumns},event_ts${table === "traces" || table === "observations" ? ",input IS NOT NULL AS input,output IS NOT NULL AS output" : ""} FROM ${table} WHERE project_id=? AND id=?`
       : `SELECT * FROM ${table} WHERE project_id=? AND id=?`,
     row.project_id,
     row.id,
@@ -57,14 +65,23 @@ export async function selectVersionedColumns(
     versions[column] = incoming;
     return true;
   });
-  if (!previous || String(previous.event_ts) <= incoming[0]) {
+  const versionChanged = !stored || accepted.length > 0;
+  if (!previous || String(previous.event_ts) < incoming[0]) {
     accepted.push("event_ts", "updated_at");
+  } else if (accepted.length > 0 && String(previous.event_ts) === incoming[0]) {
+    accepted.push("updated_at");
   }
-  await db.run(
-    `INSERT INTO ingestion_field_versions VALUES (?, ?, ?, ?)
+  if (versionChanged)
+    await db.run(
+      `INSERT INTO ingestion_field_versions VALUES (?, ?, ?, ?)
     ON CONFLICT(project_id, entity_type, entity_id) DO UPDATE SET versions=excluded.versions`,
-    ...key,
-    JSON.stringify(versions),
-  );
-  return accepted;
+      ...key,
+      JSON.stringify(versions),
+    );
+  return {
+    acceptedColumns: accepted,
+    versionChanged,
+    entityChanged: !previous || accepted.length > 0,
+    before: previous,
+  };
 }
