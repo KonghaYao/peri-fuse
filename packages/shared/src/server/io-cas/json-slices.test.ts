@@ -30,11 +30,8 @@ function utf8(text: string): Buffer {
 }
 
 function hashBytes(source: Buffer, start: number, end: number): Buffer {
-  return crypto
-    .createHash("sha256")
-    .update(HASH_DOMAIN)
-    .update(source.subarray(start, end))
-    .digest();
+  const digest = crypto.createHash("sha256");
+  return digest.update(HASH_DOMAIN).update(source.subarray(start, end)).digest();
 }
 
 /** 按区间取原文；用于断言字节留在 LITERAL 还是进入 REF。 */
@@ -398,7 +395,10 @@ const JUNK = ["x", "}", "]", ",", "'", "//", "NaN", "01", "+1", "\u0000", "'q'"]
 /** 确定性伪随机：LCG 取高位，语料只需可复现的均匀取值。 */
 function lcg(seed: number): () => number {
   let state = seed >>> 0;
-  return () => ((state = (state * 1664525 + 1013904223) >>> 0) >>> 8) / 16777216;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return (state >>> 8) / 16777216;
+  };
 }
 
 /** 变异返回新 input 与本次真正引入的分类标签。 */
