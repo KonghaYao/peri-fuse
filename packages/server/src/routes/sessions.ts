@@ -108,7 +108,153 @@ function parseUsersConcat(concat: unknown): string[] {
 // traces sharing a session_id; observation cost/token aggregates are joined
 // per trace first (avoids row multiplication on the traces<->observations
 // join), then summed per session.
+//
+// Query shape (performance review §3): the page is chosen BEFORE the
+// per-session metrics/users aggregation, so a 50-row page only pays for the
+// sessions it returns. Two shapes are needed because the sort key decides what
+// must be aggregated over every matching trace first:
+//
+// - trace-ranked keys (created_at / count_traces / session_duration / id): one
+//   pass over the filtered traces ranks the sessions, then the page is re-read
+//   through the (project_id, is_deleted, session_id) index;
+// - metric-ranked keys (cost / token sums): the sums must exist for every
+//   matching session before the page can be chosen, so the metrics aggregate
+//   stays global while everything else stays page-scoped.
+//
+// The aggregate CTEs are explicitly MATERIALIZED: an unmaterialized GROUP BY
+// subquery joined on session_id is re-evaluated once per outer row by the
+// planner (O(sessions x traces), measured at ~30x on 1k traces), and the
+// ranking CTEs are read twice by design. Materializing keeps every pass bounded
+// to one scan of the rows it aggregates.
 // ---------------------------------------------------------------------------
+
+/** `t`-aliased trace filter shared by every aggregate below. */
+function traceWhereSql(filterSql: string): string {
+  return `t.project_id = @projectId
+            AND t.is_deleted = 0
+            AND t.session_id IS NOT NULL
+            AND t.session_id != ''
+            ${filterSql}`;
+}
+
+const TRACE_COLUMNS = `t.id, t.project_id, t.session_id, t.user_id,
+                 t.timestamp, t.tags, t.environment`;
+
+/** Ranking columns: what ORDER BY can sort sessions by without metrics. */
+const RANKING_AGGREGATES = `MIN(t.timestamp) AS created_at,
+                 COUNT(*) AS count_traces,
+                 (julianday(MAX(t.timestamp)) - julianday(MIN(t.timestamp))) * 86400.0
+                   AS session_duration`;
+
+/** Page columns: ranking columns plus the page-only display fields. */
+const PAGE_AGGREGATES = `${RANKING_AGGREGATES},
+                 GROUP_CONCAT(t.tags, CHAR(31)) AS tags_concat,
+                 MAX(t.environment) AS environment`;
+
+const METRIC_AGGREGATES = `SUM(tm.input_cost) AS input_cost,
+                 SUM(tm.output_cost) AS output_cost,
+                 SUM(tm.total_cost) AS total_cost,
+                 COALESCE(SUM(tm.input_tokens), 0) AS input_tokens,
+                 COALESCE(SUM(tm.output_tokens), 0) AS output_tokens,
+                 COALESCE(SUM(tm.total_tokens), 0) AS total_tokens,
+                 COALESCE(SUM(tm.cached_tokens), 0) AS cached_tokens`;
+
+/** Sort keys that require the metrics aggregate before pagination. */
+const METRIC_ORDER_KEYS = new Set([
+  "input_cost",
+  "output_cost",
+  "total_cost",
+  "input_tokens",
+  "output_tokens",
+  "total_tokens",
+]);
+
+/**
+ * Builds the list statement. `orderExpr` is an allowlisted SQL expression (see
+ * ORDER_COLUMNS) and `filterSql` only contains generated trace-level filters.
+ */
+function buildSessionListSql(options: {
+  filterSql: string;
+  orderExpr: string;
+  orderDir: "ASC" | "DESC";
+}): string {
+  const { filterSql, orderExpr, orderDir } = options;
+  const where = traceWhereSql(filterSql);
+  const metricsRanked = METRIC_ORDER_KEYS.has(orderExpr);
+  const rankCtes = metricsRanked
+    ? `session_metrics AS MATERIALIZED (
+          SELECT t.session_id AS id, ${METRIC_AGGREGATES}
+          FROM traces t
+          LEFT JOIN trace_metrics tm
+            ON tm.project_id = t.project_id AND tm.trace_id = t.id
+          WHERE ${where}
+          GROUP BY t.session_id
+        ), page_metrics AS MATERIALIZED (
+          SELECT * FROM session_metrics
+          ORDER BY ${orderExpr} ${orderDir}, id ASC
+          LIMIT @limit OFFSET @offset
+        )`
+    : `session_base AS MATERIALIZED (
+          SELECT t.session_id AS id, ${RANKING_AGGREGATES}
+          FROM traces t
+          WHERE ${where}
+          GROUP BY t.session_id
+        ), page_sessions AS MATERIALIZED (
+          SELECT id FROM session_base
+          ORDER BY ${orderExpr} ${orderDir}, id ASC
+          LIMIT @limit OFFSET @offset
+        )`;
+  // The page CTE drives the page-scoped re-read; the metrics CTE holds the page
+  // rows (metric-ranked) or is computed for the page rows only.
+  const pageSource = metricsRanked ? "page_metrics" : "page_sessions";
+  const metricsSource = metricsRanked ? "page_metrics" : "session_metrics";
+  const finalOrder = metricsRanked ? `sm.${orderExpr}` : `pb.${orderExpr}`;
+  // Metric-ranked pages already carry the aggregate; otherwise it is computed
+  // for the page's traces only.
+  const pageMetricsCte = metricsRanked
+    ? ""
+    : `, session_metrics AS MATERIALIZED (
+          SELECT ft.session_id AS id, ${METRIC_AGGREGATES}
+          FROM page_traces ft
+          LEFT JOIN trace_metrics tm
+            ON tm.project_id = ft.project_id AND tm.trace_id = ft.id
+          GROUP BY ft.session_id
+        )`;
+
+  return `
+        WITH ${rankCtes}, page_traces AS MATERIALIZED (
+          -- CROSS JOIN fixes the join order (SQLite hint): drive the page ids
+          -- and look every session's traces up through idx_traces_deleted_session
+          -- instead of scanning the whole traces table for a 50-row page.
+          SELECT ${TRACE_COLUMNS}
+          FROM ${pageSource} ps
+          CROSS JOIN traces t ON t.session_id = ps.id
+          WHERE ${where}
+        ), page_base AS MATERIALIZED (
+          SELECT t.session_id AS id, ${PAGE_AGGREGATES}
+          FROM page_traces t
+          GROUP BY t.session_id
+        )${pageMetricsCte}, session_users AS MATERIALIZED (
+          SELECT session_id AS id, GROUP_CONCAT(user_id, CHAR(31)) AS users_concat
+          FROM (
+            SELECT DISTINCT session_id, user_id
+            FROM page_traces
+            WHERE user_id IS NOT NULL AND user_id != ''
+          )
+          GROUP BY session_id
+        )
+        SELECT pb.id, pb.created_at, pb.count_traces, pb.session_duration,
+               pb.tags_concat, pb.environment,
+               sm.input_cost, sm.output_cost, sm.total_cost,
+               sm.input_tokens, sm.output_tokens, sm.total_tokens,
+               sm.cached_tokens, su.users_concat
+        FROM ${pageSource} ps
+        JOIN page_base pb ON pb.id = ps.id
+        LEFT JOIN ${metricsSource} sm ON sm.id = ps.id
+        LEFT JOIN session_users su ON su.id = ps.id
+        ORDER BY ${finalOrder} ${orderDir}, pb.id ASC
+      `;
+}
 
 type SessionListRow = {
   id: string;
@@ -171,60 +317,7 @@ app.get("/api/public/sessions", authMiddleware, responseCache(2_000), async (c) 
     const filterSql = filters.length > 0 ? `AND ${filters.join(" AND ")}` : "";
 
     const rows = await db.query<SessionListRow>({
-      query: `
-        WITH filtered_traces AS (
-          SELECT t.id, t.project_id, t.session_id, t.user_id,
-                 t.timestamp, t.tags, t.environment
-          FROM traces t
-          WHERE t.project_id = @projectId
-            AND t.is_deleted = 0
-            AND t.session_id IS NOT NULL
-            AND t.session_id != ''
-            ${filterSql}
-        ), session_base AS (
-          SELECT t.session_id AS id,
-                 MIN(t.timestamp) AS created_at,
-                 COUNT(*) AS count_traces,
-                 (julianday(MAX(t.timestamp)) - julianday(MIN(t.timestamp))) * 86400.0
-                   AS session_duration,
-                 GROUP_CONCAT(t.tags, CHAR(31)) AS tags_concat,
-                 MAX(t.environment) AS environment
-          FROM filtered_traces t
-          GROUP BY t.session_id
-        ), session_metrics AS (
-          SELECT ft.session_id,
-                 SUM(input_cost) AS input_cost,
-                 SUM(output_cost) AS output_cost,
-                 SUM(total_cost) AS total_cost,
-                 COALESCE(SUM(input_tokens), 0) AS input_tokens,
-                 COALESCE(SUM(output_tokens), 0) AS output_tokens,
-                 COALESCE(SUM(total_tokens), 0) AS total_tokens,
-                 COALESCE(SUM(cached_tokens), 0) AS cached_tokens
-          FROM filtered_traces ft
-          LEFT JOIN trace_metrics tm
-            ON tm.project_id = ft.project_id AND tm.trace_id = ft.id
-          GROUP BY ft.session_id
-        ), session_users AS (
-          SELECT session_id, GROUP_CONCAT(user_id, CHAR(31)) AS users_concat
-          FROM (
-            SELECT DISTINCT session_id, user_id
-            FROM filtered_traces
-            WHERE user_id IS NOT NULL AND user_id != ''
-          )
-          GROUP BY session_id
-        ), sessions AS (
-          SELECT sb.*, sm.input_cost, sm.output_cost, sm.total_cost,
-                 sm.input_tokens, sm.output_tokens, sm.total_tokens,
-                 sm.cached_tokens, su.users_concat
-          FROM session_base sb
-          LEFT JOIN session_metrics sm ON sm.session_id = sb.id
-          LEFT JOIN session_users su ON su.session_id = sb.id
-        )
-        SELECT *
-        FROM sessions
-        ORDER BY ${orderExpr} ${orderDir}, id ASC
-        LIMIT @limit OFFSET @offset
-      `,
+      query: buildSessionListSql({ filterSql, orderExpr, orderDir }),
       params: { ...params, limit, offset: (page - 1) * limit },
     });
 
