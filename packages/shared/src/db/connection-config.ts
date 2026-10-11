@@ -1,5 +1,23 @@
+import { createDatabaseError } from "./errors";
+
 export type DatabaseRole = "metadata" | "telemetry" | "gateway";
 export type DatabaseConnectionConfig = { url: string; authToken?: string };
+export type LocalDatabaseEngine = "turso" | "sqlite";
+
+/**
+ * Selects the local execution engine. Only `PERIFUSE_ENGINE` is read; a generic
+ * `ENGINE` variable belongs to the host application and is ignored on purpose.
+ * Invalid values fail here so a typo can never silently downgrade the engine,
+ * and the raw input is never echoed back.
+ */
+export function resolveLocalEngine(
+  environment: NodeJS.ProcessEnv = process.env,
+): LocalDatabaseEngine {
+  const value = environment.PERIFUSE_ENGINE?.trim();
+  if (!value) return "turso";
+  if (value === "turso" || value === "sqlite") return value;
+  throw createDatabaseError("PERIFUSE_INVALID_ENGINE", "PERIFUSE_ENGINE must be turso or sqlite");
+}
 
 export function isRemoteDatabaseUrl(url: string): boolean {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(url) && !/^file:/i.test(url);

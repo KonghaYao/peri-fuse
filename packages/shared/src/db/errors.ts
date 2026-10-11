@@ -1,3 +1,10 @@
+/** Creates an Error carrying a stable machine-readable `code` for callers and tests. */
+export function createDatabaseError(code: string, message: string): Error {
+  const error = new Error(message) as Error & { code: string };
+  error.code = code;
+  return error;
+}
+
 export function isDatabaseConstraint(error: unknown, kind: "unique" | "foreign-key"): boolean {
   const pattern =
     kind === "unique" ? /UNIQUE constraint failed/i : /FOREIGN KEY constraint failed/i;

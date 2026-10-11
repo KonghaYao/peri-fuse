@@ -1,15 +1,30 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Database, type Transaction } from "@tursodatabase/database";
-import { isRemoteDatabaseUrl, validateDatabaseConfig } from "./connection-config";
+import {
+  isRemoteDatabaseUrl,
+  resolveLocalEngine,
+  validateDatabaseConfig,
+} from "./connection-config";
 import { createRemoteDatabase } from "./remote";
+import {
+  assertSqliteRuntime,
+  createSqliteDatabase,
+  ensureSqliteWal,
+  initializeSqliteConnection,
+  inspectSqliteTables,
+  isSqliteDatabase,
+} from "./sqlite";
 
 export {
   isRemoteDatabaseUrl,
   resolveDatabaseConfig,
+  resolveLocalEngine,
   validateDatabaseConfig,
 } from "./connection-config";
 export { getRemoteDatabaseConfig } from "./remote";
+/** True when a local client is backed by the optional Bun `bun:sqlite` engine. */
+export { isSqliteDatabase } from "./sqlite";
 
 export type LocalDatabase = Database;
 export type LocalExecutor = Database | Transaction;
@@ -58,11 +73,15 @@ export function resolveLocalPath(url: string, directory = process.cwd()): string
 }
 
 export function createLocalDatabase(url: string, readonly = false, authToken?: string): Database {
+  const engine = resolveLocalEngine();
   const config = validateDatabaseConfig({ url, authToken });
   if (isRemoteDatabaseUrl(config.url)) return createRemoteDatabase(config, readonly);
   url = config.url;
+  // Reject an unsupported runtime before creating directories or files.
+  if (engine === "sqlite") assertSqliteRuntime();
   const filename = resolveLocalPath(url);
   if (filename !== ":memory:" && !readonly) mkdirSync(dirname(filename), { recursive: true });
+  if (engine === "sqlite") return createSqliteDatabase(filename, readonly);
   return new Database(filename, {
     ...(filename === ":memory:" ? {} : LOCAL_DATABASE_OPTIONS),
     readonly,
@@ -73,6 +92,9 @@ export function createLocalDatabase(url: string, readonly = false, authToken?: s
 
 export async function initializeLocalDatabase(db: Database): Promise<void> {
   await db.connect();
+  // The sqlite engine already applied foreign keys on connect; re-apply them
+  // through its internal path so neither engine's WAL mode is activated here.
+  if (await initializeSqliteConnection(db)) return;
   await db.exec("PRAGMA foreign_keys = ON");
 }
 
@@ -91,22 +113,52 @@ export async function openLocalDatabase(
   }
 }
 
+const CREATE_MIGRATIONS_TABLE =
+  "CREATE TABLE IF NOT EXISTS _perifuse_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))";
+
+/**
+ * Lists existing tables for the legacy preflight. The sqlite engine answers
+ * from `sqlite_master` without activating WAL, so a legacy file is rejected
+ * before any persistent pragma rewrites it.
+ */
+async function inspectLocalTables(db: Database): Promise<{ name: string }[]> {
+  const tables = await inspectSqliteTables(db);
+  if (tables) return tables;
+  return (await db.all(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+  )) as { name: string }[];
+}
+
+/**
+ * Creates the migration table. The sqlite engine wraps this DDL in its own
+ * IMMEDIATE transaction so concurrent starts retry the BEGIN instead of
+ * racing on the single writer slot.
+ */
+async function createMigrationsTable(db: Database): Promise<void> {
+  if (!isSqliteDatabase(db)) {
+    await db.exec(CREATE_MIGRATIONS_TABLE);
+    return;
+  }
+  await db
+    .transactionAsync(async (tx) => {
+      await tx.exec(CREATE_MIGRATIONS_TABLE);
+    })
+    .immediate();
+}
+
 export async function applyLocalMigrations(
   db: Database,
   migrations: { name: string; sql: string }[],
 ): Promise<void> {
   await initializeLocalDatabase(db);
-  const tables = (await db.all(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-  )) as { name: string }[];
+  const tables = await inspectLocalTables(db);
   if (tables.length && !tables.some((table) => table.name === "_perifuse_migrations")) {
     throw new Error(
       "Existing legacy database is not supported. Select a new database path; the old database is not migrated or deleted.",
     );
   }
-  await db.exec(
-    "CREATE TABLE IF NOT EXISTS _perifuse_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))",
-  );
+  await ensureSqliteWal(db);
+  await createMigrationsTable(db);
   for (const migration of migrations) {
     await db
       .transactionAsync(async (tx) => {
