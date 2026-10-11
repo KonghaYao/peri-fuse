@@ -5,7 +5,8 @@
   "license": "MIT",
   "private": true,
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.12.0",
+    "bun": ">=1.4.2"
   },
   "main": "./dist/index.js",
   "exports": {
@@ -35,10 +36,10 @@
     }
   },
   "scripts": {
-    "start": "node dist/index.js",
+    "start": "bun dist/index.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit --skipLibCheck",
-    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "dev": "bun --watch src/index.ts",
     "db:generate": "drizzle-kit generate",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",

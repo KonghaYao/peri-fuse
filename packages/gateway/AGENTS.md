@@ -40,7 +40,7 @@ PeriGateway is a unified LLM proxy gateway: multi-provider routing, rate limitin
 ## Commands
 
 ```bash
-pnpm --filter @peri/gateway run dev        # Dev mode (tsx watch, port 4100)
+pnpm --filter @peri/gateway run dev        # Dev mode (bun --watch, port 4100)
 pnpm --filter @peri/gateway run test       # Integration tests (vitest)
 pnpm --filter @peri/gateway run typecheck  # tsc --noEmit
 pnpm --filter @peri/gateway run build      # tsc → dist/

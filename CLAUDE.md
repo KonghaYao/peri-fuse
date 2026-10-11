@@ -20,7 +20,8 @@
 Langfuse Lite（包名 `peri-fuse`）是 Langfuse 的轻量级自包含版本，专为本地开发、小团队和边缘部署设计。默认使用 embedded Turso + Drizzle，无需外部基础设施；可选配置远端 Turso URL/token。
 
 - 主要能力：LLM 可观测性（traces/spans/generations/scores）、OpenTelemetry (OTLP) 数据接入、兼容 Langfuse SDK 的 REST API、轻量 Web 仪表盘、LLM 代理网关（PeriGateway）。
-- pnpm monorepo + Turbo 构建编排，Node.js >= 22.12.0。
+- pnpm monorepo + Turbo 构建编排。
+- 运行时分工：产品运行面（server、gateway、CLI daemon、Docker 镜像）统一使用 **Bun >= 1.4.2**；构建与测试工具链（pnpm、tsc、esbuild、biome、vite、vitest）继续使用 **Node.js >= 22.12.0**，不得把 Vitest/tsc 切到 Bun 运行（唯一例外：shared 的 `src/db/sqlite*.test.ts` 仅在 Bun 下激活，运行命令见 [sqlite 引擎规格](./docs/sqlite-engine.md)）。CLI 套件走 `bun test`，其余包走 Vitest（Node 轨），构成测试双轨；细节与已知限制见 [Bun 运行时迁移](./docs/bun-runtime.md)。
 - `packages/` 包含 6 个内部包：`shared`、`server`、`web`、`gateway`、`cli`、`langfuse-mcp`；跨包能力应通过包导出的稳定接口复用，不得依赖包内实现细节。
 
 ### 后端地图（packages/server）
@@ -112,16 +113,19 @@ PeriGateway 是统一的 LLM 代理网关，提供多 Provider 路由、限流�
 ### 常用命令
 
 ```bash
-pnpm run dev                  # 同时启动后端（tsx watch）和前端（Vite）
+pnpm run dev                  # 同时启动后端（bun --watch）和前端（Vite）
 pnpm run dev:server           # 仅后端开发（port 23432）
 pnpm run dev:web              # 仅前端开发（Vite port 5173，代理 /api → 23432）
 pnpm run build                # 全量构建（shared → gateway → server → cli → web）
 pnpm run typecheck            # 全包 TypeScript 类型检查
 pnpm run lint                 # Biome lint + format 检查
 pnpm run lint:fix             # Biome 自动修复
-pnpm run test                 # 隔离摄入回归 + 全包 Vitest 测试（自动构建后端依赖）
-pnpm run test:ingestion       # 使用临时数据库运行摄入、压缩、统计及搜索回归
+pnpm run test                 # 隔离摄入回归 + 全包测试（Vitest 走 Node，CLI 套件走 bun test）
+pnpm run test:ingestion       # 使用临时数据库运行摄入、压缩、统计及搜索回归（Node + Vitest）
 pnpm run db:generate          # Drizzle metadata + telemetry migration generation
+
+# CLI 包（服务管理器）
+pnpm --filter peri-fuse run test    # CLI 生命周期套件（bun test）
 
 # Gateway 单独操作
 pnpm --filter @peri/gateway run dev        # Gateway 开发模式（port 4100）
@@ -203,6 +207,7 @@ pnpm run svc:logs             # 查看服务日志
   - `telemetry.turso.db`（@tursodatabase/database）：traces、observations、scores 等遥测数据。
   - `gateway.turso.db`（Drizzle ORM + @tursodatabase/database）：Gateway 自有数据（Provider、ModelDeployment、ApiKey config、Budget、日志）。
 - 可选通过 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` 将三类数据存入远端 Turso；也可按 metadata、telemetry、gateway 分别覆盖，详见 [存储配置](./docs/embedded-turso.md)。连接失败不回退本地，现有本地数据不会自动上传。
+- 本地执行引擎可切换：Bun 运行时下设置 `PERIFUSE_ENGINE=sqlite` 时，本地数据库改用内置 `bun:sqlite` 驱动；默认 `turso` 及远端 Turso 路由完全不变。约束、错误码与验收边界见 [sqlite 引擎规格](./docs/sqlite-engine.md)。
 - 存储适配器通过 `packages/shared/src/server/adapters/factory.ts` 按 `LANGFUSE_MODE` 选择。
 - Lite 模式使用 `sqlite-telemetry-adapter`、`in-memory-cache-adapter`、`in-memory-queue-adapter`、`local-storage-adapter`。
 - 不得在 lite 路径中引入对 Redis/S3/ClickHouse/BullMQ 的运行时依赖。

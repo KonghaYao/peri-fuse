@@ -14,12 +14,13 @@
   "private": true,
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "bun": ">=1.4.2"
   },
   "scripts": {
-    "start": "node dist/cli.js",
-    "start:stdio": "node dist/cli.js --stdio",
-    "start:http": "node dist/cli.js",
+    "start": "bun dist/cli.js",
+    "start:stdio": "bun dist/cli.js --stdio",
+    "start:http": "bun dist/cli.js",
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

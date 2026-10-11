@@ -6,7 +6,7 @@ For detailed architecture, conventions, and environment setup, see [CLAUDE.md](.
 ## Project Identity
 
 Langfuse Lite (`peri-fuse`) — self-contained LLM observability + proxy gateway.
-Embedded Turso + Drizzle backend by default, with optional remote Turso URL/token configuration. No external infrastructure is required. Node.js >= 22.12.0, pnpm monorepo.
+Embedded Turso + Drizzle backend by default, with optional remote Turso URL/token configuration. No external infrastructure is required. Bun >= 1.4.2 is the product runtime; Node.js >= 22.12.0 is required for the build/test toolchain. pnpm monorepo.
 
 ## Packages
 
@@ -25,6 +25,7 @@ Embedded Turso + Drizzle backend by default, with optional remote Turso URL/toke
 3. **Auth model** — Gateway uses unified project-scoped API keys (Bearer/Basic). No global admin key exists.
 4. **SDK compatibility** — `/api/public/*` endpoints must remain backward-compatible with Langfuse SDK.
 5. **File size** — single file must not exceed 500 lines; refactor module boundaries before exceeding.
+6. **Runtime split** — the product surface (`server`, `gateway`, CLI daemon, Docker `CMD`/`HEALTHCHECK`) runs on Bun >= 1.4.2; the build/test toolchain (pnpm, tsc, esbuild, biome, vite, vitest) runs on Node >= 22.12.0. The CLI suite uses `bun test`, every other suite uses Vitest on Node. The shared `src/db/sqlite*.test.ts` suite is the deliberate exception: it activates only under Bun (`skipIf` guard) and runs with the documented Bun command in [docs/sqlite-engine.md](./docs/sqlite-engine.md); do not move any other Vitest suite to Bun. See [docs/bun-runtime.md](./docs/bun-runtime.md).
 
 ## Quick Verification
 
@@ -34,8 +35,9 @@ pnpm run typecheck && pnpm run lint && pnpm run test
 
 Package-specific:
 ```bash
-pnpm --filter @peri/gateway run test       # Gateway (31 integration tests)
-pnpm --filter @peri-fuse/server run test   # Server
+pnpm --filter @peri/gateway run test       # Gateway (31 integration tests, Vitest/Node)
+pnpm --filter @peri-fuse/server run test   # Server (Vitest/Node)
+pnpm --filter peri-fuse run test           # CLI lifecycle suite (bun test)
 pnpm --filter @peri-fuse/web run build     # Web production build
 ```
 

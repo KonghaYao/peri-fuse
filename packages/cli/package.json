@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "commonjs",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.12.0",
+    "bun": ">=1.4.2"
   },
   "bin": {
     "peri-fuse": "./dist/index.js"
@@ -18,10 +19,10 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit --skipLibCheck",
-    "dev": "tsx src/index.ts",
+    "dev": "bun src/index.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "test": "tsx --test test/*.test.ts",
+    "test": "bun test test/",
     "prepublishOnly": "node build.mjs"
   },
   "dependencies": {

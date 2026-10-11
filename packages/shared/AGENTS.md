@@ -12,6 +12,19 @@ Shared domain logic, database access, ingestion pipeline, and OTLP processing us
 - **Dual DB architecture** — `langfuse.turso.db` (Drizzle + embedded Turso, auth/metadata) + `telemetry.turso.db` (@tursodatabase/database, traces/observations/scores).
 - **Export boundaries** — `src/index.ts` is frontend-safe; `src/server/index.ts` is server-only. Never leak server modules into the root barrel.
 
+## Runtime & local engines
+
+- Runtime split (root `AGENTS.md` rule 6): the product surface runs on **Bun >= 1.4.2**; the build/test toolchain (tsc, vitest) runs on **Node >= 22.12.0**.
+- `src/db/local.ts` is the single dispatch entry for local engines. `PERIFUSE_ENGINE=sqlite` (Bun >= 1.4.2 only, otherwise `PERIFUSE_SQLITE_REQUIRES_BUN`) swaps the local driver to the `bun:sqlite` adapter in `src/db/sqlite*.ts`; the default `turso` engine and remote Turso routing are untouched. `bun:sqlite` is imported lazily inside `connect()` — never at module top level.
+- Never mix engines on one file: `bun:sqlite` and Turso's `multiprocess_wal` cannot open the same database concurrently. The legacy migration script stays Node-only.
+- `src/db/sqlite*.test.ts` only activates under Bun (a `skipIf(!onBun)` guard keeps it skipped on the Node baseline):
+
+  ```bash
+  cd packages/shared
+  bun --bun ./node_modules/vitest/vitest.mjs run src/db/sqlite   # quick sqlite suites
+  PERIFUSE_SQLITE_PRESSURE=1 bun --bun ./node_modules/vitest/vitest.mjs run src/db/sqlite-concurrency.test.ts
+  ```
+
 ## Entry Points
 
 | Path | Role |

@@ -5,7 +5,9 @@ A lightweight, self-contained LLM observability server — the open-source platf
 Peri-Fuse uses **embedded Turso + Drizzle** by default, with no external infrastructure (no ClickHouse, Redis, S3, or BullMQ). You can optionally replace local databases with remote Turso using a URL and auth token. It's designed for local development, small teams, and edge deployments.
 
 This release initializes fresh `.turso.db` databases; existing SQLite files are not automatically converted or deleted. To preserve legacy data, stop the service and run `bash scripts/migrate-legacy-db.sh --offline`. See [legacy migration](docs/legacy-db-migration.md) for safe inspection, large-database handling and resuming, and [embedded Turso storage](docs/embedded-turso.md) for pinned versions and migrations.
-Requires Node.js 22.12.0 or newer.
+Requires Bun 1.4.2 or newer to run the server, the gateway, and the service CLI. The build and
+test toolchain (pnpm, TypeScript, Vite, Vitest) still runs on Node.js 22.12.0 or newer — see
+[runtime requirements](docs/bun-runtime.md).
 
 ## Features
 
@@ -38,9 +40,11 @@ Open the dashboard at `http://localhost:23332`. Port `23332` is used when
 changes the container listener and published port together. `docker compose down` leaves the
 bind-mounted `./data` directory intact.
 
-The production Docker image uses Node.js 22 on Debian for the server and health
-checks. Dependency installation and compilation use Node.js/pnpm build
-stages; the runtime image only receives production dependencies and built assets.
+The production Docker image runs the server and its health check with Bun 1.4.2 on Debian,
+and keeps Node.js 22 in the image for the one-off legacy SQLite migration
+(`scripts/migrate-legacy-db.sh`, which mixes `node:sqlite` with the Turso driver).
+Dependency installation and compilation use Node.js/pnpm build stages; the runtime image only
+receives production dependencies and built assets.
 The release workflow builds both `linux/amd64` and `linux/arm64` (Apple Silicon).
 
 The dashboard defaults to light mode and automatically activates Default Project
@@ -49,7 +53,8 @@ project selections are replaced before data pages load.
 
 ### Source development
 
-Source development requires Node.js 22.12.0 or newer and pnpm 10:
+Source development requires Bun 1.4.2 or newer to run the API server, Node.js 22.12.0 or newer
+for the build/test toolchain, and pnpm 10:
 
 ```bash
 pnpm install
@@ -74,7 +79,8 @@ pnpm svc:stop
 ```
 
 These commands use the CLI built from this repository; they do not require a global npm
-installation. The service defaults to `http://localhost:23332`, but the CLI loads `.env` and
+installation. They launch the CLI with Bun, so the managed background server also runs on Bun.
+The service defaults to `http://localhost:23332`, but the CLI loads `.env` and
 honors `LITE_SERVER_PORT` when it is set.
 
 ## Project Structure

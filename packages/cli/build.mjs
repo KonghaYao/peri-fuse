@@ -13,10 +13,13 @@ import * as esbuild from "esbuild";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverEntry = path.resolve(__dirname, "../server/src/index.ts");
+const tscBin = path.resolve(__dirname, "node_modules/typescript/bin/tsc");
 
 // Step 1: compile CLI sources
 console.log("[cli build] Compiling TypeScript…");
-execFileSync("npx", ["tsc"], { cwd: __dirname, stdio: "inherit" });
+// Run the local compiler with the current runtime instead of `npx tsc` so the
+// build never depends on npx resolution or network access.
+execFileSync(process.execPath, [tscBin], { cwd: __dirname, stdio: "inherit" });
 
 // Step 2: bundle server into a single CJS file
 console.log("[cli build] Bundling server…");
@@ -28,7 +31,9 @@ await esbuild.build({
   format: "cjs",
   outfile: path.join(__dirname, "dist/server.cjs"),
   // Native modules cannot be bundled — keep as external requires.
-  external: ["@tursodatabase/database", "@tursodatabase/database-common"],
+  // `bun:sqlite` is a runtime-only builtin (loaded lazily by the sqlite engine);
+  // external keeps the node-targeted bundle valid if the import becomes a literal.
+  external: ["@tursodatabase/database", "@tursodatabase/database-common", "bun:sqlite"],
   // Suppress warnings from node: protocol imports and dynamic requires.
   logLevel: "warning",
 });
@@ -47,7 +52,7 @@ await esbuild.build({
   target: "node22",
   format: "cjs",
   outfile: path.join(__dirname, "dist/src/db/local.js"),
-  external: ["@tursodatabase/database", "@tursodatabase/database-common"],
+  external: ["@tursodatabase/database", "@tursodatabase/database-common", "bun:sqlite"],
 });
 for (const name of ["indexer", "backfill"]) {
   await esbuild.build({
@@ -57,7 +62,7 @@ for (const name of ["indexer", "backfill"]) {
     target: "node22",
     format: "cjs",
     outfile: path.join(__dirname, `dist/src/server/session-search/${name}.js`),
-    external: ["@tursodatabase/database", "@tursodatabase/database-common"],
+    external: ["@tursodatabase/database", "@tursodatabase/database-common", "bun:sqlite"],
   });
 }
 

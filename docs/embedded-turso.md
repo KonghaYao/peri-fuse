@@ -5,8 +5,13 @@ Turso engine, not libSQL or a cloud client). Drizzle ORM and Drizzle Kit are pin
 to `1.0.0-rc.5-5935859`, whose async adapter supports this engine's transaction
 handles. Upgrades must pass transaction, worker, ingestion and SDK regression tests.
 No token, remote URL or separately deployed infrastructure is required.
-Node.js 22.12.0 or newer is required because the CommonJS server and CLI load
-the official ESM driver through Node's native require-ESM support.
+Bun 1.4.2 or newer is the default runtime for the server, CLI and gateway;
+Node.js 22.12.0 or newer remains supported and is still required for the
+build/test toolchain. Both runtimes load the official ESM driver through
+native require-ESM support. With Bun, `PERIFUSE_ENGINE=sqlite` switches local
+databases from the embedded Turso engine to Bun's built-in `bun:sqlite`
+driver; the default engine and remote Turso routing are unchanged. See
+[sqlite engine](sqlite-engine.md) for constraints and acceptance boundaries.
 
 ## Fresh databases only
 

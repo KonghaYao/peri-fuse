@@ -2,8 +2,12 @@
  * E2E runner: starts a throwaway server, extracts bootstrap credentials,
  * runs the Langfuse SDK E2E test, then cleans up.
  *
- * Usage:  node e2e/run.mjs
- * Custom script:  E2E_SCRIPT=langfuse-sdk-eval-e2e.mjs node e2e/run.mjs
+ * Usage:  bun e2e/run.mjs
+ * Custom script:  E2E_SCRIPT=langfuse-sdk-eval-e2e.mjs bun e2e/run.mjs
+ *
+ * Server and SDK child processes inherit the runtime that launched this runner
+ * (process.execPath), so `bun e2e/run.mjs` exercises the Bun runtime end to end
+ * while `node e2e/run.mjs` remains available for Node parity checks.
  */
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
@@ -20,7 +24,7 @@ fs.mkdirSync(HOME, { recursive: true });
 
 console.log(`[runner] Starting server on port ${PORT} (PERIFUSE_HOME=${HOME})…`);
 
-const server = spawn("node", ["dist/index.js"], {
+const server = spawn(process.execPath, ["dist/index.js"], {
   cwd: serverDir,
   env: { ...process.env, PERIFUSE_HOME: HOME, LITE_SERVER_PORT: String(PORT) },
   stdio: ["ignore", "pipe", "pipe"],
@@ -88,7 +92,7 @@ async function main() {
     console.log(`[runner] Credentials: ${creds.pk} / ${creds.sk.slice(0, 15)}…`);
 
     console.log(`[runner] Running ${E2E_SCRIPT}…\n`);
-    const result = spawn("node", [path.join(__dirname, E2E_SCRIPT)], {
+    const result = spawn(process.execPath, [path.join(__dirname, E2E_SCRIPT)], {
       cwd: serverDir,
       env: { ...process.env, BASE: `http://localhost:${PORT}`, PK: creds.pk, SK: creds.sk },
       stdio: "inherit",
@@ -103,11 +107,15 @@ async function main() {
     let evalCode = 0;
     if (code === 0 && E2E_SCRIPT !== "langfuse-sdk-eval-e2e.mjs") {
       console.log("[runner] Running Langfuse SDK Eval E2E test…\n");
-      const evalResult = spawn("node", [path.join(__dirname, "langfuse-sdk-eval-e2e.mjs")], {
-        cwd: serverDir,
-        env: { ...process.env, BASE: `http://localhost:${PORT}`, PK: creds.pk, SK: creds.sk },
-        stdio: "inherit",
-      });
+      const evalResult = spawn(
+        process.execPath,
+        [path.join(__dirname, "langfuse-sdk-eval-e2e.mjs")],
+        {
+          cwd: serverDir,
+          env: { ...process.env, BASE: `http://localhost:${PORT}`, PK: creds.pk, SK: creds.sk },
+          stdio: "inherit",
+        },
+      );
       evalCode = await new Promise((resolve) => {
         evalResult.on("close", resolve);
       });
@@ -118,7 +126,7 @@ async function main() {
     server.kill("SIGTERM");
     await new Promise((r) => setTimeout(r, 1500));
 
-    const server2 = spawn("node", ["dist/index.js"], {
+    const server2 = spawn(process.execPath, ["dist/index.js"], {
       cwd: serverDir,
       env: { ...process.env, PERIFUSE_HOME: HOME, LITE_SERVER_PORT: String(PORT) },
       stdio: ["ignore", "pipe", "pipe"],

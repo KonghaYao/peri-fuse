@@ -142,12 +142,15 @@ describe("container port configuration", () => {
     const commandJson = healthcheck?.match(/\sCMD\s+(\[.*\])$/)?.[1];
     expect(commandJson).toBeDefined();
     const command = JSON.parse(commandJson ?? "[]") as string[];
-    expect(command.slice(0, 2)).toEqual(["node", "-e"]);
+    expect(command.slice(0, 2)).toEqual(["bun", "-e"]);
 
     const script = command[2] ?? "";
     expect(script).toMatch(/require\('\.\/packages\/server\/dist\/port\.js'\)/);
     expect(script).toMatch(/resolveLiteServerPort\(process\.env\.LITE_SERVER_PORT\)/);
-    expect(script.match(/fetch\((.*?)\)\.then/)?.[1]).toBe(
+    // Bun drains the event loop as soon as the script returns, so the health
+    // check must await the request instead of attaching a .then() handler.
+    expect(script).toMatch(/await fetch\(/);
+    expect(script.match(/await fetch\((.*?)\)/)?.[1]).toBe(
       "'http://127.0.0.1:' + port + '/api/public/health'",
     );
   });

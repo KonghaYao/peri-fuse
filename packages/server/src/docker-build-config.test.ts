@@ -49,17 +49,27 @@ describe("Docker dependency patches", () => {
   });
 });
 
-describe("Docker Node runtime", () => {
-  it("runs the server on supported Node 22 with patched production dependencies", () => {
+describe("Docker Bun runtime", () => {
+  it("runs the server on the pinned Bun binary with patched production dependencies", () => {
     const dockerfile = readFileSync(resolve(repoRoot, "Dockerfile"), "utf8");
     const runtime = dockerfile
       .split(/^FROM /m)
       .find((stage) => /^node:22-bookworm-slim AS runtime\n/.test(stage));
     expect(runtime).toBeDefined();
     expect(runtime).toContain("COPY --from=production-deps /app /app");
-    expect(runtime).toContain('CMD ["node", "packages/server/dist/index.js"]');
+    expect(runtime).toContain("COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun");
+    expect(runtime).toContain('CMD ["bun", "packages/server/dist/index.js"]');
+    // Node is kept in the image for the one-off legacy SQLite migration.
     expect(runtime).toContain("NODE_BINARY=node");
     expect(runtime).not.toContain("pnpm install");
     expect(runtime).not.toContain("corepack");
+  });
+
+  it("copies the Bun binary from a pinned oven/bun stage", () => {
+    const dockerfile = readFileSync(resolve(repoRoot, "Dockerfile"), "utf8");
+    const bunStage = dockerfile
+      .split(/^FROM /m)
+      .find((stage) => /^oven\/bun:1\.4\.2-debian AS bun\n/.test(stage));
+    expect(bunStage).toBeDefined();
   });
 });
