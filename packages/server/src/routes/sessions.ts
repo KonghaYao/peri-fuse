@@ -79,6 +79,14 @@ function toIso(value: unknown): string {
   return `${String(value).replace(" ", "T")}Z`;
 }
 
+// `GROUP_CONCAT` has no ORDER BY and SQLite does not define its input order: it
+// is whatever the scan path delivers, and the two list shapes read the traces
+// differently (the pre-P1 statement aggregated over a `traces` scan, the current
+// one over `idx_traces_deleted_session`). The arrays below are therefore sorted
+// with the default comparator (UTF-16 code-unit order, locale independent) so
+// the response order no longer depends on the query plan or on the physical row
+// order. Value set, CHAR(31) splitting, de-duplication and null handling are
+// unchanged; `sessions-concat-order.test.ts` pins this contract.
 function parseTagsConcat(concat: unknown): string[] {
   if (concat === null || concat === undefined) return [];
   const tags = new Set<string>();
@@ -93,12 +101,12 @@ function parseTagsConcat(concat: unknown): string[] {
       // ignore malformed tag blobs
     }
   }
-  return Array.from(tags);
+  return Array.from(tags).sort();
 }
 
 function parseUsersConcat(concat: unknown): string[] {
   if (concat === null || concat === undefined) return [];
-  return String(concat).split(US).filter(Boolean);
+  return String(concat).split(US).filter(Boolean).sort();
 }
 
 // ---------------------------------------------------------------------------
