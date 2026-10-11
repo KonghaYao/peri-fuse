@@ -217,7 +217,8 @@ Notes:
 - The metric-ranked sort aggregates every session's metrics before it can rank a page, so at 100K it
   already exceeds the p95 budget. That is the design tradeoff recorded in review §3.3; the planned
   `session_summary` projection is the follow-up if the budget must hold. The miss is not a
-  single-run artifact: a repeat run landed p95 = 175.13 ms (the table quotes the faster run).
+  single-run artifact: three runs landed p95 = 152.7, 175.1, and 188.7 ms (the table quotes the
+  fastest run).
 - At 1M traces the Turso planner flips the `trace_metrics` join from the `(project_id, trace_id)`
   primary-key index to `idx_trace_metrics_ts (project_id=?)`, so every outer row scans the project's
   whole metrics prefix (~900K entries): the default page statement needs ~214 s for 50 rows — 30 ms
