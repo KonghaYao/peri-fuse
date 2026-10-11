@@ -91,6 +91,10 @@ export function contentHash(text: string): string {
 export function chunkText(text: string): TextChunk[] {
   const chars = Array.from(text);
   if (!chars.length) return [];
+  // offsets[i] is the UTF-16 start offset of code point i, so chunk boundaries are O(1)
+  // lookups instead of the O(n) slice+join prefix rebuild this used to do per chunk.
+  const offsets = new Uint32Array(chars.length + 1);
+  for (let i = 0; i < chars.length; i++) offsets[i + 1] = offsets[i] + chars[i].length;
   const chunks: TextChunk[] = [];
   let start = 0;
   let no = 0;
@@ -103,13 +107,11 @@ export function chunkText(text: string): TextChunk[] {
       bytes += nextBytes;
       end++;
     }
-    const displayStart = chars.slice(0, start).join("").length;
-    const displayEnd = displayStart + chars.slice(start, end).join("").length;
     chunks.push({
-      text: chars.slice(start, end).join(""),
+      text: text.slice(offsets[start], offsets[end]),
       chunkNo: no++,
-      start: displayStart,
-      end: displayEnd,
+      start: offsets[start],
+      end: offsets[end],
     });
     if (end === chars.length) break;
     start = end - OVERLAP;
