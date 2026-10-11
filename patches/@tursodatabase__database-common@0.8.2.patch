@@ -1,0 +1,201 @@
+diff --git a/dist/promise.js b/dist/promise.js
+index 04e181d681b7912c1d121b7bff5ca852c2be3f4d..17c18f3ea210d85107d73edc2396adc49004fce6 100644
+--- a/dist/promise.js
++++ b/dist/promise.js
+@@ -25,6 +25,57 @@ function createErrorByName(name, message) {
+ function sleepBeforeRetry(ms) {
+     return new Promise((resolve) => setTimeout(resolve, ms));
+ }
++// ---------------------------------------------------------------------------
++// [peri-fuse patch] STEP_IO stall guard.
++//
++// Native builds (`@tursodatabase/database` on Node) run `ioStep` as a no-op,
++// so `io()` only awaits a resolved promise. If the engine keeps returning
++// STEP_IO because its pending I/O can never make progress, the step loops
++// below spin on microtasks forever: the event loop is starved (timers,
++// sockets and request handlers stop running) and one core burns at 100% CPU
++// (upstream turso issue #7211). This guard is a mitigation, not a fix for the
++// underlying engine state:
++//   * every step result other than STEP_IO counts as progress and resets the
++//     clock, so long-running-but-progressing statements are unaffected;
++//   * once STEP_IO repeats without progress, polls yield to the macrotask
++//     queue (1ms timer) so the rest of the process keeps running;
++//   * once the stall exceeds the budget, the statement aborts with
++//     SQLITE_INTERRUPT instead of hanging the process forever.
++// Budget defaults to 10000ms; override via PERI_FUSE_STEP_IO_STALL_BUDGET_MS.
++const STEP_IO_STALL_BUDGET_MS = (() => {
++    const raw = globalThis.process?.env?.PERI_FUSE_STEP_IO_STALL_BUDGET_MS;
++    const parsed = raw === undefined ? 10000 : Number.parseInt(raw, 10);
++    return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000;
++})();
++const STEP_IO_STALL_YIELD_AFTER = 16;
++class StepIoStallGuard {
++    constructor() {
++        this.progressAt = Date.now();
++        this.consecutiveIo = 0;
++    }
++    /** Record observed progress: any step result other than STEP_IO. */
++    progress() {
++        this.progressAt = Date.now();
++        this.consecutiveIo = 0;
++    }
++    /**
++     * Called for every STEP_IO result, before re-running `io()`. Returns a
++     * promise to await (a 1ms timer once polling is clearly unproductive) or
++     * undefined on the fast path. Throws SQLITE_INTERRUPT when the statement
++     * has been stuck past the stall budget.
++     */
++    wait() {
++        this.consecutiveIo += 1;
++        if (this.consecutiveIo < STEP_IO_STALL_YIELD_AFTER) {
++            return undefined;
++        }
++        const stalledMs = Date.now() - this.progressAt;
++        if (stalledMs >= STEP_IO_STALL_BUDGET_MS) {
++            throw new SqliteError(`Statement stuck in STEP_IO for ${stalledMs}ms without progress; aborted to protect the event loop (native ioStep is a no-op). See turso issue #7211; budget tunable via PERI_FUSE_STEP_IO_STALL_BUDGET_MS.`, "SQLITE_INTERRUPT");
++        }
++        return sleepBeforeRetry(1);
++    }
++}
+ function isQueryOptions(value) {
+     return value != null
+         && typeof value === "object"
+@@ -533,13 +584,16 @@ class Database {
+         }
+         await this.execLock.acquire();
+         const exec = this.db.executor(sql, queryOptions);
++        const stall = new StepIoStallGuard();
+         try {
+             while (true) {
+                 const [stepResult, sleepMs] = exec.stepSync();
+                 if (stepResult === STEP_IO) {
++                    await stall.wait();
+                     await this.io();
+                     continue;
+                 }
++                stall.progress();
+                 if (stepResult === STEP_SLEEP) {
+                     await sleepBeforeRetry(sleepMs);
+                     continue;
+@@ -594,13 +648,16 @@ class Database {
+ async function executeBatch(native, io, statements, options) {
+     const runRawSql = async (sql) => {
+         const exec = native.executor(sql);
++        const stall = new StepIoStallGuard();
+         try {
+             while (true) {
+                 const [stepResult, sleepMs] = exec.stepSync();
+                 if (stepResult === STEP_IO) {
++                    await stall.wait();
+                     await io();
+                     continue;
+                 }
++                stall.progress();
+                 if (stepResult === STEP_SLEEP) {
+                     await sleepBeforeRetry(sleepMs);
+                     continue;
+@@ -667,13 +724,16 @@ async function executeBatch(native, io, statements, options) {
+             const totalChangesBefore = native.totalChanges();
+             const rowidBefore = native.lastInsertRowid();
+             const rows = [];
++            const stall = new StepIoStallGuard();
+             try {
+                 while (true) {
+                     const [stepResult, sleepMs] = await nativeStmt.stepSync();
+                     if (stepResult === STEP_IO) {
++                        await stall.wait();
+                         await io();
+                         continue;
+                     }
++                    stall.progress();
+                     if (stepResult === STEP_SLEEP) {
+                         await sleepBeforeRetry(sleepMs);
+                         continue;
+@@ -816,13 +876,16 @@ class Transaction {
+         await this.gate.acquire();
+         try {
+             const exec = this.db.executor(sql, queryOptions);
++            const stall = new StepIoStallGuard();
+             try {
+                 while (true) {
+                     const [stepResult, sleepMs] = exec.stepSync();
+                     if (stepResult === STEP_IO) {
++                        await stall.wait();
+                         await this.ioStep();
+                         continue;
+                     }
++                    stall.progress();
+                     if (stepResult === STEP_SLEEP) {
+                         await sleepBeforeRetry(sleepMs);
+                         continue;
+@@ -1050,14 +1113,17 @@ class Statement {
+         stmt.setQueryTimeout(queryOptions);
+         bindParams(stmt, toBindArgs(params));
+         const totalChangesBefore = this.db.totalChanges();
++        const stall = new StepIoStallGuard();
+         await this.execLock.acquire();
+         try {
+             while (true) {
+                 const [stepResult, sleepMs] = await stmt.stepSync();
+                 if (stepResult === STEP_IO) {
++                    await stall.wait();
+                     await this.io();
+                     continue;
+                 }
++                stall.progress();
+                 if (stepResult === STEP_SLEEP) {
+                     await sleepBeforeRetry(sleepMs);
+                     continue;
+@@ -1091,13 +1157,16 @@ class Statement {
+         bindParams(stmt, toBindArgs(params));
+         await this.execLock.acquire();
+         let row = undefined;
++        const stall = new StepIoStallGuard();
+         try {
+             while (true) {
+                 const [stepResult, sleepMs] = await stmt.stepSync();
+                 if (stepResult === STEP_IO) {
++                    await stall.wait();
+                     await this.io();
+                     continue;
+                 }
++                stall.progress();
+                 if (stepResult === STEP_SLEEP) {
+                     await sleepBeforeRetry(sleepMs);
+                     continue;
+@@ -1127,14 +1196,17 @@ class Statement {
+         const { params, queryOptions } = splitBindParameters(bindParameters);
+         stmt.setQueryTimeout(queryOptions);
+         bindParams(stmt, toBindArgs(params));
++        const stall = new StepIoStallGuard();
+         await this.execLock.acquire();
+         try {
+             while (true) {
+                 const [stepResult, sleepMs] = await stmt.stepSync();
+                 if (stepResult === STEP_IO) {
++                    await stall.wait();
+                     await this.io();
+                     continue;
+                 }
++                stall.progress();
+                 if (stepResult === STEP_SLEEP) {
+                     await sleepBeforeRetry(sleepMs);
+                     continue;
+@@ -1163,14 +1235,17 @@ class Statement {
+         stmt.setQueryTimeout(queryOptions);
+         bindParams(stmt, toBindArgs(params));
+         const rows = [];
++        const stall = new StepIoStallGuard();
+         await this.execLock.acquire();
+         try {
+             while (true) {
+                 const [stepResult, sleepMs] = await stmt.stepSync();
+                 if (stepResult === STEP_IO) {
++                    await stall.wait();
+                     await this.io();
+                     continue;
+                 }
++                stall.progress();
+                 if (stepResult === STEP_SLEEP) {
+                     await sleepBeforeRetry(sleepMs);
+                     continue;

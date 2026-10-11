@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@tursodatabase/database-common@0.8.2':
+    hash: f9fea2c3230c013752122f15af95dc98b0faa187cbf843afb5a3f8c112dafb36
+    path: patches/@tursodatabase__database-common@0.8.2.patch
   '@tursodatabase/serverless@1.4.1':
     hash: bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813
     path: patches/@tursodatabase__serverless@1.4.1.patch
@@ -76,7 +79,7 @@ importers:
         version: 2.4.3
       drizzle-orm:
         specifier: 1.0.0-rc.5-5935859
-        version: 1.0.0-rc.5-5935859(@opentelemetry/api@1.9.1)(@tursodatabase/database-common@0.8.2)(@tursodatabase/database@0.8.2)(@tursodatabase/serverless@1.4.1(patch_hash=bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813))(bun-types@1.4.2)(zod@4.4.3)
+        version: 1.0.0-rc.5-5935859(@opentelemetry/api@1.9.1)(@tursodatabase/database-common@0.8.2(patch_hash=f9fea2c3230c013752122f15af95dc98b0faa187cbf843afb5a3f8c112dafb36))(@tursodatabase/database@0.8.2)(@tursodatabase/serverless@1.4.1(patch_hash=bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813))(bun-types@1.4.2)(zod@4.4.3)
       hono:
         specifier: ^4.12.27
         version: 4.12.32
@@ -153,7 +156,7 @@ importers:
         version: 16.6.1
       drizzle-orm:
         specifier: 1.0.0-rc.5-5935859
-        version: 1.0.0-rc.5-5935859(@opentelemetry/api@1.9.1)(@tursodatabase/database-common@0.8.2)(@tursodatabase/database@0.8.2)(@tursodatabase/serverless@1.4.1(patch_hash=bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813))(bun-types@1.4.2)(zod@4.4.3)
+        version: 1.0.0-rc.5-5935859(@opentelemetry/api@1.9.1)(@tursodatabase/database-common@0.8.2(patch_hash=f9fea2c3230c013752122f15af95dc98b0faa187cbf843afb5a3f8c112dafb36))(@tursodatabase/database@0.8.2)(@tursodatabase/serverless@1.4.1(patch_hash=bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813))(bun-types@1.4.2)(zod@4.4.3)
       hono:
         specifier: ^4.12.27
         version: 4.12.32
@@ -226,7 +229,7 @@ importers:
         version: 10.6.0
       drizzle-orm:
         specifier: 1.0.0-rc.5-5935859
-        version: 1.0.0-rc.5-5935859(@opentelemetry/api@1.9.1)(@tursodatabase/database-common@0.8.2)(@tursodatabase/database@0.8.2)(@tursodatabase/serverless@1.4.1(patch_hash=bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813))(bun-types@1.4.2)(zod@4.4.3)
+        version: 1.0.0-rc.5-5935859(@opentelemetry/api@1.9.1)(@tursodatabase/database-common@0.8.2(patch_hash=f9fea2c3230c013752122f15af95dc98b0faa187cbf843afb5a3f8c112dafb36))(@tursodatabase/database@0.8.2)(@tursodatabase/serverless@1.4.1(patch_hash=bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813))(bun-types@1.4.2)(zod@4.4.3)
       exponential-backoff:
         specifier: ^3.1.2
         version: 3.1.3
@@ -4625,7 +4628,7 @@ snapshots:
       '@types/react': 19.2.14
       '@types/react-dom': 19.2.3(@types/react@19.2.14)
 
-  '@tursodatabase/database-common@0.8.2': {}
+  '@tursodatabase/database-common@0.8.2(patch_hash=f9fea2c3230c013752122f15af95dc98b0faa187cbf843afb5a3f8c112dafb36)': {}
 
   '@tursodatabase/database-darwin-arm64@0.8.2':
     optional: true
@@ -4641,7 +4644,7 @@ snapshots:
 
   '@tursodatabase/database@0.8.2':
     dependencies:
-      '@tursodatabase/database-common': 0.8.2
+      '@tursodatabase/database-common': 0.8.2(patch_hash=f9fea2c3230c013752122f15af95dc98b0faa187cbf843afb5a3f8c112dafb36)
     optionalDependencies:
       '@tursodatabase/database-darwin-arm64': 0.8.2
       '@tursodatabase/database-linux-arm64-gnu': 0.8.2
@@ -5104,11 +5107,11 @@ snapshots:
       get-tsconfig: 4.14.0
       jiti: 2.7.0
 
-  drizzle-orm@1.0.0-rc.5-5935859(@opentelemetry/api@1.9.1)(@tursodatabase/database-common@0.8.2)(@tursodatabase/database@0.8.2)(@tursodatabase/serverless@1.4.1(patch_hash=bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813))(bun-types@1.4.2)(zod@4.4.3):
+  drizzle-orm@1.0.0-rc.5-5935859(@opentelemetry/api@1.9.1)(@tursodatabase/database-common@0.8.2(patch_hash=f9fea2c3230c013752122f15af95dc98b0faa187cbf843afb5a3f8c112dafb36))(@tursodatabase/database@0.8.2)(@tursodatabase/serverless@1.4.1(patch_hash=bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813))(bun-types@1.4.2)(zod@4.4.3):
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@tursodatabase/database': 0.8.2
-      '@tursodatabase/database-common': 0.8.2
+      '@tursodatabase/database-common': 0.8.2(patch_hash=f9fea2c3230c013752122f15af95dc98b0faa187cbf843afb5a3f8c112dafb36)
       '@tursodatabase/serverless': 1.4.1(patch_hash=bd30f93175f6a8a7519aa0aae4a21c66436323e3c92b9b1c805666953c022813)
       bun-types: 1.4.2
       zod: 4.4.3

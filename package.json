@@ -33,12 +33,13 @@
       "protobufjs"
     ],
     "patchedDependencies": {
-      "@tursodatabase/serverless@1.4.1": "patches/@tursodatabase__serverless@1.4.1.patch"
+      "@tursodatabase/serverless@1.4.1": "patches/@tursodatabase__serverless@1.4.1.patch",
+      "@tursodatabase/database-common@0.8.2": "patches/@tursodatabase__database-common@0.8.2.patch"
     }
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.0",
-    "peri-fuse": "workspace:*",
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "peri-fuse": "workspace:*"
   }
 }
