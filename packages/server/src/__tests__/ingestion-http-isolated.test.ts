@@ -1,8 +1,11 @@
 import { dirname, join } from "node:path";
+import { withLocalTransaction } from "@peri-fuse/shared/src/db/local";
 import { rejectSql } from "@peri-fuse/shared/src/db/testing";
 import type { Context, Next } from "hono";
 import { afterAll, beforeEach, expect, it, vi } from "vitest";
 import { SQLiteTelemetryAdapter } from "../../../shared/src/server/adapters/sqlite-telemetry-adapter";
+import { hydrateIoRows } from "../../../shared/src/server/io-cas/read";
+import { IO_CAS_READ_BUDGET } from "../../../shared/src/server/io-cas/reader-source";
 
 vi.mock("../auth", () => ({
   authMiddleware: async (c: Context, next: Next) => {
@@ -46,6 +49,8 @@ import otel from "../routes/otel";
 if (!process.env.LANGFUSE_SQLITE_DB_PATH?.includes("peri-ingestion-test-"))
   throw new Error("必须通过隔离入口运行");
 vi.stubEnv("PERIFUSE_IO_COMPRESSION_WRITE", "on");
+// CAS 也对本文件开启：既有用例的正文都低于 16KiB 或不是 JSON，编码结果不变。
+vi.stubEnv("PERIFUSE_IO_CAS_WRITE", "on");
 const db = new SQLiteTelemetryAdapter(
   join(dirname(process.env.LANGFUSE_SQLITE_DB_PATH), "http.db"),
 );
@@ -168,3 +173,45 @@ it.each(["application/json", "application/x-protobuf"])(
     expect(JSON.parse(decoded.input)).toBe("OTLP 中文 ".repeat(2000));
   },
 );
+
+it("CAS 写入：摄入落 codec 2 三列组与池内容，正文可完整装配", async () => {
+  const input = JSON.stringify({
+    messages: Array.from({ length: 32 }, (_, index) => ({
+      role: "user",
+      content: `中文 CAS needle ${index} ${"x".repeat(500)}`,
+    })),
+  });
+  await sql.exec("DELETE FROM io_cas_chunks");
+  const response = await ingestion.request("/api/public/ingestion", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      batch: [
+        { id: "trace", timestamp: "2026-01-01T00:00:00Z", type: "trace-create", body: { id: "t" } },
+        {
+          id: "obs",
+          timestamp: "2026-01-01T00:00:00Z",
+          type: "generation-create",
+          body: { id: "o", traceId: "t", input },
+        },
+      ],
+    }),
+  });
+  expect(response.status).toBe(207);
+  expect((await response.json()).successes).toHaveLength(2);
+  const stored = (await sql.get(
+    "SELECT input_codec, input_raw_size, length(input) AS stored FROM observations WHERE id='o'",
+  )) as { input_codec: number; input_raw_size: number; stored: number };
+  expect(stored.input_codec).toBe(2);
+  expect(stored.input_raw_size).toBe(Buffer.byteLength(input, "utf8"));
+  expect(stored.stored).toBeLessThan(Buffer.byteLength(input, "utf8"));
+  expect(
+    await sql.get("SELECT COUNT(*) AS n FROM io_cas_chunks WHERE project_id='synthetic'"),
+  ).toEqual({ n: 32 });
+  // 同一事务内 hydrate：摄入正文逐字节可还原（读路径的 NO-GO 门禁由 io-api-isolated 覆盖）。
+  const row = await sql.get(
+    "SELECT project_id,input,input_codec,input_raw_size FROM observations WHERE id='o'",
+  );
+  await withLocalTransaction(sql, (tx) => hydrateIoRows(tx, [row], IO_CAS_READ_BUDGET));
+  expect(row.input).toBe(input);
+});

@@ -236,6 +236,46 @@ try {
   await workerAdapter.close();
   workerAdapter = undefined;
 
+  // ------------------------------------------------ 写路径（W5）→ 读路径端到端
+  process.env.PERIFUSE_IO_CAS_WRITE = "on";
+  const writer = new SQLiteTelemetryAdapter(dbPath);
+  try {
+    await writer.initialize();
+    const written = JSON.stringify({
+      messages: Array.from({ length: 32 }, (_, index) => ({
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `cas write needle ${index} ${"w".repeat(600)}`,
+      })),
+    });
+    assert.ok(Buffer.byteLength(written, "utf8") >= 16 * 1024);
+    await writer.insert({
+      table: "observations",
+      records: [
+        {
+          project_id: "p",
+          id: "o-write",
+          trace_id: "t-write",
+          start_time: "2026-02-01 00:00:00",
+          input: written,
+          output: "",
+        },
+      ],
+    });
+    const stored = await writer
+      .getDatabase()
+      .get("SELECT input_codec FROM observations WHERE project_id='p' AND id='o-write'");
+    assert.equal(stored.input_codec, 2, "CAS 写入必须落 codec 2");
+    const pooled = await writer
+      .getDatabase()
+      .get("SELECT COUNT(*) AS n FROM io_cas_chunks WHERE project_id='p'");
+    assert.ok(pooled.n > 0, "池内容必须随行一起提交");
+    assertObservation(await readObservation(writer, "o-write"), "o-write", written);
+    console.log("write→read: CAS 写入后经真实读路径装配回原文");
+  } finally {
+    delete process.env.PERIFUSE_IO_CAS_WRITE;
+    await writer.close();
+  }
+
   // ------------------------------------------------------------- NO-GO（Turso local）
   process.env.PERIFUSE_ENGINE = "turso";
   assert.equal(resolveLocalEngine(), "turso");

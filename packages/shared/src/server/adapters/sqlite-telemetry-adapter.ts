@@ -10,10 +10,18 @@ import {
   validateDatabaseConfig,
 } from "../../db/local";
 import { startQueryStatisticsMaintenance } from "../../db/query-statistics";
+import { getSharedCasPrepareCache } from "../io-cas/prepare";
 import { logger } from "../logger";
 import { readObservationMetric } from "./ingestion-metrics";
 import { selectVersionedColumns } from "./ingestion-versions";
-import { encodeIoRow, ioColumns } from "./io-compression";
+import {
+  type CasWriteConfig,
+  type PreparedIoColumns,
+  prepareIoColumns,
+  publishIoColumnsIfWinner,
+  resolveCasWriteConfig,
+} from "./io-columns-decision";
+import { ioColumns } from "./io-compression";
 import { readTelemetryRows } from "./io-read";
 import {
   DEFAULT_MAX_RESULT_BYTES,
@@ -59,6 +67,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   private readonly dbPath: string;
   private readonly authToken?: string;
   private readonly compressIo: boolean;
+  private readonly casWrite: CasWriteConfig;
   private readPool: SqliteReadPool | null = null;
   private readPoolInit = false;
   private stopStatisticsMaintenance: (() => void) | null = null;
@@ -69,6 +78,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     if (compression !== undefined && compression !== "off" && compression !== "on")
       throw new Error("IO_COMPRESSION_INVALID_CONFIG");
     this.compressIo = compression === "on";
+    this.casWrite = resolveCasWriteConfig();
     const config =
       dbPath === undefined
         ? resolveDatabaseConfig("telemetry", ".langfuse/telemetry.turso.db")
@@ -177,16 +187,33 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
       .immediate();
   }
 
+  /**
+   * W5 ①：纯准备（IO 三列编码 + CAS 切片/hash/manifest/池块）在写锁之前完成；
+   * 单次调用失败不会留下半发布状态（发布在事务内，见 `publishIoColumnsIfWinner`）。
+   * D-8：CAS 开启时复用进程内单例缓存（≤32MiB、按项目键控，命中后仍查池）。
+   */
+  private prepareRows<T>(table: string, records: T[]): PreparedIoColumns[] {
+    const cache = this.casWrite.enabled ? getSharedCasPrepareCache() : undefined;
+    return records.map((record) =>
+      prepareIoColumns(table, record as Record<string, unknown>, {
+        compress: this.compressIo,
+        cas: this.casWrite,
+        cache,
+      }),
+    );
+  }
+
   async insert<T = Record<string, unknown>>(opts: TelemetryInsertOpts<T>): Promise<void> {
     if (!opts.records.length) return;
     await this.initialize();
+    const prepared = this.prepareRows(opts.table, opts.records);
     await this.db
       .transactionAsync(async (tx) =>
         withTransactionStatementCache(tx, async (cachedTx) => {
           const pending: MetricsToRefresh = createMutationContext();
           for (const [index, record] of opts.records.entries()) {
             const row = record as Record<string, unknown>;
-            const encoded = encodeIoRow(opts.table, row, this.compressIo);
+            const encoded = prepared[index].encoded;
             const columns = Object.keys(encoded);
             const requested = opts.updateColumns?.[index].filter((column) =>
               columns.includes(column),
@@ -224,6 +251,12 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
                 : undefined;
             let conflict = "";
             let searchColumns: string[] = [];
+            // SQL CASE 分支在 `!opts.eventIds && !requested.includes(column)` 时可能写入 input。
+            const inheritInput =
+              requested !== undefined &&
+              !opts.eventIds &&
+              !requested.includes("input") &&
+              Boolean(opts.inheritColumns?.[index]?.includes("input"));
             if (requested) {
               const updates = decision?.acceptedColumns ?? requested;
               searchColumns = [...updates];
@@ -245,6 +278,19 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
               }
               conflict = ` ON CONFLICT(project_id,id) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`;
             }
+            // W5 ③：只有 input 在这一行的版本决策中胜出才发布 CAS（池内容 + 写屏障）。
+            // 发布先于行写入、与行写入同事务；未胜出时对池 0 次查询（见 io-columns-decision）。
+            await publishIoColumnsIfWinner(cachedTx, {
+              mode: "insert",
+              table: opts.table,
+              rowId: String(row.id),
+              projectId: String(row.project_id),
+              prepared: prepared[index],
+              requested,
+              accepted: decision?.acceptedColumns,
+              rowExists: before !== undefined,
+              inheritInput,
+            });
             const result = await cachedTx.run(
               `INSERT ${opts.updateColumns ? "" : "OR REPLACE "}INTO ${opts.table} (${columns.join(",")}) VALUES (${columns.map((column) => `@${column}`).join(",")})${conflict}`,
               encoded,
@@ -284,13 +330,14 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   async mergeInsert<T = Record<string, unknown>>(opts: TelemetryInsertOpts<T>): Promise<void> {
     if (!opts.records.length) return;
     await this.initialize();
+    const prepared = this.prepareRows(opts.table, opts.records);
     await this.db
       .transactionAsync(async (tx) =>
         withTransactionStatementCache(tx, async (cachedTx) => {
           const pending: MetricsToRefresh = createMutationContext();
-          for (const record of opts.records) {
+          for (const [index, record] of opts.records.entries()) {
             const row = record as Record<string, unknown>;
-            const encoded = encodeIoRow(opts.table, row, this.compressIo);
+            const encoded = prepared[index].encoded;
             const columns = Object.keys(encoded);
             const keys =
               isTelemetryEntity(opts.table) || opts.table === "dataset_run_items"
@@ -320,6 +367,16 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
                     String(before.id),
                   )
                 : undefined;
+            // W5 ③：merge 的 `excluded.input IS NOT NULL` 分支必然写入候选 manifest，胜出即发布。
+            await publishIoColumnsIfWinner(cachedTx, {
+              mode: "merge",
+              table: opts.table,
+              rowId: String(row.id),
+              projectId: String(row.project_id),
+              prepared: prepared[index],
+              rowExists: before !== undefined,
+              inheritInput: false,
+            });
             const result = await cachedTx.run(
               `INSERT INTO ${opts.table} (${columns.join(",")}) VALUES (${columns.map((column) => `@${column}`).join(",")}) ON CONFLICT(${keys.join(",")}) DO ${clauses.length ? `UPDATE SET ${clauses.join(",")}` : "NOTHING"}`,
               encoded,

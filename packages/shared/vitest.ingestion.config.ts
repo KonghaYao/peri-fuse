@@ -20,6 +20,8 @@ export default defineConfig({
       "src/server/stats/background-maintenance.test.ts",
       "src/server/stats/maintenance-loop.test.ts",
       "src/server/adapters/io-compression.test.ts",
+      "src/server/adapters/io-cas-write-isolated.test.ts",
+      "src/server/adapters/io-cas-write-publish-isolated.test.ts",
       "src/server/ingestion/lite-reliability.test.ts",
       "src/server/ingestion/processEventBatchLite.test.ts",
       "../server/src/__tests__/io-api-isolated.test.ts",
