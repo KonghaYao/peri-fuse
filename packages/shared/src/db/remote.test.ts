@@ -11,6 +11,8 @@ import {
 } from "../server/session-search/read-pool";
 import { startRemoteTestServer } from "./__tests__/remote-test-server";
 import { applyLocalMigrations, openLocalDatabase, readLocalMigrations } from "./local";
+import { assertReadSnapshotSupported, runReadSnapshot, withReadSnapshot } from "./read-snapshot";
+import { createRemoteReadSnapshotProvider } from "./remote";
 
 let server: Awaited<ReturnType<typeof startRemoteTestServer>>;
 beforeEach(async () => {
@@ -22,6 +24,63 @@ afterEach(async () => {
 });
 
 describe("remote Turso HTTP storage", () => {
+  it("CAS/GC 默认 no-go；协议验收固定 session，含 prepare/iterate", async () => {
+    const db = await openLocalDatabase(server.url, false, server.authToken);
+    const provider = createRemoteReadSnapshotProvider({
+      url: server.url,
+      authToken: server.authToken,
+    });
+    try {
+      expect(() => assertReadSnapshotSupported(db)).toThrow("verified read snapshot");
+      await expect(withReadSnapshot(db, async (tx) => tx.get("SELECT 1"))).rejects.toThrow(
+        "verified read snapshot",
+      );
+      await db.exec(
+        "CREATE TABLE roots(id,hash); CREATE TABLE chunks(hash,body); INSERT INTO roots VALUES(1,1); INSERT INTO chunks VALUES(1,'old')",
+      );
+      await runReadSnapshot(provider, async (tx) => {
+        expect(await tx.get("SELECT hash FROM roots")).toEqual({ hash: 1 });
+        await db.exec("DELETE FROM roots; DELETE FROM chunks");
+        const statement = await tx.prepare("SELECT body FROM chunks");
+        expect(await statement.all()).toEqual([{ body: "old" }]);
+        const rows = [];
+        for await (const row of tx.iterate("SELECT body FROM chunks")) rows.push(row);
+        expect(rows).toEqual([{ body: "old" }]);
+        await expect(tx.get("DELETE FROM chunks RETURNING hash")).rejects.toThrow("read-only");
+      });
+      expect(await db.all("SELECT * FROM chunks")).toEqual([]);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("协议验收：取消释放 session；失效事务不得自动重连", async () => {
+    const provider = createRemoteReadSnapshotProvider({
+      url: server.url,
+      authToken: server.authToken,
+    });
+    await expect(
+      runReadSnapshot(
+        provider,
+        async (tx) => {
+          await tx.get("SELECT 1");
+          return new Promise<never>(() => {});
+        },
+        { timeoutMs: 100 },
+      ),
+    ).rejects.toThrow("cancelled");
+    await expect(
+      runReadSnapshot(provider, async (tx) => {
+        await tx.get("SELECT 1");
+        await server.expireStreams();
+        return tx.get("SELECT 2");
+      }),
+    ).rejects.toThrow();
+    await expect(runReadSnapshot(provider, async (tx) => tx.get("SELECT 1 AS n"))).resolves.toEqual(
+      { n: 1 },
+    );
+  });
+
   it("reconnects expired idle sessions for pipeline and cursor requests", async () => {
     const client = await openLocalDatabase(server.url, false, server.authToken);
     try {
@@ -162,17 +221,20 @@ describe("remote Turso HTTP storage", () => {
   it("applies all three domain migrations idempotently to one remote database", async () => {
     const client = await openLocalDatabase(server.url, false, server.authToken);
     try {
+      let total = 0;
       for (const directory of [
         "../../drizzle",
         "../../telemetry-drizzle",
         "../../../gateway/drizzle",
       ]) {
         const migrations = readLocalMigrations(resolve(__dirname, directory));
+        total += migrations.length;
         await applyLocalMigrations(client, migrations);
         await applyLocalMigrations(client, migrations);
       }
+      // Added migrations must not invalidate the idempotency check.
       expect(await client.get("SELECT count(*) AS count FROM _perifuse_migrations")).toEqual({
-        count: 3,
+        count: total,
       });
       expect(await client.get("SELECT count(*) AS count FROM api_keys")).toEqual({ count: 0 });
       expect(await client.get("SELECT count(*) AS count FROM traces")).toEqual({ count: 0 });

@@ -11,6 +11,7 @@ import {
   type Transaction,
   withLocalTransaction,
 } from "./local";
+import { withReadSnapshot } from "./read-snapshot";
 import { rejectSql } from "./testing";
 
 const onBun = typeof process.versions.bun === "string";
@@ -51,6 +52,94 @@ afterEach(() => {
 });
 
 describe.skipIf(!onBun)("sqlite engine transactions", () => {
+  it.each(["DELETE FROM roots", "UPDATE roots SET hash=2"])(
+    "只读快照：%s 与 GC 后仍保留旧块",
+    async (mutation) => {
+      const filename = temporaryFile();
+      const writer = await withEngine("sqlite", () => openLocalDatabase(filename));
+      await writer.exec(
+        "CREATE TABLE roots(project_id, hash); CREATE TABLE chunks(project_id, hash, body); INSERT INTO roots VALUES('p',1); INSERT INTO chunks VALUES('p',1,'old')",
+      );
+      const reader = await withEngine("sqlite", () => openLocalDatabase(filename, true));
+      try {
+        await withReadSnapshot(reader, async (tx) => {
+          expect(await tx.get("SELECT hash FROM roots WHERE project_id='p'")).toEqual({ hash: 1 });
+          await writer.exec(
+            `${mutation} WHERE project_id='p'; DELETE FROM chunks WHERE project_id='p'`,
+          );
+          expect(await tx.get("SELECT hash FROM roots WHERE project_id='p'")).toEqual({ hash: 1 });
+          expect(await tx.all("SELECT body FROM chunks WHERE project_id='p'")).toEqual([
+            { body: "old" },
+          ]);
+          await expect(tx.run("DELETE FROM chunks")).rejects.toThrow("read-only");
+        });
+        expect(await reader.all("SELECT * FROM chunks")).toEqual([]);
+        await expect(reader.run("INSERT INTO chunks VALUES('p',2,'bad')")).rejects.toThrow();
+      } finally {
+        await reader.close();
+        await writer.close();
+      }
+    },
+  );
+
+  it("快照取消、超时、异常后释放 FIFO，并拒绝晚到句柄及父连接重入", async () => {
+    const db = await memoryDatabase();
+    try {
+      for (const cancel of [false, true]) {
+        const controller = new AbortController();
+        let stale: Transaction | undefined;
+        await expect(
+          withReadSnapshot(
+            db,
+            async (tx) => {
+              stale = tx;
+              await (await tx.prepare("SELECT 1 UNION ALL SELECT 2")).iterate().next();
+              await expect(db.get("SELECT 1")).rejects.toMatchObject(REENTRY);
+              if (cancel) controller.abort();
+              return new Promise<never>(() => {});
+            },
+            { signal: controller.signal, timeoutMs: 20 },
+          ),
+        ).rejects.toMatchObject({ code: "PERIFUSE_READ_SNAPSHOT_CANCELLED" });
+        await expect(stale!.get("SELECT 1")).rejects.toThrow();
+        expect(await db.get("SELECT 1 AS n")).toEqual({ n: 1 });
+      }
+      await expect(
+        withReadSnapshot(db, async (tx) => {
+          await tx.get("SELECT 1");
+          throw new Error("snapshot failed");
+        }),
+      ).rejects.toThrow("snapshot failed");
+      await withLocalTransaction(db, async (tx) => {
+        await withReadSnapshot(tx, async (same) => {
+          expect(same).toBe(tx);
+        });
+      });
+      let entered!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let finish!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const first = withReadSnapshot(db, async (tx) => {
+        await tx.get("SELECT 1");
+        entered();
+        await hold;
+      });
+      await ready;
+      const callback = vi.fn(async (_tx: Transaction) => undefined);
+      await expect(withReadSnapshot(db, callback, { timeoutMs: 10 })).rejects.toThrow("cancelled");
+      expect(callback).not.toHaveBeenCalled();
+      finish();
+      await first;
+      expect(await db.get("SELECT 1 AS n")).toEqual({ n: 1 });
+    } finally {
+      await db.close();
+    }
+  });
+
   it("runs every transaction shape with the caller arguments and result", async () => {
     const database = await memoryDatabase();
     try {

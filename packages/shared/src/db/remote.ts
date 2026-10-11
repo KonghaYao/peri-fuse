@@ -8,6 +8,8 @@ import {
   type Statement,
 } from "@tursodatabase/serverless";
 import type { DatabaseConnectionConfig } from "./connection-config";
+import { registerReadSnapshot } from "./read-snapshot";
+import { remoteReadSnapshotProvider } from "./read-snapshot-remote";
 
 const configurations = new WeakMap<object, DatabaseConnectionConfig>();
 
@@ -107,7 +109,19 @@ function wrapStatement(
   return wrapper;
 }
 
-function executor(connection: Connection, config?: DatabaseConnectionConfig, readonly = false) {
+export function createRemoteReadSnapshotProvider(config: DatabaseConnectionConfig) {
+  return remoteReadSnapshotProvider(
+    config,
+    (connection) => executor(connection, config, true, true) as unknown as Transaction,
+  );
+}
+
+function executor(
+  connection: Connection,
+  config?: DatabaseConnectionConfig,
+  readonly = false,
+  snapshot = false,
+) {
   const checkReadOnly = async (sql: string) => {
     if (!readonly || !config) return;
     const session = new Session(config);
@@ -139,14 +153,16 @@ function executor(connection: Connection, config?: DatabaseConnectionConfig, rea
       await checkReadOnly(sql);
       return wrapStatement(
         await connection.prepare(sql),
-        config ? (parameters, options) => streamRows(config, sql, parameters, options) : undefined,
+        config && !snapshot
+          ? (parameters, options) => streamRows(config, sql, parameters, options)
+          : undefined,
       );
     },
     async *iterate(sql: string, parameters?: unknown, options?: QueryOptions) {
       await checkReadOnly(sql);
       const statement = wrapStatement(
         await connection.prepare(sql),
-        config
+        config && !snapshot
           ? (values, queryOptions) => streamRows(config, sql, values, queryOptions)
           : undefined,
       );
@@ -208,5 +224,6 @@ export function createRemoteDatabase(config: DatabaseConnectionConfig, readonly 
     },
   };
   configurations.set(database, config);
+  registerReadSnapshot(database, createRemoteReadSnapshotProvider(config));
   return database as unknown as Database;
 }

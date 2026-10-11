@@ -19,21 +19,36 @@ export class FifoGate {
     return this.waiting;
   }
 
-  acquire(): Promise<() => void> {
+  acquire(signal?: AbortSignal): Promise<() => void> {
+    if (signal?.aborted)
+      return Promise.reject(
+        createDatabaseError("PERIFUSE_READ_SNAPSHOT_CANCELLED", "Read snapshot cancelled"),
+      );
     this.waiting += 1;
     const previous = this.tail;
     let release!: () => void;
     this.tail = new Promise<void>((resolve) => {
       release = resolve;
     });
-    return previous.then(() => {
-      this.waiting -= 1;
-      let released = false;
-      return () => {
-        if (released) return;
-        released = true;
-        release();
+    return new Promise((resolve, reject) => {
+      let cancelled = false;
+      const abort = () => {
+        cancelled = true;
+        reject(createDatabaseError("PERIFUSE_READ_SNAPSHOT_CANCELLED", "Read snapshot cancelled"));
       };
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
+      void previous.then(() => {
+        this.waiting -= 1;
+        signal?.removeEventListener("abort", abort);
+        if (cancelled) return release();
+        let released = false;
+        resolve(() => {
+          if (released) return;
+          released = true;
+          release();
+        });
+      });
     });
   }
 }

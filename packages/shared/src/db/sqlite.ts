@@ -10,6 +10,8 @@
  */
 import type { Database, Transaction } from "@tursodatabase/database";
 import { createDatabaseError } from "./errors";
+import { registerReadSnapshot } from "./read-snapshot";
+import { sqliteTransaction } from "./read-snapshot-sqlite";
 import {
   assertSqliteRuntime,
   BUSY_TIMEOUT_MS,
@@ -25,8 +27,6 @@ import {
   PendingOperations,
   type RetryClock,
   retryWhileBusy,
-  type TransactionMode,
-  transactionScope,
 } from "./sqlite-transaction";
 
 let connectionSeq = 0;
@@ -230,6 +230,12 @@ class SqliteConnection {
         this.transactionAsync(callback),
     };
     sqliteConnections.set(database, this);
+    registerReadSnapshot(database, {
+      engine: "sqlite",
+      supported: true,
+      run: (callback, signal) =>
+        this.transactionAsync(callback, signal)() as ReturnType<typeof callback>,
+    });
     return database as unknown as Database;
   }
 
@@ -343,62 +349,26 @@ class SqliteConnection {
     }
   }
 
-  transactionAsync(callback: (tx: Transaction, ...args: unknown[]) => Promise<unknown>) {
-    if (typeof callback !== "function")
-      throw new TypeError("The transaction callback must be a function");
-    const execute = (mode: TransactionMode, args: unknown[]): Promise<unknown> => {
-      const transaction = async (): Promise<unknown> => {
-        this.assertUsable();
-        assertNoTransactionReentry(this.id);
-        if (this.readonly) throw createDatabaseError("SQLITE_READONLY", "Database is read-only");
-        const native = await this.ready();
-        const release = await this.gate.acquire();
-        let context: TransactionContext | undefined;
-        try {
-          let begun = false;
-          let failure: unknown;
-          let result: unknown;
-          try {
-            this.assertUsable();
-            await this.activateWal(native);
-            await retryWhileBusy(() => native.run(`BEGIN ${mode}`), this.clock);
-            begun = true;
-            context = new TransactionContext(++transactionSeq, this.id, native, this.clock);
-            result = await transactionScope.run(context.scope, () =>
-              callback(context!.handle as unknown as Transaction, ...args),
-            );
-          } catch (error) {
-            failure = error;
-          }
-          try {
-            if (context) await context.settle();
-          } catch (error) {
-            failure ??= error;
-          }
-          if (failure === undefined && begun) {
-            try {
-              native.run("COMMIT");
-            } catch (error) {
-              failure = error;
-            }
-          }
-          if (failure !== undefined) {
-            this.rollback(native, begun, failure);
-            throw failure;
-          }
-          return result;
-        } finally {
-          context?.dispose();
-          release();
-        }
-      };
-      return this.pending.track(transaction());
-    };
-    return Object.assign((...args: unknown[]) => execute("DEFERRED", args), {
-      deferred: (...args: unknown[]) => execute("DEFERRED", args),
-      immediate: (...args: unknown[]) => execute("IMMEDIATE", args),
-      exclusive: (...args: unknown[]) => execute("EXCLUSIVE", args),
-    });
+  transactionAsync(
+    callback: (tx: Transaction, ...args: unknown[]) => Promise<unknown>,
+    readSignal?: AbortSignal,
+  ) {
+    return sqliteTransaction(
+      {
+        id: this.id,
+        readonly: this.readonly,
+        gate: this.gate,
+        pending: this.pending,
+        clock: this.clock,
+        assertUsable: () => this.assertUsable(),
+        ready: () => this.ready(),
+        activateWal: (native) => this.activateWal(native),
+        context: (native) => new TransactionContext(++transactionSeq, this.id, native, this.clock),
+        rollback: (native, begun, failure) => this.rollback(native, begun, failure),
+      },
+      callback,
+      readSignal,
+    );
   }
 
   /** Rolls back an open transaction; a failed rollback taints the connection. */

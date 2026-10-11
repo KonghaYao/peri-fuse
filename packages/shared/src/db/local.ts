@@ -6,7 +6,17 @@ import {
   resolveLocalEngine,
   validateDatabaseConfig,
 } from "./connection-config";
+import { assertStoredReadSnapshotCompatible } from "./read-snapshot";
+import { registerLocalReadSnapshot } from "./read-snapshot-local";
 import { createRemoteDatabase } from "./remote";
+
+export type { ReadSnapshotMetrics, ReadSnapshotOptions } from "./read-snapshot";
+export {
+  assertReadSnapshotSupported,
+  getReadSnapshotCapability,
+  withReadSnapshot,
+} from "./read-snapshot";
+
 import {
   assertSqliteRuntime,
   createSqliteDatabase,
@@ -82,12 +92,14 @@ export function createLocalDatabase(url: string, readonly = false, authToken?: s
   const filename = resolveLocalPath(url);
   if (filename !== ":memory:" && !readonly) mkdirSync(dirname(filename), { recursive: true });
   if (engine === "sqlite") return createSqliteDatabase(filename, readonly);
-  return new Database(filename, {
-    ...(filename === ":memory:" ? {} : LOCAL_DATABASE_OPTIONS),
-    readonly,
-    fileMustExist: readonly,
-    timeout: 5000,
-  });
+  return registerLocalReadSnapshot(
+    new Database(filename, {
+      ...(filename === ":memory:" ? {} : LOCAL_DATABASE_OPTIONS),
+      readonly,
+      fileMustExist: readonly,
+      timeout: 5000,
+    }),
+  );
 }
 
 export async function initializeLocalDatabase(db: Database): Promise<void> {
@@ -96,6 +108,7 @@ export async function initializeLocalDatabase(db: Database): Promise<void> {
   // through its internal path so neither engine's WAL mode is activated here.
   if (await initializeSqliteConnection(db)) return;
   await db.exec("PRAGMA foreign_keys = ON");
+  await assertStoredReadSnapshotCompatible(db);
 }
 
 export async function openLocalDatabase(
