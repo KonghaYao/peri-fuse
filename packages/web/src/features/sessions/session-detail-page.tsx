@@ -1,9 +1,9 @@
 /**
- * Session detail — lite replica of web's session detail view, rendered as a
- * single merged observation tree: every trace in the session contributes its
- * observation subtree (rooted at the trace), with a divider between turns.
- * Mirrors the trace-detail page's tree + detail-panel layout, extended across
- * a whole session. Clicking a trace root collapses/expands its subtree; a
+ * Session detail — lite replica of web's session detail view: every trace in
+ * the session contributes its execution graph (the trace row heads each turn),
+ * with a divider between turns.
+ * Mirrors the trace-detail page's graph + detail-panel layout, extended across
+ * a whole session. Clicking a trace root collapses/expands its graph; a
  * dedicated button opens the standalone trace detail page.
  */
 
@@ -20,7 +20,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ObservationDetail } from "@/shared/components/observation-detail";
 import { ObservationTimelineDialog } from "@/shared/components/observation-timeline";
-import { buildTree, ObservationNode, OmitNoiseToggle } from "@/shared/components/observation-tree";
+import { ObservationTraceGraph } from "@/shared/components/observation-trace-graph";
+import { OmitNoiseToggle } from "@/shared/components/observation-tree";
 import { Pagination } from "@/shared/components/pagination";
 import { EmptyState, ErrorState } from "@/shared/components/state";
 import { Badge } from "@/shared/components/ui/badge";
@@ -45,8 +46,8 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 /**
- * Turn header: the trace that anchors each observation subtree. Clicking the
- * row collapses/expands the subtree; the arrow button opens the standalone
+ * Turn header: the trace that anchors each observation graph. Clicking the
+ * row collapses/expands the graph; the arrow button opens the standalone
  * trace detail page.
  */
 function TraceRootRow({
@@ -98,14 +99,12 @@ function TraceRootRow({
 function TraceObservations({
   traceId,
   expanded,
-  omitNoise,
   selectedId,
   onSelect,
   onLoaded,
 }: {
   traceId: string;
   expanded: boolean;
-  omitNoise: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onLoaded: (traceId: string, observations: Observation[]) => void;
@@ -115,7 +114,6 @@ function TraceObservations({
     () => query.data?.pages.flatMap((page) => page.data) ?? [],
     [query.data],
   );
-  const tree = useMemo(() => buildTree(observations, { omitNoise }), [observations, omitNoise]);
 
   useEffect(() => onLoaded(traceId, observations), [onLoaded, observations, traceId]);
 
@@ -125,15 +123,14 @@ function TraceObservations({
 
   return (
     <>
-      {tree.map((node) => (
-        <ObservationNode
-          key={node.observation.id}
-          node={node}
-          depth={1}
+      {/* Narrow layouts scroll the graph sideways instead of clipping its columns. */}
+      <div className="overflow-x-auto">
+        <ObservationTraceGraph
+          observations={observations}
           selectedId={selectedId}
           onSelect={onSelect}
         />
-      ))}
+      </div>
       {query.hasNextPage && (
         <Button
           variant="ghost"
@@ -285,15 +282,19 @@ function SessionDetailContent({
             )}
           </div>
           {session && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0 gap-1.5"
-              onClick={() => setTimelineOpen(true)}
-            >
-              <ChartNoAxesCombined className="h-4 w-4" />
-              Page timeline
-            </Button>
+            <div className="flex shrink-0 items-center gap-1">
+              {/* The timeline dialog is the only noise-filtered view left on this page. */}
+              <OmitNoiseToggle omitNoise={omitNoise} onChange={setOmitNoise} />
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setTimelineOpen(true)}
+              >
+                <ChartNoAxesCombined className="h-4 w-4" />
+                Page timeline
+              </Button>
+            </div>
           )}
         </div>
 
@@ -344,12 +345,11 @@ function SessionDetailContent({
         )}
       </div>
 
-      {/* Body: merged observation tree + detail panel */}
+      {/* Body: merged observation graph + detail panel */}
       <div className="flex min-h-0 flex-1">
         <Card className="m-4 mr-0 flex w-[45%] min-w-[320px] flex-col overflow-hidden">
           <CardHeader className="flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm">Observation tree</CardTitle>
-            <OmitNoiseToggle omitNoise={omitNoise} onChange={setOmitNoise} />
+            <CardTitle className="text-sm">Observation graph</CardTitle>
           </CardHeader>
           <CardContent className="min-h-0 flex-1 p-2">
             {query.isLoading ? (
@@ -377,7 +377,6 @@ function SessionDetailContent({
                       <TraceObservations
                         traceId={trace.id}
                         expanded={expanded}
-                        omitNoise={omitNoise}
                         selectedId={selectedId}
                         onSelect={setSelectedId}
                         onLoaded={handleLoaded}
