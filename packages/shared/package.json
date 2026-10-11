@@ -31,6 +31,10 @@
       "import": "./dist/src/db/local.js",
       "require": "./dist/src/db/local.js"
     },
+    "./src/db/query-statistics": {
+      "import": "./dist/src/db/query-statistics.js",
+      "require": "./dist/src/db/query-statistics.js"
+    },
     ".": {
       "import": "./dist/src/index.js",
       "require": "./dist/src/index.js"

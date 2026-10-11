@@ -9,6 +9,7 @@ import {
   resolveLocalPath,
   validateDatabaseConfig,
 } from "../../db/local";
+import { startQueryStatisticsMaintenance } from "../../db/query-statistics";
 import { logger } from "../logger";
 import { readObservationMetric } from "./ingestion-metrics";
 import { selectVersionedColumns } from "./ingestion-versions";
@@ -61,6 +62,7 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
   private readonly compressIo: boolean;
   private readPool: SqliteReadPool | null = null;
   private readPoolInit = false;
+  private stopStatisticsMaintenance: (() => void) | null = null;
   private closed = false;
 
   constructor(dbPath?: string) {
@@ -82,6 +84,23 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     this.db = createLocalDatabase(this.dbPath, false, this.authToken);
     this.ready = applyLocalMigrations(this.db, readTelemetryMigrations());
     void this.ready.catch(() => undefined);
+    void this.ready
+      .then(() => {
+        if (this.closed) return;
+        this.stopStatisticsMaintenance = startQueryStatisticsMaintenance(this.db, {
+          onEvent: (event) => {
+            if (event.type === "analyzed")
+              logger.info("[SQLiteTelemetryAdapter] Query statistics analyzed", {
+                tables: event.tables,
+              });
+            else
+              logger.warn("[SQLiteTelemetryAdapter] Query statistics maintenance failed", {
+                reason: event.message,
+              });
+          },
+        });
+      })
+      .catch(() => undefined);
   }
 
   async initialize(): Promise<void> {
@@ -381,6 +400,8 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
 
   async close(): Promise<void> {
     this.closed = true;
+    this.stopStatisticsMaintenance?.();
+    this.stopStatisticsMaintenance = null;
     await this.ready.catch(() => undefined);
     await this.readPool?.close();
     await this.db.close();

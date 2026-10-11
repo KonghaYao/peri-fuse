@@ -7,6 +7,7 @@ import {
   readLocalMigrations,
   resolveDatabaseConfig,
 } from "@peri-fuse/shared/src/db/local";
+import { startQueryStatisticsMaintenance } from "@peri-fuse/shared/src/db/query-statistics";
 import { drizzle } from "drizzle-orm/tursodatabase/database";
 import * as schema from "./db/schema.js";
 
@@ -17,6 +18,7 @@ function createDb(client: LocalDatabase) {
 let client: LocalDatabase | null = null;
 let database: Db | null = null;
 let ready: Promise<void> | null = null;
+let stopStatisticsMaintenance: (() => void) | null = null;
 
 export function getDb(): Db {
   if (!database) {
@@ -42,12 +44,18 @@ function findMigrationDirectory(): string {
 export function ensureSchema(): Promise<void> {
   if (!ready) {
     getDb();
-    ready = applyLocalMigrations(client!, readLocalMigrations(findMigrationDirectory()));
+    ready = applyLocalMigrations(client!, readLocalMigrations(findMigrationDirectory())).then(
+      () => {
+        stopStatisticsMaintenance = startQueryStatisticsMaintenance(client!);
+      },
+    );
   }
   return ready;
 }
 
 export async function closeDb(): Promise<void> {
+  stopStatisticsMaintenance?.();
+  stopStatisticsMaintenance = null;
   await ready?.catch(() => undefined);
   await client?.close();
   client = null;

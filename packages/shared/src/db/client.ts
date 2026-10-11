@@ -8,6 +8,7 @@ import {
   readLocalMigrations,
   resolveDatabaseConfig,
 } from "./local.js";
+import { startQueryStatisticsMaintenance } from "./query-statistics.js";
 import * as schema from "./schema/index.js";
 
 export type Db = ReturnType<typeof createDb>;
@@ -17,6 +18,7 @@ function createDb(client: LocalDatabase) {
 let client: LocalDatabase | null = null;
 let database: Db | null = null;
 let ready: Promise<void> | null = null;
+let stopStatisticsMaintenance: (() => void) | null = null;
 
 export function getDb(): Db {
   if (!database) {
@@ -32,12 +34,16 @@ export function ensureSchema(): Promise<void> {
     getDb();
     const directory = path.join(findLocalPackageRoot(__dirname), "drizzle");
     const migrations = readLocalMigrations(directory);
-    ready = applyLocalMigrations(client!, migrations);
+    ready = applyLocalMigrations(client!, migrations).then(() => {
+      stopStatisticsMaintenance = startQueryStatisticsMaintenance(client!);
+    });
   }
   return ready;
 }
 
 export async function closeDb(): Promise<void> {
+  stopStatisticsMaintenance?.();
+  stopStatisticsMaintenance = null;
   await ready?.catch(() => undefined);
   await client?.close();
   client = null;
