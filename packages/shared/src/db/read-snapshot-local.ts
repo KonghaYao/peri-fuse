@@ -16,6 +16,12 @@ const scope = new AsyncLocalStorage<object>();
 
 /** Turso 自带连接 gate；此代理只补父句柄重入检查，不另外创建连接。 */
 export function registerLocalReadSnapshot(database: Database): Database {
+  // Captured at registration: fault-injection spies wrap the value they read
+  // from this proxy, so the wrapper must always reach the driver method it was
+  // created for. Reading `database.transactionAsync` late would target the spy
+  // instead and recurse between mock and wrapper.
+  const nativeTransactionAsync = database.transactionAsync.bind(database);
+  const nativeTransactionAsyncValue = database.transactionAsync;
   const assertNotParent = () => {
     if (scope.getStore() === database)
       throw createDatabaseError("PERIFUSE_TRANSACTION_REENTRY", "Use the transaction handle");
@@ -23,11 +29,9 @@ export function registerLocalReadSnapshot(database: Database): Database {
   const transaction = <T>(callback: (tx: Transaction, ...args: unknown[]) => Promise<T>) => {
     const execute = (mode: "deferred" | "immediate" | "exclusive", args: unknown[]) => {
       assertNotParent();
-      return database
-        .transactionAsync((tx, ...values: unknown[]) =>
-          scope.run(database, () => callback(tx, ...values)),
-        )
-        [mode](...args);
+      return nativeTransactionAsync((tx, ...values: unknown[]) =>
+        scope.run(database, () => callback(tx, ...values)),
+      )[mode](...args);
     };
     return Object.assign((...args: unknown[]) => execute("deferred", args), {
       deferred: (...args: unknown[]) => execute("deferred", args),
@@ -37,11 +41,19 @@ export function registerLocalReadSnapshot(database: Database): Database {
   };
   const wrapper = new Proxy(database, {
     get(target, property) {
-      if (property === "transactionAsync") return transaction;
       const value = Reflect.get(target, property);
+      // Only the untouched driver method maps to the reentry-aware wrapper;
+      // once a spy replaced it, callers keep going through that spy.
+      if (property === "transactionAsync")
+        return value === nativeTransactionAsyncValue ? transaction : value;
       if (typeof value !== "function") return value;
       return (...args: unknown[]) => {
-        assertNotParent();
+        try {
+          assertNotParent();
+        } catch (error) {
+          // Turso 形状：公共方法失败走 promise 拒绝，不向 await 调用方同步抛出。
+          return Promise.reject(error);
+        }
         return value.apply(target, args);
       };
     },

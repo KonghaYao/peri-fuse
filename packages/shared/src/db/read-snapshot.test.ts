@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { openLocalDatabase, withLocalTransaction } from "./local";
 import {
   assertReadSnapshotSupported,
@@ -137,6 +137,39 @@ describe("read snapshot", () => {
     ).toBe(42);
   });
 
+  it("spy 捕获 wrapper 的 transactionAsync 后不递归，restore 后恢复", async () => {
+    const previous = process.env.PERIFUSE_ENGINE;
+    process.env.PERIFUSE_ENGINE = "turso";
+    const db = await openLocalDatabase(":memory:");
+    try {
+      await db.exec("CREATE TABLE items(id)");
+      // 复刻 testing.ts::rejectSql 与 probeTransactions 的捕获模式。
+      const original = db.transactionAsync.bind(db);
+      const spy = vi
+        .spyOn(db, "transactionAsync")
+        .mockImplementation((callback) => original(callback));
+      await expect(
+        db.transactionAsync(async (tx) => {
+          await tx.run("INSERT INTO items VALUES(1)");
+          // 注入路径仍保留父句柄重入检查。
+          await expect(db.get("SELECT 1 AS n")).rejects.toMatchObject({
+            code: "PERIFUSE_TRANSACTION_REENTRY",
+          });
+          return tx.get("SELECT count(*) AS count FROM items");
+        })(),
+      ).resolves.toEqual({ count: 1 });
+      expect(spy).toHaveBeenCalled();
+      spy.mockRestore();
+      await expect(
+        db.transactionAsync(async (tx) => tx.get("SELECT count(*) AS count FROM items"))(),
+      ).resolves.toEqual({ count: 1 });
+    } finally {
+      await db.close();
+      if (previous === undefined) delete process.env.PERIFUSE_ENGINE;
+      else process.env.PERIFUSE_ENGINE = previous;
+    }
+  });
+
   it("拒绝未登记的 CAS/GC 能力", () => {
     expect(() => assertReadSnapshotSupported({})).toThrow("verified read snapshot");
   });
@@ -186,7 +219,7 @@ describe("read snapshot", () => {
             async (tx) => {
               stale = tx;
               await tx.get("SELECT 1");
-              expect(() => db.get("SELECT 1")).toThrow("transaction handle");
+              await expect(db.get("SELECT 1")).rejects.toThrow("transaction handle");
               if (cancel) controller.abort();
               return new Promise<never>(() => {});
             },
