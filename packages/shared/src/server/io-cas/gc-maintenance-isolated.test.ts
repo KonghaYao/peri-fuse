@@ -454,6 +454,9 @@ it("交错 fuzz：写路径 vs mark/sweep 交错，零误删（≥100 万次见�
       nextCheck = index + 20_000;
       await clock("check", check);
       stats.checks += 1;
+      // 长跑卫生（与 GC 语义无关）：本驱动的这套配置不做自动 checkpoint，WAL 会一直涨
+      // （实测 1 分钟级写入就把 WAL 顶到 1GB，随后语句逐步变慢直至挂起）。
+      await db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
     }
     if (index >= nextProgress) {
       nextProgress = index + 100_000;
@@ -478,7 +481,7 @@ it("交错 fuzz：写路径 vs mark/sweep 交错，零误删（≥100 万次见�
   console.log(
     `[cas-gc fuzz] events=${events} elapsedMs=${Math.round(elapsedMs)} eventsPerSec=${Math.round(
       (events / elapsedMs) * 1000,
-    )} writerOps=${stats.writerOps} writerTx=${stats.writerTx} gcSteps=${stats.gcSteps} swept=${stats.swept + sweptInTail} checks=${stats.checks} liveRoots=${expected.size} pool=${poolSize} mismatches=0`,
+    )} writerOps=${stats.writerOps} writerTx=${stats.writerTx} gcSteps=${stats.gcSteps} swept=${stats.swept + sweptInTail} checks=${stats.checks} liveRoots=${expected.size} pool=${poolSize}`,
   );
   console.log(
     `[cas-gc fuzz] msByClass writerTx=${Math.round(spent.writerTx)} gcStep=${Math.round(spent.gc)} checks=${Math.round(spent.check)}`,
