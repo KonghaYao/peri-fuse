@@ -75,6 +75,43 @@ try {
       }
     }
   }
+  // CAS（observations.input 消息级去重）感知的附加报告。只在库已有 CAS 表时输出，
+  // 因此非 CAS 库的输出与历史版本逐字节一致；删除行为本身与 CAS 无关：
+  // retention 只删行，池内容由 GC（io_cas_gc_state 的 mark/sweep）回收。
+  if (
+    await reader.get(
+      "SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='io_cas_chunks'",
+    )
+  ) {
+    const casWhere = projectId ? " WHERE project_id = @projectId" : "";
+    const casParams = projectId ? { projectId } : undefined;
+    const pool = await reader.get(
+      `SELECT COUNT(*) AS rows, COALESCE(SUM(LENGTH(payload)), 0) AS bytes FROM io_cas_chunks${casWhere}`,
+      casParams,
+    );
+    console.log(
+      `io_cas_chunks: ${pool.rows} row(s), ${pool.bytes} payload byte(s) — ` +
+        "unreferenced pool content is reclaimed by CAS GC, not by this script",
+    );
+    if (
+      await reader.get(
+        "SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='io_cas_migration_state'",
+      )
+    ) {
+      const jobs = await reader.all(
+        `SELECT job, status FROM io_cas_migration_state WHERE status <> 'done'${
+          projectId ? " AND project_id = @projectId" : ""
+        }`,
+        casParams,
+      );
+      if (jobs.length)
+        console.log(
+          `WARNING: unfinished CAS migration job(s): ${jobs
+            .map((job) => `${job.job}:${job.status}`)
+            .join(", ")} — prune during an active CAS migration is untested`,
+        );
+    }
+  }
 } finally {
   await adapter?.close();
   await reader?.close();
