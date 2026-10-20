@@ -46,6 +46,28 @@ it("preserves exact text, thresholds, nulls, UTF-8 and repeated JSON keys", () =
   expect(() => encodeIoRow("traces", { input: 0 }, true)).toThrow("IO_TEXT_REQUIRED");
 });
 
+it("defaults to compressing new writes when PERIFUSE_IO_COMPRESSION_WRITE is unset", async () => {
+  const previous = process.env.PERIFUSE_IO_COMPRESSION_WRITE;
+  delete process.env.PERIFUSE_IO_COMPRESSION_WRITE;
+  const adapter = new SQLiteTelemetryAdapter(file("default-compression"));
+  try {
+    await adapter.initialize();
+    const input = "default-compression ".repeat(400);
+    await adapter.insert({
+      table: "traces",
+      records: [{ project_id: "p", id: "t", input }],
+    });
+    const row = await adapter
+      .getDatabase()
+      .get("SELECT input_codec FROM traces WHERE project_id='p' AND id='t'");
+    expect(row).toEqual({ input_codec: 1 });
+  } finally {
+    await adapter.close();
+    if (previous === undefined) delete process.env.PERIFUSE_IO_COMPRESSION_WRITE;
+    else process.env.PERIFUSE_IO_COMPRESSION_WRITE = previous;
+  }
+});
+
 it("rejects unknown codecs, invalid lengths, corrupt streams and decompression bombs", () => {
   const packed = deflateSync(Buffer.from("x".repeat(2000)));
   for (const [input, input_codec, input_raw_size, error] of [

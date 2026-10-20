@@ -113,7 +113,8 @@ See [`.env.example`](.env.example) for a ready-to-copy set of common options. Ke
 | `LANGFUSE_SQLITE_DB_PATH` | `<PERIFUSE_HOME>/telemetry.turso.db` | Trace, observation, and score SQLite database. |
 | `SALT` | generated and persisted | API-key hash salt stored at `<PERIFUSE_HOME>/.salt` when unset. |
 | `LITE_LARGE_RESPONSE_THRESHOLD_BYTES` | `1048576` | Response-size warning threshold in bytes. |
-| `PERIFUSE_TELEMETRY_RETENTION_DAYS` | disabled | Optional retention period; unset or `0` disables automatic purging. |
+| `PERIFUSE_IO_COMPRESSION_WRITE` | `on` | Deflate-compress newly written trace/observation input/output. Set `off` to disable; existing rows (compressed or not) are always readable. |
+| `PERIFUSE_TELEMETRY_RETENTION_DAYS` | disabled (keep all) | Optional retention period; unset or `0` keeps all data and disables automatic purging. |
 
 To use remote Turso, add these settings to `.env` (or export them before starting the service):
 

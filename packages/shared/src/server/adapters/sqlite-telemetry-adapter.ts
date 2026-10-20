@@ -77,7 +77,8 @@ export class SQLiteTelemetryAdapter implements TelemetryDBAdapter {
     const compression = process.env.PERIFUSE_IO_COMPRESSION_WRITE;
     if (compression !== undefined && compression !== "off" && compression !== "on")
       throw new Error("IO_COMPRESSION_INVALID_CONFIG");
-    this.compressIo = compression === "on";
+    // 默认开启：未设置时压缩新写入的 input/output；显式 off 才关闭。
+    this.compressIo = compression !== "off";
     this.casWrite = resolveCasWriteConfig();
     const config =
       dbPath === undefined
